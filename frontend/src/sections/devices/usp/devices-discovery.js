@@ -214,7 +214,8 @@ function ShowParamsWithValues({
     setParameterValue, deviceParameters, 
     setShowLoading, router,
     updateDeviceParameters, deviceCommands,
-    openCommandDialog
+    openCommandDialog,
+    setDeviceCommandToExecute
 }) {
     console.log("HEY jow:", deviceParametersValue)
     let paths = x.supported_obj_path.split(".")
@@ -229,123 +230,144 @@ function ShowParamsWithValues({
     }
 
     if(paths[paths.length -2] == "{i}"){
-        return Object.keys(deviceParametersValue).map((paramKey, h)=>{
-            console.log("deviceParametersValue:", deviceParametersValue)
-            console.log("paramKey:", paramKey)
-            console.log("deviceParameters.req_obj_results[0].supported_objs[h]?.access:", deviceParameters.req_obj_results[0].supported_objs[h]?.access)
-            let obj = deviceParameters.req_obj_results[0].supported_objs[0]
-            let access = obj?.access
-            return (
-            <List dense={true} key={h}>
-                <ListItem
-                    divider={true}
-                    sx={{
-                        boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                        pl: 4,
-                    }}
-                    secondaryAction={
-                        access > ObjAccessType.ReadOnly &&
-                        <IconButton onClick={()=>{
-                            deleteDeviceObj(
-                                paramKey,
-                                setShowLoading,
-                                router,
-                                updateDeviceParameters
-                            )
-                        }}>
-                        <SvgIcon>
-                            <TrashIcon></TrashIcon>
-                        </SvgIcon>
-                        </IconButton>
-                    }
-                >
-                <ListItemText
-                primary={<b>{paramKey}</b>}
-                sx={{fontWeight:'bold'}}
-                />
-                </ListItem>
-            {deviceParametersValue[paramKey].length > 0 ?
-            deviceParametersValue[paramKey].map((param, i) => {
+        // Build a regex to match instance keys for this object, supporting multiple {i}
+        const instancePattern = new RegExp(
+          '^' +
+          x.supported_obj_path
+            .replace(/\{i\}/g, '\\d+')
+            .replace(/\./g, '\\.') +
+          '$'
+        );
+        return (
+          <>
+            {Object.keys(deviceParametersValue)
+              .filter(paramKey => instancePattern.test(paramKey))
+              .map((paramKey, h)=>{
+                console.log('Instance:', paramKey, deviceParametersValue[paramKey]);
+                let obj = deviceParameters.req_obj_results[0].supported_objs[0]
+                let access = obj?.access
                 return (
-                <List 
-                component="div" 
-                disablePadding 
-                dense={true}
-                key={i}
-                >
+                  <List dense={true} key={h}>
                     <ListItem
-                        key={i}
                         divider={true}
                         sx={{
                             boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                            pl: 4 
+                            pl: 4,
                         }}
                         secondaryAction={
-                            <div>
-                                {Object.values(param)[0].value}
-                                {Object.values(param)[0].access > ParamAccessType.ReadOnly && <IconButton>
-                                <SvgIcon sx={{width:'20px'}}
-                                onClick={()=>{
-                                    showDialog(
-                                        paramKey+Object.keys(param)[0],
-                                        Object.values(param)[0].value)
-                                }
-                                }>
-                                
-                                    <Pencil></Pencil>
-                                
-                                </SvgIcon>
-                                </IconButton>}
-                            </div>
-                        }
-                    >
-                        <ListItemText
-                            primary={Object.keys(param)[0]}
-                        />
-                    </ListItem>
-                </List>
-                )
-            }):<></>}
-            {
-              deviceCommands && 
-              Object.keys(deviceCommands).map(commando =>{
-                console.log("Comando:", commando)
-                return <List 
-                component="div" 
-                disablePadding 
-                dense={true}
-                key={commando}
-                >
-                    <ListItem
-                        key={commando}
-                        divider={true}
-                        sx={{
-                            boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                            pl: 4 
-                        }}
-                        secondaryAction={
-                            <IconButton>
-                                <SvgIcon>
-                                    <PlayCircleIcon>
-                                    </PlayCircleIcon>
-                                </SvgIcon>
+                            access > ObjAccessType.ReadOnly &&
+                            <IconButton onClick={()=>{
+                                deleteDeviceObj(
+                                    paramKey,
+                                    setShowLoading,
+                                    router,
+                                    updateDeviceParameters
+                                )
+                            }}>
+                            <SvgIcon>
+                                <TrashIcon></TrashIcon>
+                            </SvgIcon>
                             </IconButton>
                         }
                     >
-                        <ListItemText
-                            primary={commando}
-                        />
+                    <ListItemText
+                    primary={<b>{paramKey}</b>}
+                    sx={{fontWeight:'bold'}}
+                    />
                     </ListItem>
-                </List>
-              })
-            }
-            </List>
-            )
-        })
+                  {/* Only render parameters for this instance */}
+                  {deviceParametersValue[paramKey].length > 0 ?
+                  deviceParametersValue[paramKey].map((param, i) => {
+                      console.log('Param object:', param);
+                      const paramName = Object.keys(param)[0];
+                      const paramData = param[paramName];
+                      return (
+                      <List 
+                      component="div" 
+                      disablePadding 
+                      dense={true}
+                      key={paramName}
+                      >
+                          <ListItem
+                              key={paramName}
+                              divider={true}
+                              sx={{
+                                  boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
+                                  pl: 4 
+                              }}
+                              secondaryAction={
+                                  <div>
+                                      {paramData.value}
+                                      {paramData.access > ParamAccessType.ReadOnly && <IconButton>
+                                      <SvgIcon sx={{width:'20px'}}
+                                      onClick={()=>{
+                                          showDialog(
+                                              paramKey+paramName,
+                                              paramData.value)
+                                      }
+                                      }>
+                                      
+                                          <Pencil></Pencil>
+                                      
+                                      </SvgIcon>
+                                      </IconButton>}
+                                  </div>
+                              }
+                          >
+                              <ListItemText
+                                  primary={paramName}
+                              />
+                          </ListItem>
+                      </List>
+                      )
+                  }):<></>}
+                  {/* Render commands for each instance */}
+                  {x.supported_commands && x.supported_commands.length > 0 &&
+                    x.supported_commands.map((y) => (
+                      <List 
+                        component="div" 
+                        disablePadding 
+                        dense={true}
+                        key={y.command_name + '__' + paramKey}
+                      >
+                        <ListItem
+                            key={y.command_name + '__' + paramKey}
+                            divider={true}
+                            sx={{
+                                boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
+                                pl: 4 
+                            }}
+                            secondaryAction={
+                                <IconButton onClick={() => {
+                                    setDeviceCommandToExecute({
+                                        [paramKey + y.command_name]: {
+                                            input_arg_names: y.input_arg_names
+                                        }
+                                    });
+                                    openCommandDialog(true);
+                                }}>
+                                    <SvgIcon>
+                                        <PlayCircleIcon />
+                                    </SvgIcon>
+                                </IconButton>
+                            }
+                        >
+                            <ListItemText
+                                primary={y.command_name}
+                            />
+                        </ListItem>
+                      </List>
+                    ))
+                  }
+                  </List>
+                )
+            })}
+          </>
+        )
     }else{
         return (
             <>
-            {x.supported_params && x.supported_params.map((y, index)=>{
+            {(x.supported_params && x.supported_params.length > 0) ? x.supported_params.map((y, index)=>{
                 return (
                     <List 
                         component="div" 
@@ -385,37 +407,41 @@ function ShowParamsWithValues({
                         </ListItem>
                     </List>
                 )
-            })}
-            {
-              deviceCommands && 
-              Object.keys(deviceCommands).map(commando =>{
-                console.log("Comando:", commando)
+            }) : null}
+            {x.supported_commands && x.supported_commands.length > 0 &&
+              x.supported_commands.map((y) => {
                 return <List 
-                component="div" 
-                disablePadding 
-                dense={true}
-                key={commando}
+                  component="div" 
+                  disablePadding 
+                  dense={true}
+                  key={y.command_name}
                 >
-                    <ListItem
-                        key={commando}
-                        divider={true}
-                        sx={{
-                            boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                            pl: 4 
-                        }}
-                        secondaryAction={
-                            <IconButton>
-                                <SvgIcon>
-                                    <PlayCircleIcon>
-                                    </PlayCircleIcon>
-                                </SvgIcon>
-                            </IconButton>
-                        }
-                    >
-                        <ListItemText
-                            primary={commando}
-                        />
-                    </ListItem>
+                  <ListItem
+                      key={y.command_name}
+                      divider={true}
+                      sx={{
+                          boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
+                          pl: 4 
+                      }}
+                      secondaryAction={
+                          <IconButton onClick={() => {
+                              setDeviceCommandToExecute({
+                                  [x.supported_obj_path + y.command_name]: {
+                                      input_arg_names: y.input_arg_names
+                                  }
+                              });
+                              openCommandDialog(true);
+                          }}>
+                              <SvgIcon>
+                                  <PlayCircleIcon />
+                              </SvgIcon>
+                          </IconButton>
+                      }
+                  >
+                      <ListItemText
+                          primary={y.command_name}
+                      />
+                  </ListItem>
                 </List>
               })
             }
@@ -801,6 +827,12 @@ const getDeviceParameterInstances = async (raw) =>{
             //console.log("commands:", commandsInfo)
             setDeviceCommands(commandsInfo)
         })
+        // Always set deviceCommands after processing
+        if (supportedCommands && supportedCommands.length > 0) {
+            setDeviceCommands(commandsInfo);
+        } else {
+            setDeviceCommands({});
+        }
         console.log("values:", values)
         console.log("commands:", commandsInfo)
         console.log("/-------------------------------------------------------/")
@@ -923,8 +955,7 @@ const getDeviceParameterInstances = async (raw) =>{
                         sx={{fontWeight:'bold'}}
                     />
                 </ListItem>
-                {   x.supported_params &&
-                    <ShowParamsWithValues 
+                <ShowParamsWithValues 
                     x={x} 
                     deviceParametersValue={deviceParametersValue} 
                     setOpen={setOpen} 
@@ -935,76 +966,9 @@ const getDeviceParameterInstances = async (raw) =>{
                     router={router}
                     updateDeviceParameters={updateDeviceParameters}
                     deviceCommands={deviceCommands}
-                    openCommandDialog={openCommandDialog}
-                    />
-                }
-                { x.supported_commands && Object.keys(deviceCommands).length == 0 &&
-                    x.supported_commands.map((y)=>{
-                        return <List 
-                        component="div" 
-                        disablePadding 
-                        dense={true}
-                        key={y.command_name}
-                        
-                        >
-                        <ListItem
-                            key={i}
-                            divider={true}
-                            sx={{
-                                boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                                pl: 4 
-                            }}
-                            secondaryAction={
-                                <IconButton onClick={()=> {
-                                    setDeviceCommandToExecute(
-                                        {
-                                            [x.supported_obj_path+y.command_name]:
-                                            {"input_arg_names":
-                                                [
-                                                    y.input_arg_names
-                                                ]
-                                            }
-                                        }
-                                    )
-                                    setOpenCommandDialog(true)
-                                    }}>
-                                    <SvgIcon>
-                                        <PlayCircleIcon >
-                                        </PlayCircleIcon>
-                                    </SvgIcon>
-                                </IconButton>
-                            }
-                        >
-                            <ListItemText
-                                primary={y.command_name}
-                            />
-                        </ListItem>
-                    </List>
-                    })
-                }
-                { x.supported_events &&
-                    x.supported_events.map((y)=>{
-                        return <List 
-                        component="div" 
-                        disablePadding 
-                        dense={true}
-                        key={y.event_name}
-                        >
-                        <ListItem
-                            key={i}
-                            divider={true}
-                            sx={{
-                                boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                                pl: 4 
-                            }}
-                        >
-                            <ListItemText
-                                primary={y.event_name}
-                            />
-                        </ListItem>
-                    </List>
-                    })
-                }
+                    openCommandDialog={setOpenCommandDialog}
+                    setDeviceCommandToExecute={setDeviceCommandToExecute}
+                />
             </List>)
         })
     })
@@ -1171,12 +1135,17 @@ const getDeviceParameterInstances = async (raw) =>{
                 {Object.keys(deviceCommandToExecute)[0]}
                 </DialogTitle>    
                     <DialogContent dividers={scroll === 'paper'}>
-                    {deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names[0]!=undefined && <DialogContentText id="scroll-dialog-description" tabIndex={-1}>
-                    Input Arguments:
-                    </DialogContentText>}
-                    {deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names[0] !=undefined && 
-                    deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names?.map(arg => {
-                        return <TextField
+                    {Array.isArray(deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names) &&
+                      deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names.length > 0 && (
+                        <DialogContentText id="scroll-dialog-description" tabIndex={-1}>
+                          Input Arguments:
+                        </DialogContentText>
+                      )
+                    }
+                    {Array.isArray(deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names) &&
+                      deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names.length > 0 &&
+                      deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names.map(arg => (
+                        <TextField
                         autoFocus
                         margin="dense"
                         id={arg}
@@ -1189,7 +1158,7 @@ const getDeviceParameterInstances = async (raw) =>{
                         onClick={()=>{console.log(deviceCommandToExecute)}}
                         value={inputArgsValue[arg]}
                       />
-                    })}
+                    ))}
                     </DialogContent>
                     <DialogActions>
                     <Button onClick={()=>{
