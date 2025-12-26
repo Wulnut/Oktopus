@@ -11,6 +11,7 @@ import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useRouter } from 'next/router';
 import { DevicesRPC } from 'src/sections/devices/usp/devices-rpc';
 import { DevicesDiscovery } from 'src/sections/devices/usp/devices-discovery';
+import { DevicesLCM } from 'src/sections/devices/usp/devices-lcm';
 import EnvelopeIcon from '@heroicons/react/24/outline/EnvelopeIcon';
 import MagnifyingGlassIcon from '@heroicons/react/24/solid/MagnifyingGlassIcon';
 import WifiIcon from '@heroicons/react/24/outline/WifiIcon';
@@ -38,6 +39,8 @@ const Page = () => {
                 return <DevicesRPC/>
             case "discovery":
                 return <DevicesDiscovery/>
+            case "lcm":
+                return <DevicesLCM/>
             default:
                 router.replace(`/devices/usp/${deviceID}/discovery`)
         }
@@ -124,13 +127,12 @@ const Page = () => {
                         label="Historic" 
                         style={{cursor:"default", opacity: 0.5}}
                         value={"historic"} /></Tooltip>
-                        <Tooltip placement="bottom">
                         <Tab 
+                        value={"lcm"} 
+                        onClick={()=>{router.push(`/devices/usp/${deviceID}/lcm`)}}
                         icon={<SvgIcon><CubeTransparentIcon/></SvgIcon>} 
                         iconPosition={"end"} 
-                        label="LCM" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"lcm"} /></Tooltip>
+                        label="LCM" />
                         <Tooltip placement="bottom">
                         <Tab 
                         icon={<SvgIcon><MapPin/></SvgIcon>} 
