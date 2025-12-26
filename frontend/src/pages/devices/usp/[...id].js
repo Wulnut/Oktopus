@@ -6,7 +6,10 @@ SvgIcon,
 Breadcrumbs,
 Link, 
 CircularProgress,
-Tooltip} from '@mui/material';
+Tooltip,
+Button,
+Menu,
+MenuItem} from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useRouter } from 'next/router';
 import { DevicesRPC } from 'src/sections/devices/usp/devices-rpc';
@@ -32,6 +35,7 @@ const Page = () => {
     const section = router.query.id[1]
     
     const [loading, setLoading] = useState(true)
+    const [unimplementedAnchor, setUnimplementedAnchor] = useState(null)
 
     const sectionHandler = () => {
         switch(section){
@@ -77,76 +81,11 @@ const Page = () => {
                     </Breadcrumbs>
                 <Box sx={{
                 display:'flex',
-                justifyContent:'center'
+                justifyContent:'center',
+                alignItems: 'center',
+                gap: 2
                 }}>
                     <Tabs value={router.query.id[1]}  aria-label="icon label tabs example" variant='scrollable'>
-                        <Tooltip placement="bottom">
-                        <Tab 
-                        icon={<SvgIcon><WifiIcon/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="Wi-Fi" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"wifi"}/>
-                        </Tooltip>
-                        <Tooltip placement="bottom">
-                        <Tab 
-                            icon={<SvgIcon><SignalIcon/></SvgIcon>} 
-                            iconPosition={"end"} 
-                            label="Site Survey" 
-                            style={{cursor:"default", opacity: 0.5}} 
-                            value={"site-survey"} 
-                        />
-                        </Tooltip>
-                        <Tooltip placement="bottom">
-                        <Tab 
-                        icon={<SvgIcon><DevicePhoneMobile/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="Connected Devices" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"connected-devices"} 
-                        />
-                        </Tooltip>
-                        <Tooltip placement="bottom">
-                        <Tab 
-                        icon={<SvgIcon><WrenchScrewDriverIcon/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="Diagnostic" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"diagnostic"} /></Tooltip>
-                        <Tooltip placement="bottom">
-                        <Tab 
-                        icon={<SvgIcon><ServerStackIcon/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="Ports" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"ports"} /></Tooltip>
-                        <Tooltip placement="bottom">
-                        <Tab 
-                        icon={<SvgIcon><ArrowTrendingUp/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="Historic" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"historic"} /></Tooltip>
-                        <Tab 
-                        value={"lcm"} 
-                        onClick={()=>{router.push(`/devices/usp/${deviceID}/lcm`)}}
-                        icon={<SvgIcon><CubeTransparentIcon/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="LCM" />
-                        <Tooltip placement="bottom">
-                        <Tab 
-                        icon={<SvgIcon><MapPin/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="Location" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"location"} /></Tooltip>
-                        <Tooltip placement="bottom">
-                        <Tab 
-                        icon={<SvgIcon><CommandLineIcon/></SvgIcon>} 
-                        iconPosition={"end"} 
-                        label="Actions" 
-                        style={{cursor:"default", opacity: 0.5}}
-                        value={"actions"} /></Tooltip>
                         <Tab 
                         value={"discovery"} 
                         onClick={()=>{router.push(`/devices/usp/${deviceID}/discovery`)}}
@@ -154,12 +93,63 @@ const Page = () => {
                         iconPosition={"end"} 
                         label="Parameters" />
                         <Tab 
+                        value={"lcm"} 
+                        onClick={()=>{router.push(`/devices/usp/${deviceID}/lcm`)}}
+                        icon={<SvgIcon><CubeTransparentIcon/></SvgIcon>} 
+                        iconPosition={"end"} 
+                        label="LCM" />
+                        <Tab 
                         value={"msg"} 
                         onClick={()=>{router.push(`/devices/usp/${deviceID}/msg`)}}
                         icon={<SvgIcon><EnvelopeIcon/></SvgIcon>} 
                         iconPosition={"end"} 
                         label="Messages" />
                     </Tabs>
+                    <Button
+                        variant="outlined"
+                        onClick={(e) => setUnimplementedAnchor(e.currentTarget)}
+                        sx={{ minWidth: 150 }}
+                    >
+                        Unimplemented Features
+                    </Button>
+                    <Menu
+                        anchorEl={unimplementedAnchor}
+                        open={Boolean(unimplementedAnchor)}
+                        onClose={() => setUnimplementedAnchor(null)}
+                    >
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><WifiIcon/></SvgIcon>
+                            Wi-Fi
+                        </MenuItem>
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><SignalIcon/></SvgIcon>
+                            Site Survey
+                        </MenuItem>
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><DevicePhoneMobile/></SvgIcon>
+                            Connected Devices
+                        </MenuItem>
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><WrenchScrewDriverIcon/></SvgIcon>
+                            Diagnostic
+                        </MenuItem>
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><ServerStackIcon/></SvgIcon>
+                            Ports
+                        </MenuItem>
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><ArrowTrendingUp/></SvgIcon>
+                            Historic
+                        </MenuItem>
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><MapPin/></SvgIcon>
+                            Location
+                        </MenuItem>
+                        <MenuItem disabled>
+                            <SvgIcon sx={{ mr: 1 }}><CommandLineIcon/></SvgIcon>
+                            Actions
+                        </MenuItem>
+                    </Menu>
                 </Box>
                 </Stack>
             </Container>
