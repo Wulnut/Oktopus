@@ -35,6 +35,34 @@ export const items = [
     )
   },
   {
+    title: 'Credentials',
+    path: '/credentials',
+    icon: (
+      <SvgIcon fontSize="small">
+        <KeyIcon />
+      </SvgIcon>
+    )
+  },
+  {
+    title: 'Settings',
+    path: '/settings',
+    icon: (
+      <SvgIcon fontSize="small">
+        <CogIcon />
+      </SvgIcon>
+    )
+  },
+  {
+    title: 'Docs',
+    path: 'https://docs.oktopus.app.br',
+    icon: (
+      <SvgIcon fontSize="small">
+        <BookOpenIcon />
+      </SvgIcon>
+    ),
+    external: true,
+  },
+  {
     title: 'Mass Actions',
     icon: (
       <SvgIcon fontSize="small">
@@ -69,15 +97,6 @@ export const items = [
     icon: (
       <SvgIcon fontSize="small">
         <CommandLineIcon color='gray'/>
-      </SvgIcon>
-    )
-  },
-  {
-    title: 'Credentials',
-    path: '/credentials',
-    icon: (
-      <SvgIcon fontSize="small">
-        <KeyIcon />
       </SvgIcon>
     )
   },
@@ -127,25 +146,6 @@ export const items = [
         <FolderIcon color='gray'/>
       </SvgIcon>
     )
-  },
-  {
-    title: 'Settings',
-    path: '/settings',
-    icon: (
-      <SvgIcon fontSize="small">
-        <CogIcon />
-      </SvgIcon>
-    )
-  },
-  {
-    title: 'Docs',
-    path: 'https://docs.oktopus.app.br',
-    icon: (
-      <SvgIcon fontSize="small">
-        <BookOpenIcon />
-      </SvgIcon>
-    ),
-    external: true,
   },
 ];
 

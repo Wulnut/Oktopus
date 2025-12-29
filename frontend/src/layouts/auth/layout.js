@@ -73,7 +73,7 @@ export const Layout = (props) => {
           }}
         >
           <Box sx={{ p: 3 }}>
-            <Link href="http://localhost/companylink" target="_blank">
+            <Link href={typeof window !== 'undefined' ? `${window.location.origin}/devices` : '/devices'}>
               <img
                 alt=""
                 src={`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/images/logo.png`}

@@ -60,18 +60,7 @@ export const SideNav = (props) => {
           height: '100%'
         }}
       >
-        <Box sx={{ p: 3 }}>
-          <Box
-            component={NextLink}
-            href="/"
-            sx={{
-              display: 'inline-flex',
-              height: 32,
-              width: 32
-            }}
-          >
-            <Logo />
-          </Box>
+        <Box sx={{ p: 1 }}>
           <Box
             sx={{
               alignItems: 'center',
@@ -84,18 +73,13 @@ export const SideNav = (props) => {
               p: '12px'
             }}
           >
-         <Link href="http://localhost/companylink" target="_blank">
-            <div style={{display:'flex',justifyContent:'center'}}>
-              <img src={`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/images/logo.png`} 
-              width={'60%'}
-              />
-            </div>
-          </Link>
-            <SvgIcon
-              fontSize="small"
-              sx={{ color: 'neutral.500' }}
-            >
-            </SvgIcon>
+            <Link href={typeof window !== 'undefined' ? `${window.location.origin}/devices` : '/devices'}>
+              <div style={{display:'flex',justifyContent:'center'}}>
+                <img src={`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/images/logo.png`} 
+                width={'30%'}
+                />
+              </div>
+            </Link>
           </Box>
         </Box>
         <Divider sx={{ borderColor: 'neutral.700' }} />
@@ -168,24 +152,29 @@ export const SideNav = (props) => {
             </List> */}
           </Stack>
         </Box>
-        <Stack style={{position:"absolute", bottom:"2px", left:"2px"}} direction={"row"} spacing={"1"} zIndex={9999}>  
-        <Typography
-          align="center"
-          color="primary.contrastText"
-          component="footer"
-          variant="body2"
-          sx={{ p: 2 }}
+        <Box
+          sx={{
+            mt: 'auto',
+            px: 2,
+            py: 2
+          }}
         >
-          Powered by
-        </Typography>
-      </Stack>
-      <a href='https://oktopus.app.br' style={{position:"absolute", bottom:"10px", left:"100px"}} target='_blank'>
-      <img 
-        src="/assets/logo.png" 
-        alt="Oktopus logo image"
-        width={80}
-        />
-      </a>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography
+              color="primary.contrastText"
+              variant="body2"
+            >
+              Powered by
+            </Typography>
+            <a href='https://oktopus.app.br' target='_blank' rel="noopener noreferrer">
+              <img 
+                src="/assets/logo.png" 
+                alt="Oktopus logo image"
+                width={80}
+              />
+            </a>
+          </Stack>
+        </Box>
       </Box>
     </Scrollbar>
   );
