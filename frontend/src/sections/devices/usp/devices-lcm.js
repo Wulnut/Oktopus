@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -19,7 +19,6 @@ import {
   Alert,
   Typography,
   CircularProgress,
-  Backdrop,
   Table,
   TableBody,
   TableCell,
@@ -37,10 +36,32 @@ import {
 } from '@mui/material';
 import { useRouter } from 'next/router';
 import { useBackendContext } from 'src/contexts/backend-context';
+import { keyframes } from '@mui/system';
 import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 import PlusCircleIcon from '@heroicons/react/24/outline/PlusCircleIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
+
+// Animation keyframes for uninstalling indicator
+const shimmer = keyframes`
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+`;
+
+const pulse = keyframes`
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+`;
 
 // Generate UUID v5
 // Pattern: xxxxxxxx-xxxx-5xxx-Nxxx-xxxxxxxxxxxx
@@ -88,6 +109,7 @@ export const DevicesLCM = () => {
 
   const [deploymentUnits, setDeploymentUnits] = useState([]);
   const [executionEnvironments, setExecutionEnvironments] = useState([]);
+  const [agentRequests, setAgentRequests] = useState([]); // Device.LocalAgent.Request.*.
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [response, setResponse] = useState(null);
@@ -98,9 +120,17 @@ export const DevicesLCM = () => {
   const [installUuid, setInstallUuid] = useState(generateUUID());
   const [installExecEnv, setInstallExecEnv] = useState('Device.SoftwareModules.ExecEnv.1.');
   const [installPrivileged, setInstallPrivileged] = useState(true);
-  const [dockerRegistryUrl, setDockerRegistryUrl] = useState('');
+  // Registry URL - default to current browser hostname/IP
+  const [dockerRegistryUrl, setDockerRegistryUrl] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.hostname;
+    }
+    return '';
+  });
   const [dockerImages, setDockerImages] = useState([]);
   const [loadingDockerImages, setLoadingDockerImages] = useState(false);
+  const [dockerImagesError, setDockerImagesError] = useState(null);
+  const [selectedImageOption, setSelectedImageOption] = useState('custom'); // 'custom' or a container URL
   
   // Uninstall dialog state
   const [showUninstallDialog, setShowUninstallDialog] = useState(false);
@@ -122,6 +152,7 @@ export const DevicesLCM = () => {
             get: {
               paramPaths: [
                 'Device.SoftwareModules.DeploymentUnit.*.',
+                'Device.LocalAgent.Request.*.',
               ],
               maxDepth: 2,
             },
@@ -150,15 +181,38 @@ export const DevicesLCM = () => {
     }
   };
 
-  // Parse DeploymentUnits from GET response
+  // Parse DeploymentUnits and AgentRequests from GET response
   const parseDeploymentUnits = (response) => {
     const units = [];
+    const requests = [];
     
     if (response.req_path_results) {
       response.req_path_results.forEach(pathResult => {
         if (pathResult.resolved_path_results) {
           pathResult.resolved_path_results.forEach(resolved => {
             const resolvedPath = resolved.resolved_path || '';
+            
+            // Parse Device.LocalAgent.Request.*.
+            if (resolvedPath.includes('Device.LocalAgent.Request.')) {
+              if (resolved.result_params) {
+                const params = resolved.result_params;
+                const pathParts = resolvedPath.split('.');
+                const instanceIndex = pathParts[pathParts.length - 2];
+                
+                if (instanceIndex && !isNaN(instanceIndex)) {
+                  requests.push({
+                    instance: instanceIndex,
+                    alias: params.Alias || '',
+                    command: params.Command || '',
+                    commandKey: params.CommandKey || '',
+                    originator: params.Originator || '',
+                    status: params.Status || 'Unknown',
+                    path: resolvedPath,
+                  });
+                }
+              }
+              return; // Skip to next item
+            }
             
             // Only process paths that are actually DeploymentUnit instances
             if (!resolvedPath.includes('Device.SoftwareModules.DeploymentUnit.')) {
@@ -202,6 +256,29 @@ export const DevicesLCM = () => {
     }
     
     setDeploymentUnits(units);
+    setAgentRequests(requests);
+  };
+
+  // Check if a deployment unit is being uninstalled
+  const isUninstalling = (unit) => {
+    // Check if Status is "Uninstalling"
+    if (unit.status === 'Uninstalling') {
+      return true;
+    }
+    
+    // Check if there's an active Request with Uninstall() command for this instance
+    const matchingRequest = agentRequests.find(req => {
+      if (req.status !== 'Active') return false;
+      
+      // Extract instance number from command like "Device.SoftwareModules.DeploymentUnit.3.Uninstall()"
+      const commandMatch = req.command.match(/Device\.SoftwareModules\.DeploymentUnit\.(\d+)\.Uninstall\(\)/);
+      if (commandMatch && commandMatch[1] === unit.instance) {
+        return true;
+      }
+      return false;
+    });
+    
+    return !!matchingRequest;
   };
 
   // Fetch Execution Environments list
@@ -270,60 +347,125 @@ export const DevicesLCM = () => {
   };
 
   // Fetch Docker images from registry
-  // Note: This requires a backend endpoint due to CORS and TLS certificate handling
-  // Suggestion: Create /api/docker-registry/catalog endpoint in backend
-  const fetchDockerImages = async () => {
+  // Uses nginx proxy to handle SSL certificate errors and CORS
+  const fetchDockerImages = useCallback(async () => {
     if (!dockerRegistryUrl.trim()) {
-      setError('Docker registry URL is required');
+      setDockerImagesError('Registry URL is required');
       return;
     }
 
     setLoadingDockerImages(true);
-    setError(null);
+    setDockerImagesError(null);
     
     try {
-      // Option 1: Backend endpoint (recommended for security and CORS)
-      // This would handle TLS certificates and authentication server-side
-      const { result, status } = await httpRequest(
-        `/api/docker-registry/catalog`,
-        'POST',
-        JSON.stringify({ registry_url: dockerRegistryUrl }),
-        null
-      );
+      // Normalize URL (remove protocol and trailing slash)
+      let registryUrl = dockerRegistryUrl.trim();
+      registryUrl = registryUrl.replace(/^https?:\/\//, ''); // Remove http:// or https://
+      registryUrl = registryUrl.replace(/\/$/, ''); // Remove trailing slash
+      
+      // Extract hostname/IP and port if present - used for docker:// URL construction
+      const registryHost = registryUrl; // Keep port if specified (e.g., 192.168.1.24:5000)
 
-      if (status === 200 && result?.repositories) {
-        // Parse repositories and fetch tags for each
-        const images = [];
-        for (const repo of result.repositories) {
-          const tagsResult = await httpRequest(
-            `/api/docker-registry/tags`,
-            'POST',
-            JSON.stringify({ registry_url: dockerRegistryUrl, repository: repo }),
-            null
-          );
-          
-          if (tagsResult.status === 200 && tagsResult.result?.tags) {
-            tagsResult.result.tags.forEach(tag => {
-              images.push({
-                name: repo,
-                tag: tag,
-                fullUrl: `docker://${dockerRegistryUrl.replace(/^https?:\/\//, '')}/${repo}:${tag}`,
+      // Use nginx proxy: /docker-registry/v2/_catalog?registry=192.168.1.24
+      // Registry IP is passed via query parameter to nginx
+      // Note: Request will be http:// (relative to page), but nginx proxies to https://
+      // Step 1: Fetch catalog (list of repositories)
+      const catalogProxyUrl = `/docker-registry/v2/_catalog?registry=${encodeURIComponent(registryHost)}`;
+      const catalogResponse = await fetch(catalogProxyUrl, {
+        method: 'GET',
+        credentials: 'omit',
+      });
+
+      if (!catalogResponse.ok) {
+        throw new Error(`Failed to fetch catalog: ${catalogResponse.status} ${catalogResponse.statusText}`);
+      }
+
+      const catalogData = await catalogResponse.json();
+      
+      if (!catalogData.repositories || catalogData.repositories.length === 0) {
+        setDockerImages([]);
+        setDockerImagesError(null);
+        return;
+      }
+
+      // Step 2: Fetch tags for each repository
+      const images = [];
+      for (const repo of catalogData.repositories) {
+        try {
+          const tagsProxyUrl = `/docker-registry/v2/${repo}/tags/list?registry=${encodeURIComponent(registryHost)}`;
+          const tagsResponse = await fetch(tagsProxyUrl, {
+            method: 'GET',
+            credentials: 'omit',
+          });
+
+          if (tagsResponse.ok) {
+            const tagsData = await tagsResponse.json();
+            if (tagsData.tags && tagsData.tags.length > 0) {
+              tagsData.tags.forEach(tag => {
+                // Build docker:// URL using the registry URL
+                images.push({
+                  name: repo,
+                  tag: tag,
+                  fullUrl: `docker://${registryHost}/${repo}:${tag}`,
+                });
               });
-            });
+            }
+          } else {
+            console.warn(`Failed to fetch tags for ${repo}: ${tagsResponse.status}`);
           }
+        } catch (err) {
+          console.warn(`Error fetching tags for ${repo}:`, err);
         }
-        setDockerImages(images);
+      }
+
+      setDockerImages(images);
+      setDockerImagesError(null);
+      
+      // If images found, select first one by default; otherwise select 'custom'
+      if (images.length > 0) {
+        setSelectedImageOption(images[0].fullUrl);
+        setInstallUrl(images[0].fullUrl);
       } else {
-        setError('Failed to fetch Docker images. Backend endpoint may not be implemented yet.');
+        setSelectedImageOption('custom');
+        setInstallUrl('');
       }
     } catch (err) {
-      // Fallback: Show manual entry message
-      setError('Docker registry API integration requires backend support. Please enter URL manually in format: docker://host/image:tag');
+      const errorMsg = `Failed to fetch Docker images: ${err.message || err}`;
+      setDockerImagesError(errorMsg);
       console.error('Docker registry fetch error:', err);
+      setDockerImages([]);
+      // On error, select 'custom' option
+      setSelectedImageOption('custom');
+      setInstallUrl('');
     } finally {
       setLoadingDockerImages(false);
     }
-  };
+  }, [dockerRegistryUrl]);
+
+  // Auto-fetch images when install dialog opens
+  // NOTE: Auto-fetch is intentionally commented out to allow manual registry URL input
+  // Uncomment the code below if you want to auto-fetch on dialog open
+  // useEffect(() => {
+  //   if (showInstallDialog) {
+  //     fetchDockerImages();
+  //   } else {
+  //     // Reset state when dialog closes
+  //     setDockerImages([]);
+  //     setDockerImagesError(null);
+  //     setSelectedImageOption('custom');
+  //     setInstallUrl('');
+  //   }
+  // }, [showInstallDialog, fetchDockerImages]);
+
+  // Reset state when dialog closes
+  useEffect(() => {
+    if (!showInstallDialog) {
+      setDockerImages([]);
+      setDockerImagesError(null);
+      setSelectedImageOption('custom');
+      setInstallUrl('');
+    }
+  }, [showInstallDialog]);
 
   // Ensure subscription exists for async operation
   // Returns true if subscription exists or was created successfully, false on error
@@ -486,8 +628,10 @@ export const DevicesLCM = () => {
           setShowInstallDialog(false);
           setInstallUrl('');
           setInstallUuid(generateUUID());
-          // Refresh the list immediately
-          await fetchDeploymentUnits();
+          // Refresh the list after 1 second
+          setTimeout(() => {
+            fetchDeploymentUnits();
+          }, 2000);
         } 
         // Check for CmdFailure
         else if (operationResp?.CmdFailure) {
@@ -503,8 +647,10 @@ export const DevicesLCM = () => {
           setShowInstallDialog(false);
           setInstallUrl('');
           setInstallUuid(generateUUID());
-          // Refresh the list
-          await fetchDeploymentUnits();
+          // Refresh the list after 1 second
+          setTimeout(() => {
+            fetchDeploymentUnits();
+          }, 2000);
         } else {
           setError('Unknown response format from install operation');
           setResponse(null);
@@ -689,14 +835,32 @@ export const DevicesLCM = () => {
                 </Button>
               </Stack>
 
-              <TableContainer component={Paper}>
+              <TableContainer component={Paper} sx={{ position: 'relative' }}>
+                {loading && (
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: 'rgba(127, 127, 127, 0.01)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      zIndex: 10,
+                    }}
+                  >
+                    <CircularProgress sx={{ color: '#fff' }} />
+                  </Box>
+                )}
                 <Table>
                   <TableHead>
                     <TableRow>
                       <TableCell>Container Name</TableCell>
                       <TableCell>Version</TableCell>
                       <TableCell>Status</TableCell>
-                      <TableCell>Deployment Status</TableCell>
+                      <TableCell>Update Status</TableCell>
                       <TableCell>Installed Time</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
@@ -709,49 +873,68 @@ export const DevicesLCM = () => {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      deploymentUnits.map((unit) => (
-                        <TableRow key={unit.instance}>
-                          <TableCell>{unit.name}</TableCell>
-                          <TableCell>{unit.version}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label={unit.status}
-                              size="small"
-                              color={
-                                unit.status === 'Active' || unit.status === 'Installed'
-                                  ? 'success'
-                                  : unit.status === 'Failed'
-                                  ? 'error'
-                                  : 'default'
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={unit.resolved ? 'Up to date' : 'Requires update'}
-                              size="small"
-                              color={unit.resolved ? 'success' : 'warning'}
-                            />
-                          </TableCell>
-                          <TableCell>{formatTimeAgo(unit.installedTime)}</TableCell>
-                          <TableCell align="right">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => {
-                                setUninstallTarget(unit);
-                                setShowUninstallDialog(true);
-                              }}
-                              disabled={loading}
-                            >
-                              <SvgIcon>
-                                <TrashIcon />
-                              </SvgIcon>
-                            </IconButton>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
+                      deploymentUnits.map((unit) => {
+                        const uninstalling = isUninstalling(unit);
+                        return (
+                          <TableRow 
+                            key={unit.instance}
+                            sx={{
+                              position: 'relative',
+                              opacity: uninstalling ? 0.5 : 1,
+                              transition: 'opacity 0.3s ease-in-out',
+                              backgroundColor: uninstalling ? 'rgba(255, 152, 0, 0.1)' : 'transparent',
+                              backgroundImage: uninstalling ? 'linear-gradient(90deg, transparent, rgba(255, 152, 0, 0.2), transparent)' : 'none',
+                              backgroundSize: uninstalling ? '200% 100%' : 'auto',
+                              animation: uninstalling ? `${shimmer} 2s infinite linear` : 'none',
+                            }}
+                          >
+                            <TableCell>{unit.name}</TableCell>
+                            <TableCell>{unit.version}</TableCell>
+                            <TableCell>
+                              <Chip
+                                label={uninstalling ? 'Uninstalling...' : unit.status}
+                                size="small"
+                                color={
+                                  uninstalling
+                                    ? 'warning'
+                                    : unit.status === 'Active' || unit.status === 'Installed'
+                                    ? 'success'
+                                    : unit.status === 'Failed'
+                                    ? 'error'
+                                    : 'default'
+                                }
+                                sx={uninstalling ? {
+                                  animation: `${pulse} 1.5s ease-in-out infinite`,
+                                } : {}}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={unit.resolved ? 'Up to date' : 'Requires update'}
+                                size="small"
+                                color={unit.resolved ? 'success' : 'warning'}
+                              />
+                            </TableCell>
+                            <TableCell>{formatTimeAgo(unit.installedTime)}</TableCell>
+                            <TableCell align="right">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => {
+                                  setUninstallTarget(unit);
+                                  setShowUninstallDialog(true);
+                                }}
+                                disabled={loading || uninstalling}
+                              >
+                                <SvgIcon>
+                                  <TrashIcon />
+                                </SvgIcon>
+                              </IconButton>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }))
+                    }
                   </TableBody>
                 </Table>
               </TableContainer>
@@ -774,71 +957,118 @@ export const DevicesLCM = () => {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={3} mt={1}>
+            {/* Error message for Docker registry fetch */}
+            {dockerImagesError && (
+              <Alert severity="error" onClose={() => setDockerImagesError(null)}>
+                {dockerImagesError}
+              </Alert>
+            )}
+
+            {/* Registry URL input and fetch button */}
             <Box>
               <Typography variant="subtitle2" gutterBottom>
-                Docker Registry (Optional)
+                Docker Registry
               </Typography>
-              <Stack direction="row" spacing={2}>
+              <Stack direction="row" spacing={2} alignItems="flex-start">
                 <TextField
-                  label="Registry URL"
+                  label="Registry IP/Host"
                   variant="outlined"
                   fullWidth
                   value={dockerRegistryUrl}
                   onChange={(e) => setDockerRegistryUrl(e.target.value)}
-                  placeholder="http://192.168.1.24:5000"
-                  disabled={loading}
+                  placeholder="192.168.1.24"
+                  disabled={loading || loadingDockerImages}
+                  helperText="Enter registry IP address or hostname (port optional, e.g., 192.168.1.24:5000)"
                 />
                 <Button
                   variant="outlined"
                   onClick={fetchDockerImages}
                   disabled={loading || loadingDockerImages || !dockerRegistryUrl.trim()}
+                  sx={{ mt: 0, minWidth: 150, alignSelf: 'flex-start' }}
                 >
                   {loadingDockerImages ? <CircularProgress size={20} /> : 'Fetch Images'}
                 </Button>
               </Stack>
             </Box>
 
-            {dockerImages.length > 0 && (
-              <FormControl fullWidth>
-                <InputLabel>Select from Registry</InputLabel>
-                <Select
-                  value=""
-                  onChange={(e) => setInstallUrl(e.target.value)}
-                  disabled={loading}
-                  displayEmpty
-                >
-                  <MenuItem value="" disabled>
-                    Select an image
+            {/* Container selection dropdown */}
+            <FormControl fullWidth>
+              <InputLabel id="container-select-label">Container</InputLabel>
+              <Select
+                labelId="container-select-label"
+                value={
+                  loadingDockerImages 
+                    ? 'loading' 
+                    : (dockerImages.length > 0 && dockerImages.some(img => img.fullUrl === selectedImageOption))
+                      ? selectedImageOption
+                      : 'custom'
+                }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === 'loading') return; // Prevent selection during loading
+                  setSelectedImageOption(value);
+                  if (value === 'custom') {
+                    setInstallUrl('');
+                  } else {
+                    setInstallUrl(value);
+                  }
+                }}
+                disabled={loading || loadingDockerImages}
+              >
+                {loadingDockerImages ? (
+                  <MenuItem value="loading" disabled>
+                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                    Loading containers...
                   </MenuItem>
-                  {dockerImages.map((img, idx) => (
-                    <MenuItem key={idx} value={img.fullUrl}>
-                      {img.name}:{img.tag}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
-            <TextField
-              label="Module URL"
-              variant="outlined"
-              fullWidth
-              required
-              value={installUrl}
-              onChange={(e) => setInstallUrl(e.target.value)}
-              placeholder="docker://192.168.1.24/my_cortexa53_container:v0.0.1"
-              disabled={loading}
-              helperText={dockerImages.length > 0 ? "Select from dropdown above or enter URL manually" : "Docker URL format: docker://host/image:tag"}
-            />
+                ) : dockerImages.length > 0 ? (
+                  [
+                    ...dockerImages.map((img) => (
+                      <MenuItem key={img.fullUrl} value={img.fullUrl}>
+                        {img.name}:{img.tag}
+                      </MenuItem>
+                    )),
+                    <MenuItem key="custom" value="custom">Custom URL</MenuItem>
+                  ]
+                ) : (
+                  <MenuItem value="custom">Custom URL</MenuItem>
+                )}
+              </Select>
+            </FormControl>
 
-            <TextField
-              label="UUID"
-              variant="outlined"
-              fullWidth
-              value={installUuid}
-              onChange={(e) => setInstallUuid(e.target.value)}
-              disabled={loading}
-              helperText="Random UUID generated automatically"
-            />
+            {/* Custom URL input - only shown when "Custom URL" is selected */}
+            {selectedImageOption === 'custom' && (
+              <TextField
+                label="Module URL"
+                variant="outlined"
+                fullWidth
+                required
+                value={installUrl}
+                onChange={(e) => setInstallUrl(e.target.value)}
+                placeholder="docker://<host>/<container_name>:<tag>"
+                disabled={loading}
+                helperText="Docker URL format: docker://host/image:tag"
+              />
+            )}
+
+            <Stack direction="row" spacing={2} alignItems="flex-start">
+              <TextField
+                label="UUID"
+                variant="outlined"
+                fullWidth
+                value={installUuid}
+                onChange={(e) => setInstallUuid(e.target.value)}
+                disabled={loading}
+                helperText="Random UUID generated automatically"
+              />
+              <Button
+                variant="outlined"
+                onClick={() => setInstallUuid(generateUUID())}
+                disabled={loading}
+                sx={{ mt: 1, minWidth: 150 }}
+              >
+                Generate
+              </Button>
+            </Stack>
 
             <FormControl fullWidth>
               <InputLabel>Execution Environment</InputLabel>
@@ -905,13 +1135,6 @@ export const DevicesLCM = () => {
           </Button>
         </DialogActions>
       </Dialog>
-
-      <Backdrop
-        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
-        open={loading}
-      >
-        <CircularProgress color="inherit" />
-      </Backdrop>
     </>
   );
 };
