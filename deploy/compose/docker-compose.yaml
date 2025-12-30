@@ -168,10 +168,15 @@ services:
 
   #/* -------------------------------- Frontend -------------------------------- */
   frontend:
-    image: "oktopusp/frontend"
+    build:
+      context: ../../frontend
+      dockerfile: build/Dockerfile
+    # Don't specify image name to force local build instead of pulling from registry
     container_name: frontend
     ports:
       - 3000:3000
+    environment:
+      - NODE_ENV=production
     networks:
       usp_network:
         ipv4_address: 172.16.235.14
