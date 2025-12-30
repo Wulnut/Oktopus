@@ -113,6 +113,8 @@ export const DevicesLCM = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [response, setResponse] = useState(null);
+  const [isSupported, setIsSupported] = useState(null); // Device.SoftwareModules. support check (null = unknown, true = supported, false = unsupported)
+  const [checkingSupport, setCheckingSupport] = useState(true);
   
   // Install dialog state
   const [showInstallDialog, setShowInstallDialog] = useState(false);
@@ -135,6 +137,64 @@ export const DevicesLCM = () => {
   // Uninstall dialog state
   const [showUninstallDialog, setShowUninstallDialog] = useState(false);
   const [uninstallTarget, setUninstallTarget] = useState(null);
+
+  // Check if Device.SoftwareModules. is supported
+  const checkSoftwareModulesSupport = async () => {
+    try {
+      const getSupportedDMCommand = {
+        header: {
+          msg_id: generateUUID(),
+          msg_type: 12, // GetSupportedDM
+        },
+        body: {
+          request: {
+            get_supported_dm: {
+              obj_paths: ['Device.SoftwareModules.'],
+              first_level_only: false,
+              return_commands: false,
+              return_events: false,
+              return_params: true,
+            },
+          },
+        },
+      };
+
+      const { result, status } = await httpRequest(
+        `/api/device/${deviceID}/any/generic`,
+        'PUT',
+        JSON.stringify(getSupportedDMCommand),
+        null
+      );
+
+      if (status === 200 && result) {
+        // Check if Device.SoftwareModules. is in the supported data model
+        // Response structure: { req_obj_results: [{ req_obj_path: "...", supported_objs: [...] }] }
+        const supported = result.req_obj_results?.some(objResult => {
+          // Check if the requested path matches
+          if (objResult.req_obj_path === 'Device.SoftwareModules.') {
+            return true;
+          }
+          // Check if any supported objects start with Device.SoftwareModules.
+          return objResult.supported_objs?.some(supportedObj => 
+            supportedObj.supported_obj_path?.startsWith('Device.SoftwareModules.')
+          );
+        });
+        // If supported is true, set to true; otherwise false
+        const isActuallySupported = !!supported;
+        console.log('SoftwareModules support check:', { supported, isActuallySupported, result });
+        setIsSupported(isActuallySupported);
+      } else {
+        // If request fails, assume unsupported
+        console.log('SoftwareModules support check failed:', { status, result });
+        setIsSupported(false);
+      }
+    } catch (err) {
+      console.error('Failed to check SoftwareModules support:', err);
+      setIsSupported(false);
+    } finally {
+      setCheckingSupport(false);
+    }
+  };
 
   // Fetch Deployment Units list
   const fetchDeploymentUnits = async () => {
@@ -754,17 +814,24 @@ export const DevicesLCM = () => {
     }
   };
 
-  // Initial load
+  // Initial load - check support first
   useEffect(() => {
     if (deviceID) {
-      fetchDeploymentUnits();
-      fetchExecutionEnvironments();
+      checkSoftwareModulesSupport();
     }
   }, [deviceID]);
 
+  // Fetch data after support check completes
+  useEffect(() => {
+    if (deviceID && isSupported === true && !checkingSupport) {
+      fetchDeploymentUnits();
+      fetchExecutionEnvironments();
+    }
+  }, [deviceID, isSupported, checkingSupport]);
+
   // Auto-refresh deployment units list every 5 seconds
   useEffect(() => {
-    if (!deviceID) return;
+    if (!deviceID || isSupported !== true) return;
 
     // Don't auto-refresh if loading or dialogs are open
     if (loading || showInstallDialog || showUninstallDialog) return;
@@ -774,7 +841,7 @@ export const DevicesLCM = () => {
     }, 5000); // Refresh every 5 seconds
 
     return () => clearInterval(interval);
-  }, [deviceID, loading, showInstallDialog, showUninstallDialog]);
+  }, [deviceID, loading, showInstallDialog, showUninstallDialog, isSupported]);
 
   // Refresh UUID when dialog opens
   useEffect(() => {
@@ -785,7 +852,39 @@ export const DevicesLCM = () => {
 
   return (
     <>
-      <Card>
+      <Card sx={{ position: 'relative' }}>
+        {isSupported === false && !checkingSupport && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              zIndex: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Alert 
+              severity="error"
+              sx={{
+                backgroundColor: 'rgba(211, 47, 47, 0.95)',
+                color: 'white',
+                fontSize: '1.1rem',
+                fontWeight: 500,
+                minWidth: 400,
+                '& .MuiAlert-icon': {
+                  color: 'white',
+                },
+              }}
+            >
+              Device.SoftwareModules. nodes are unsupported
+            </Alert>
+          </Box>
+        )}
         <CardHeader 
           title="Software Module Management (LCM)"
           action={
@@ -797,7 +896,7 @@ export const DevicesLCM = () => {
                 </SvgIcon>
               }
               onClick={() => setShowInstallDialog(true)}
-              disabled={loading}
+              disabled={loading || isSupported === false || checkingSupport}
             >
               Install Module
             </Button>
@@ -829,7 +928,7 @@ export const DevicesLCM = () => {
                     </SvgIcon>
                   }
                   onClick={fetchDeploymentUnits}
-                  disabled={loading}
+                  disabled={loading || isSupported === false || checkingSupport}
                 >
                   Refresh
                 </Button>
@@ -924,7 +1023,7 @@ export const DevicesLCM = () => {
                                   setUninstallTarget(unit);
                                   setShowUninstallDialog(true);
                                 }}
-                                disabled={loading || uninstalling}
+                                disabled={loading || uninstalling || isSupported === false || checkingSupport}
                               >
                                 <SvgIcon>
                                   <TrashIcon />
