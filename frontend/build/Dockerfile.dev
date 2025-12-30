@@ -1,0 +1,19 @@
+FROM node:18.18.0-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source files (will be overridden by volume mounts in dev)
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Run dev server
+CMD [ "npm", "run", "dev" ]
+
