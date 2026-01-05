@@ -164,8 +164,8 @@ const Page = () => {
     setError(null);
     
     try {
-      // Use nginx proxy to fetch from registry
-      const catalogResponse = await fetch('/docker-registry/v2/_catalog?registry=127.0.0.1:443', {
+      // Use nginx proxy to fetch from compose registry
+      const catalogResponse = await fetch('/docker-registry/v2/_catalog', {
         method: 'GET',
         credentials: 'omit',
       });
@@ -187,7 +187,7 @@ const Page = () => {
       
       for (const repo of catalogData.repositories) {
         try {
-          const tagsResponse = await fetch(`/docker-registry/v2/${repo}/tags/list?registry=127.0.0.1:443`, {
+          const tagsResponse = await fetch(`/docker-registry/v2/${repo}/tags/list`, {
             method: 'GET',
             credentials: 'omit',
           });

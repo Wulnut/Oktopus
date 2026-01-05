@@ -214,13 +214,14 @@ export const DevicesLCM = () => {
   const [installUuid, setInstallUuid] = useState(generateUUID());
   const [installExecEnv, setInstallExecEnv] = useState('Device.SoftwareModules.ExecEnv.1.');
   const [installPrivileged, setInstallPrivileged] = useState(true);
-  // Registry URL - default to current browser hostname/IP
-  const [dockerRegistryUrl, setDockerRegistryUrl] = useState(() => {
+  // Registry URL - always use current browser hostname (for docker:// URLs)
+  // The nginx proxy handles routing to the compose registry
+  const getDefaultRegistryUrl = () => {
     if (typeof window !== 'undefined') {
       return window.location.hostname;
     }
-    return '';
-  });
+    return '127.0.0.1';
+  };
   const [dockerImages, setDockerImages] = useState([]); // Array of {name, tags: []}
   const [loadingDockerImages, setLoadingDockerImages] = useState(false);
   const [dockerImagesError, setDockerImagesError] = useState(null);
@@ -509,29 +510,20 @@ export const DevicesLCM = () => {
 
   // Fetch Docker images from registry
   // Uses nginx proxy to handle SSL certificate errors and CORS
+  // Always uses default registry (current hostname)
   const fetchDockerImages = useCallback(async () => {
-    if (!dockerRegistryUrl.trim()) {
-      setDockerImagesError('Registry URL is required');
-      return;
-    }
-
     setLoadingDockerImages(true);
     setDockerImagesError(null);
     
     try {
-      // Normalize URL (remove protocol and trailing slash)
-      let registryUrl = dockerRegistryUrl.trim();
-      registryUrl = registryUrl.replace(/^https?:\/\//, ''); // Remove http:// or https://
-      registryUrl = registryUrl.replace(/\/$/, ''); // Remove trailing slash
-      
-      // Extract hostname/IP and port if present - used for docker:// URL construction
-      const registryHost = registryUrl; // Keep port if specified (e.g., 192.168.1.24:5000)
+      // Use current browser hostname for docker:// URLs
+      // The nginx proxy handles routing to the compose registry
+      const registryHost = getDefaultRegistryUrl();
 
-      // Use nginx proxy: /docker-registry/v2/_catalog?registry=192.168.1.24
-      // Registry IP is passed via query parameter to nginx
-      // Note: Request will be http:// (relative to page), but nginx proxies to https://
+      // Use nginx proxy: /docker-registry/v2/_catalog
+      // Nginx automatically proxies to compose registry
       // Step 1: Fetch catalog (list of repositories)
-      const catalogProxyUrl = `/docker-registry/v2/_catalog?registry=${encodeURIComponent(registryHost)}`;
+      const catalogProxyUrl = `/docker-registry/v2/_catalog`;
       const catalogResponse = await fetch(catalogProxyUrl, {
         method: 'GET',
         credentials: 'omit',
@@ -553,7 +545,7 @@ export const DevicesLCM = () => {
       const containersMap = new Map();
       for (const repo of catalogData.repositories) {
         try {
-          const tagsProxyUrl = `/docker-registry/v2/${repo}/tags/list?registry=${encodeURIComponent(registryHost)}`;
+          const tagsProxyUrl = `/docker-registry/v2/${repo}/tags/list`;
           const tagsResponse = await fetch(tagsProxyUrl, {
             method: 'GET',
             credentials: 'omit',
@@ -613,7 +605,7 @@ export const DevicesLCM = () => {
     } finally {
       setLoadingDockerImages(false);
     }
-  }, [dockerRegistryUrl]);
+  }, []);
 
   // Parse docker:// URL to extract container name and tag
   // We use the local registry from compose, so we don't need the host
@@ -645,7 +637,7 @@ export const DevicesLCM = () => {
     try {
       // Use the local registry from compose (127.0.0.1:443)
       // Nginx proxy handles the SSL and routing
-      const tagsProxyUrl = `/docker-registry/v2/${containerName}/tags/list?registry=127.0.0.1:443`;
+      const tagsProxyUrl = `/docker-registry/v2/${containerName}/tags/list`;
       const tagsResponse = await fetch(tagsProxyUrl, {
         method: 'GET',
         credentials: 'omit',
@@ -669,19 +661,14 @@ export const DevicesLCM = () => {
   };
 
   // Check if there's a newer version available
-  // Checks against the local registry running in compose
-  const checkForUpdates = async (unit) => {
-    if (!unit.url) {
+  // Compares current tag with available tags (already fetched)
+  const checkForUpdates = (unit, availableTags) => {
+    if (!unit.url || !availableTags || availableTags.length === 0) {
       return { hasUpdate: false, latestTag: null };
     }
 
     const urlInfo = parseDockerUrl(unit.url);
     if (!urlInfo) {
-      return { hasUpdate: false, latestTag: null };
-    }
-
-    const availableTags = await fetchContainerTags(urlInfo.container);
-    if (!availableTags || availableTags.length === 0) {
       return { hasUpdate: false, latestTag: null };
     }
 
@@ -726,6 +713,7 @@ export const DevicesLCM = () => {
   };
 
   // Check update status for all deployment units
+  // Optimized: fetches tags once per unique container
   useEffect(() => {
     const checkAllUpdates = async () => {
       if (deploymentUnits.length === 0) {
@@ -733,13 +721,48 @@ export const DevicesLCM = () => {
         return;
       }
 
+      // Step 1: Collect unique container names from all deployment units
+      const containerMap = new Map(); // Map<containerName, Set<unit>>
+      deploymentUnits.forEach((unit) => {
+        if (!unit.url) return;
+        
+        const urlInfo = parseDockerUrl(unit.url);
+        if (!urlInfo) return;
+
+        if (!containerMap.has(urlInfo.container)) {
+          containerMap.set(urlInfo.container, new Set());
+        }
+        containerMap.get(urlInfo.container).add(unit);
+      });
+
+      // Step 2: Fetch tags for each unique container once
+      const tagsCache = new Map(); // Map<containerName, tags[]>
+      const fetchPromises = Array.from(containerMap.keys()).map(async (containerName) => {
+        const tags = await fetchContainerTags(containerName);
+        tagsCache.set(containerName, tags || []);
+      });
+
+      await Promise.all(fetchPromises);
+
+      // Step 3: Check each deployment unit against cached tags
       const statusMap = new Map();
-      const updatePromises = deploymentUnits.map(async (unit) => {
-        const updateInfo = await checkForUpdates(unit);
+      deploymentUnits.forEach((unit) => {
+        if (!unit.url) {
+          statusMap.set(unit.instance, { hasUpdate: false, latestTag: null });
+          return;
+        }
+
+        const urlInfo = parseDockerUrl(unit.url);
+        if (!urlInfo) {
+          statusMap.set(unit.instance, { hasUpdate: false, latestTag: null });
+          return;
+        }
+
+        const availableTags = tagsCache.get(urlInfo.container) || [];
+        const updateInfo = checkForUpdates(unit, availableTags);
         statusMap.set(unit.instance, updateInfo);
       });
 
-      await Promise.all(updatePromises);
       setUpdateStatuses(statusMap);
     };
 
@@ -748,7 +771,7 @@ export const DevicesLCM = () => {
 
   // Auto-fetch images when install dialog opens
   useEffect(() => {
-    if (showInstallDialog && dockerRegistryUrl.trim()) {
+    if (showInstallDialog) {
       fetchDockerImages();
     } else if (!showInstallDialog) {
       // Reset state when dialog closes
@@ -759,7 +782,7 @@ export const DevicesLCM = () => {
       setSelectedImageOption('custom');
       setInstallUrl('');
     }
-  }, [showInstallDialog, dockerRegistryUrl, fetchDockerImages]);
+  }, [showInstallDialog, fetchDockerImages]);
 
   // Ensure subscription exists for async operation
   // Returns true if subscription exists or was created successfully, false on error
@@ -1353,32 +1376,14 @@ export const DevicesLCM = () => {
               </Alert>
             )}
 
-            {/* Registry URL input and fetch button */}
-            <Box>
-              <Typography variant="subtitle2" gutterBottom>
-                Docker Registry
-              </Typography>
-              <Stack direction="row" spacing={2} alignItems="flex-start">
-                <TextField
-                  label="Registry IP/Host"
-                  variant="outlined"
-                  fullWidth
-                  value={dockerRegistryUrl}
-                  onChange={(e) => setDockerRegistryUrl(e.target.value)}
-                  placeholder="192.168.1.24"
-                  disabled={loading || loadingDockerImages}
-                  helperText="Enter registry IP address or hostname (port optional, e.g., 192.168.1.24:5000)"
-                />
-                <Button
-                  variant="outlined"
-                  onClick={fetchDockerImages}
-                  disabled={loading || loadingDockerImages || !dockerRegistryUrl.trim()}
-                  sx={{ mt: 0, minWidth: 150, alignSelf: 'flex-start' }}
-                >
-                  {loadingDockerImages ? <CircularProgress size={20} /> : 'Fetch Images'}
-                </Button>
-              </Stack>
-            </Box>
+            {loadingDockerImages && (
+              <Box display="flex" justifyContent="center" alignItems="center" py={2}>
+                <CircularProgress size={24} sx={{ mr: 2 }} />
+                <Typography variant="body2" color="text.secondary">
+                  Loading containers from registry...
+                </Typography>
+              </Box>
+            )}
 
             {/* Container selection dropdown */}
             <FormControl fullWidth>
@@ -1405,7 +1410,7 @@ export const DevicesLCM = () => {
                       const newestTag = container.tags[0];
                       setSelectedTag(newestTag);
                       setSelectedImageOption('registry');
-                      const registryHost = dockerRegistryUrl.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+                      const registryHost = getDefaultRegistryUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
                       setInstallUrl(`docker://${registryHost}/${value}:${newestTag}`);
                     } else {
                       setSelectedContainer(value);
@@ -1447,7 +1452,7 @@ export const DevicesLCM = () => {
                   onChange={(e) => {
                     const tag = e.target.value;
                     setSelectedTag(tag);
-                    const registryHost = dockerRegistryUrl.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+                    const registryHost = getDefaultRegistryUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
                     setInstallUrl(`docker://${registryHost}/${selectedContainer}:${tag}`);
                   }}
                   disabled={loading || loadingDockerImages}
