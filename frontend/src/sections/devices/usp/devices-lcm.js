@@ -80,6 +80,97 @@ const generateUUID = () => {
   });
 };
 
+// Parse version tag to numeric array for sorting
+// Handles various formats: v0.0.1, v.0.0.2, 0.0.3, 0.0.4.0, 00.51.11.123.4
+// Also handles non-numeric tags: tag1, tag2, mytag (returns null to indicate non-numeric)
+// "v0.0.1" -> [0, 0, 1]
+// "v.0.0.2" -> [0, 0, 2] (handles v. prefix)
+// "10.0.2" -> [10, 0, 2]
+// "v1.1" -> [1, 1, 0] (assume missing parts are 0)
+// "11" -> [11, 0, 0] (assume v11.0.0)
+// "0.0.4.0" -> [0, 0, 4, 0] (preserves all parts)
+// "00.51.11.123.4" -> [0, 51, 11, 123, 4] (handles leading zeros, preserves all parts)
+// "tag1" -> null (non-numeric, use alphabetical)
+// "mytag" -> null (non-numeric, use alphabetical)
+function parseVersion(tag) {
+  if (!tag || typeof tag !== 'string') return null;
+  
+  // Remove 'v' prefix if present (handles both 'v' and 'v.' cases)
+  let version = tag;
+  if (version.startsWith('v')) {
+    version = version.substring(1);
+    // If it starts with '.' after removing 'v', remove that too
+    if (version.startsWith('.')) {
+      version = version.substring(1);
+    }
+  }
+  
+  // Split by '.' and convert to numbers, filter out empty strings
+  const parts = version.split('.')
+    .filter(part => part.length > 0) // Remove empty strings from cases like "v.0.0.2"
+    .map(part => {
+      const num = parseInt(part, 10);
+      return isNaN(num) ? null : num; // Return null for non-numeric parts
+    });
+  
+  // If any part is non-numeric, the tag is non-numeric
+  if (parts.some(part => part === null)) {
+    return null;
+  }
+  
+  // If no valid parts found, return null
+  if (parts.length === 0) {
+    return null;
+  }
+  
+  // Pad missing parts with 0 (minimum 3 parts for comparison)
+  while (parts.length < 3) {
+    parts.push(0);
+  }
+  
+  // Return all parts (not just first 3) to handle versions with more parts
+  return parts;
+}
+
+// Sort tags in descending order (newest first)
+// Numeric tags sorted numerically, non-numeric tags sorted alphabetically
+// Non-numeric tags come after numeric tags
+function sortTags(tags) {
+  if (!tags || tags.length === 0) return [];
+  
+  return [...tags].sort((a, b) => {
+    const aParts = parseVersion(a);
+    const bParts = parseVersion(b);
+    
+    // If both are numeric, compare numerically
+    if (aParts !== null && bParts !== null) {
+      const maxLength = Math.max(aParts.length, bParts.length);
+      
+      for (let i = 0; i < maxLength; i++) {
+        const aPart = aParts[i] || 0;
+        const bPart = bParts[i] || 0;
+        
+        if (bPart !== aPart) {
+          return bPart - aPart; // Descending order
+        }
+      }
+      
+      return 0;
+    }
+    
+    // If one is numeric and one is not, numeric comes first (newer)
+    if (aParts !== null && bParts === null) {
+      return -1; // a is numeric, comes first
+    }
+    if (aParts === null && bParts !== null) {
+      return 1; // b is numeric, comes first
+    }
+    
+    // Both are non-numeric, sort alphabetically (descending: z->a)
+    return b.localeCompare(a);
+  });
+}
+
 // Format time ago
 const formatTimeAgo = (timestamp) => {
   if (!timestamp) return 'Unknown';
@@ -129,10 +220,12 @@ export const DevicesLCM = () => {
     }
     return '';
   });
-  const [dockerImages, setDockerImages] = useState([]);
+  const [dockerImages, setDockerImages] = useState([]); // Array of {name, tags: []}
   const [loadingDockerImages, setLoadingDockerImages] = useState(false);
   const [dockerImagesError, setDockerImagesError] = useState(null);
-  const [selectedImageOption, setSelectedImageOption] = useState('custom'); // 'custom' or a container URL
+  const [selectedContainer, setSelectedContainer] = useState('');
+  const [selectedTag, setSelectedTag] = useState('');
+  const [selectedImageOption, setSelectedImageOption] = useState('custom'); // 'custom' or 'registry'
   
   // Uninstall dialog state
   const [showUninstallDialog, setShowUninstallDialog] = useState(false);
@@ -448,8 +541,8 @@ export const DevicesLCM = () => {
         return;
       }
 
-      // Step 2: Fetch tags for each repository
-      const images = [];
+      // Step 2: Fetch tags for each repository and group by container name
+      const containersMap = new Map();
       for (const repo of catalogData.repositories) {
         try {
           const tagsProxyUrl = `/docker-registry/v2/${repo}/tags/list?registry=${encodeURIComponent(registryHost)}`;
@@ -461,14 +554,9 @@ export const DevicesLCM = () => {
           if (tagsResponse.ok) {
             const tagsData = await tagsResponse.json();
             if (tagsData.tags && tagsData.tags.length > 0) {
-              tagsData.tags.forEach(tag => {
-                // Build docker:// URL using the registry URL
-                images.push({
-                  name: repo,
-                  tag: tag,
-                  fullUrl: `docker://${registryHost}/${repo}:${tag}`,
-                });
-              });
+              // Sort tags in descending order (newest first)
+              const sortedTags = sortTags(tagsData.tags);
+              containersMap.set(repo, sortedTags);
             }
           } else {
             console.warn(`Failed to fetch tags for ${repo}: ${tagsResponse.status}`);
@@ -478,14 +566,29 @@ export const DevicesLCM = () => {
         }
       }
 
-      setDockerImages(images);
+      // Convert map to array of {name, tags}
+      const containers = Array.from(containersMap.entries()).map(([name, tags]) => ({
+        name,
+        tags,
+      }));
+
+      setDockerImages(containers);
       setDockerImagesError(null);
       
-      // If images found, select first one by default; otherwise select 'custom'
-      if (images.length > 0) {
-        setSelectedImageOption(images[0].fullUrl);
-        setInstallUrl(images[0].fullUrl);
+      // If containers found, select first container and its newest tag
+      if (containers.length > 0) {
+        const firstContainer = containers[0];
+        setSelectedContainer(firstContainer.name);
+        setSelectedTag(firstContainer.tags[0] || '');
+        setSelectedImageOption('registry');
+        if (firstContainer.tags[0]) {
+          setInstallUrl(`docker://${registryHost}/${firstContainer.name}:${firstContainer.tags[0]}`);
+        } else {
+          setInstallUrl('');
+        }
       } else {
+        setSelectedContainer('');
+        setSelectedTag('');
         setSelectedImageOption('custom');
         setInstallUrl('');
       }
@@ -495,6 +598,8 @@ export const DevicesLCM = () => {
       console.error('Docker registry fetch error:', err);
       setDockerImages([]);
       // On error, select 'custom' option
+      setSelectedContainer('');
+      setSelectedTag('');
       setSelectedImageOption('custom');
       setInstallUrl('');
     } finally {
@@ -686,6 +791,10 @@ export const DevicesLCM = () => {
           setResponse('Software module installed successfully');
           setError(null);
           setShowInstallDialog(false);
+          setSelectedContainer('');
+          setSelectedTag('');
+          setSelectedImageOption('custom');
+          setInstallUrl('');
           setInstallUrl('');
           setInstallUuid(generateUUID());
           // Refresh the list after 1 second
@@ -705,6 +814,10 @@ export const DevicesLCM = () => {
           setResponse('Software module installation initiated successfully');
           setError(null);
           setShowInstallDialog(false);
+          setSelectedContainer('');
+          setSelectedTag('');
+          setSelectedImageOption('custom');
+          setInstallUrl('');
           setInstallUrl('');
           setInstallUuid(generateUUID());
           // Refresh the list after 1 second
@@ -1043,11 +1156,36 @@ export const DevicesLCM = () => {
       </Card>
 
       {/* Install Dialog */}
-      <Dialog open={showInstallDialog} onClose={() => setShowInstallDialog(false)} maxWidth="md" fullWidth>
+      <Dialog 
+        open={showInstallDialog} 
+        onClose={() => {
+          setShowInstallDialog(false);
+          setSelectedContainer('');
+          setSelectedTag('');
+          setSelectedImageOption('custom');
+          setInstallUrl('');
+          setSelectedContainer('');
+          setSelectedTag('');
+          setSelectedImageOption('custom');
+          setInstallUrl('');
+        }} 
+        maxWidth="md" 
+        fullWidth
+      >
         <DialogTitle>
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">Install Software Module</Typography>
-            <IconButton onClick={() => setShowInstallDialog(false)}>
+            <IconButton onClick={() => {
+              setShowInstallDialog(false);
+          setSelectedContainer('');
+          setSelectedTag('');
+          setSelectedImageOption('custom');
+          setInstallUrl('');
+              setSelectedContainer('');
+              setSelectedTag('');
+              setSelectedImageOption('custom');
+              setInstallUrl('');
+            }}>
               <SvgIcon>
                 <XMarkIcon />
               </SvgIcon>
@@ -1098,18 +1236,31 @@ export const DevicesLCM = () => {
                 value={
                   loadingDockerImages 
                     ? 'loading' 
-                    : (dockerImages.length > 0 && dockerImages.some(img => img.fullUrl === selectedImageOption))
-                      ? selectedImageOption
-                      : 'custom'
+                    : (selectedImageOption === 'custom' ? 'custom' : selectedContainer)
                 }
                 onChange={(e) => {
                   const value = e.target.value;
-                  if (value === 'loading') return; // Prevent selection during loading
-                  setSelectedImageOption(value);
+                  if (value === 'loading') return;
                   if (value === 'custom') {
-                    setInstallUrl('');
+                    setSelectedContainer('');
+                    setSelectedTag('');
+                    setSelectedImageOption('custom');
+                    // Don't clear installUrl - preserve user input if they switch back to custom
                   } else {
-                    setInstallUrl(value);
+                    const container = dockerImages.find(c => c.name === value);
+                    if (container && container.tags.length > 0) {
+                      setSelectedContainer(value);
+                      const newestTag = container.tags[0];
+                      setSelectedTag(newestTag);
+                      setSelectedImageOption('registry');
+                      const registryHost = dockerRegistryUrl.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+                      setInstallUrl(`docker://${registryHost}/${value}:${newestTag}`);
+                    } else {
+                      setSelectedContainer(value);
+                      setSelectedTag('');
+                      setSelectedImageOption('registry');
+                      setInstallUrl('');
+                    }
                   }
                 }}
                 disabled={loading || loadingDockerImages}
@@ -1121,9 +1272,9 @@ export const DevicesLCM = () => {
                   </MenuItem>
                 ) : dockerImages.length > 0 ? (
                   [
-                    ...dockerImages.map((img) => (
-                      <MenuItem key={img.fullUrl} value={img.fullUrl}>
-                        {img.name}:{img.tag}
+                    ...dockerImages.map((container) => (
+                      <MenuItem key={container.name} value={container.name}>
+                        {container.name}
                       </MenuItem>
                     )),
                     <MenuItem key="custom" value="custom">Custom URL</MenuItem>
@@ -1133,6 +1284,32 @@ export const DevicesLCM = () => {
                 )}
               </Select>
             </FormControl>
+
+            {/* Tag selection dropdown - only shown when a container is selected */}
+            {selectedContainer && selectedImageOption === 'registry' && (
+              <FormControl fullWidth>
+                <InputLabel id="tag-select-label">Tag</InputLabel>
+                <Select
+                  labelId="tag-select-label"
+                  value={selectedTag}
+                  onChange={(e) => {
+                    const tag = e.target.value;
+                    setSelectedTag(tag);
+                    const registryHost = dockerRegistryUrl.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+                    setInstallUrl(`docker://${registryHost}/${selectedContainer}:${tag}`);
+                  }}
+                  disabled={loading || loadingDockerImages}
+                >
+                  {dockerImages
+                    .find(c => c.name === selectedContainer)
+                    ?.tags.map((tag) => (
+                      <MenuItem key={tag} value={tag}>
+                        {tag}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            )}
 
             {/* Custom URL input - only shown when "Custom URL" is selected */}
             {selectedImageOption === 'custom' && (
@@ -1197,7 +1374,17 @@ export const DevicesLCM = () => {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowInstallDialog(false)} disabled={loading}>
+          <Button onClick={() => {
+            setShowInstallDialog(false);
+          setSelectedContainer('');
+          setSelectedTag('');
+          setSelectedImageOption('custom');
+          setInstallUrl('');
+            setSelectedContainer('');
+            setSelectedTag('');
+            setSelectedImageOption('custom');
+            setInstallUrl('');
+          }} disabled={loading}>
             Cancel
           </Button>
           <Button

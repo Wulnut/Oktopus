@@ -1,0 +1,13 @@
+{
+  "name": "container-upload-service",
+  "version": "1.0.0",
+  "description": "Minimal service for uploading containers to Docker registry",
+  "main": "container-upload-service.js",
+  "scripts": {
+    "start": "node container-upload-service.js"
+  },
+  "dependencies": {
+    "formidable": "^3.5.1"
+  }
+}
+

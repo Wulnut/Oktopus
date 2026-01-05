@@ -14,6 +14,7 @@ import UserIcon from '@heroicons/react/24/solid/UserIcon';
 import BuildingOffice2Icon from '@heroicons/react/24/solid/BuildingOffice2Icon';
 import BookOpenIcon from '@heroicons/react/24/solid/BookOpenIcon';
 import CommandLineIcon from '@heroicons/react/24/solid/CommandLineIcon';
+import CubeIcon from '@heroicons/react/24/solid/CubeIcon';
 
 export const items = [
   {
@@ -40,6 +41,15 @@ export const items = [
     icon: (
       <SvgIcon fontSize="small">
         <KeyIcon />
+      </SvgIcon>
+    )
+  },
+  {
+    title: 'Containers Store',
+    path: '/containers-store',
+    icon: (
+      <SvgIcon fontSize="small">
+        <CubeIcon />
       </SvgIcon>
     )
   },
