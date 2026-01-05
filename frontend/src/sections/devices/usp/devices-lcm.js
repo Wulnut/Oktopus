@@ -41,6 +41,7 @@ import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 import PlusCircleIcon from '@heroicons/react/24/outline/PlusCircleIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
+import ArrowUpIcon from '@heroicons/react/24/outline/ArrowUpIcon';
 
 // Animation keyframes for uninstalling indicator
 const shimmer = keyframes`
@@ -214,6 +215,14 @@ export const DevicesLCM = () => {
   const [installUuid, setInstallUuid] = useState(generateUUID());
   const [installExecEnv, setInstallExecEnv] = useState('Device.SoftwareModules.ExecEnv.1.');
   const [installPrivileged, setInstallPrivileged] = useState(true);
+  
+  // Update dialog state
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [updateTarget, setUpdateTarget] = useState(null);
+  const [updateTag, setUpdateTag] = useState('');
+  const [updatePrivileged, setUpdatePrivileged] = useState(true);
+  const [updateAvailableTags, setUpdateAvailableTags] = useState([]);
+  const [loadingUpdateTags, setLoadingUpdateTags] = useState(false);
   // Registry URL - always use current browser hostname (for docker:// URLs)
   // The nginx proxy handles routing to the compose registry
   const getDefaultRegistryUrl = () => {
@@ -992,7 +1001,161 @@ export const DevicesLCM = () => {
     }
   };
 
-  // Handle Uninstall
+  // Open update dialog
+  const handleUpdate = async (unit) => {
+    const urlInfo = parseDockerUrl(unit.url);
+    if (!urlInfo) {
+      setError('Invalid container URL');
+      return;
+    }
+
+    setUpdateTarget(unit);
+    setUpdatePrivileged(true);
+    setUpdateTag('');
+    setUpdateAvailableTags([]);
+    setShowUpdateDialog(true);
+  };
+
+  // Fetch tags for update dialog
+  useEffect(() => {
+    const fetchUpdateTags = async () => {
+      if (!showUpdateDialog || !updateTarget) return;
+
+      const urlInfo = parseDockerUrl(updateTarget.url);
+      if (!urlInfo) return;
+
+      setLoadingUpdateTags(true);
+      try {
+        const tags = await fetchContainerTags(urlInfo.container);
+        if (tags && tags.length > 0) {
+          setUpdateAvailableTags(tags);
+          // Set default to latest tag (first in sorted list)
+          if (!updateTag && tags.length > 0) {
+            setUpdateTag(tags[0]);
+          }
+        } else {
+          setUpdateAvailableTags([]);
+        }
+      } catch (err) {
+        console.error('Error fetching update tags:', err);
+        setUpdateAvailableTags([]);
+      } finally {
+        setLoadingUpdateTags(false);
+      }
+    };
+
+    fetchUpdateTags();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showUpdateDialog, updateTarget]);
+
+  // Handle update submit
+  const handleUpdateSubmit = async () => {
+    if (!updateTarget || !updateTag) {
+      setError('Please select a tag');
+      return;
+    }
+
+    const urlInfo = parseDockerUrl(updateTarget.url);
+    if (!urlInfo) {
+      setError('Invalid container URL');
+      return;
+    }
+
+    const registryHost = getDefaultRegistryUrl();
+    const updateUrl = `docker://${registryHost}/${urlInfo.container}:${updateTag}`;
+
+    setLoading(true);
+    setError(null);
+    setResponse(null);
+
+    try {
+      const instanceNum = updateTarget.instance;
+      const updateCommandPath = `Device.SoftwareModules.DeploymentUnit.${instanceNum}.Update()`;
+
+      // Step 1: Ensure subscription exists
+      const subscriptionReady = await ensureSubscription(updateCommandPath);
+      if (!subscriptionReady) {
+        return;
+      }
+
+      // Step 2: Send Update command
+      const updateCommand = {
+        header: {
+          msg_id: generateUUID(),
+          msg_type: 6, // OPERATE
+        },
+        body: {
+          request: {
+            operate: {
+              command: updateCommandPath,
+              command_key: 'Update',
+              send_resp: true,
+              input_args: {
+                URL: updateUrl,
+                Privileged: updatePrivileged.toString(),
+              },
+            },
+          },
+        },
+      };
+
+      const { result, status } = await httpRequest(
+        `/api/device/${deviceID}/any/generic`,
+        'PUT',
+        JSON.stringify(updateCommand),
+        null
+      );
+
+      if (status === 200) {
+        const operationResult = result?.operation_results?.[0];
+        const operationResp = operationResult?.OperationResp;
+        
+        // Check for OperSuccess
+        if (operationResp?.OperSuccess !== undefined) {
+          setResponse(`Container updated to ${updateTag} successfully`);
+          setError(null);
+          setShowUpdateDialog(false);
+          setUpdateTarget(null);
+          setUpdateTag('');
+          // Refresh the list after 1 second
+          setTimeout(() => {
+            fetchDeploymentUnits();
+          }, 2000);
+        } 
+        // Check for CmdFailure
+        else if (operationResp?.CmdFailure) {
+          const errorMsg = operationResp.CmdFailure.err_msg || 
+                          `Update failed: ${operationResp.CmdFailure.err_code || 'Unknown error'}`;
+          setError(errorMsg);
+          setResponse(null);
+        } 
+        // Fallback: check if there's any indication of success
+        else if (!operationResp?.CmdFailure) {
+          setResponse(`Container update to ${updateTag} initiated successfully`);
+          setError(null);
+          setShowUpdateDialog(false);
+          setUpdateTarget(null);
+          setUpdateTag('');
+          // Refresh the list after 1 second
+          setTimeout(() => {
+            fetchDeploymentUnits();
+          }, 2000);
+        } else {
+          setError('Unknown response format from update operation');
+          setResponse(null);
+        }
+      } else {
+        setError(result?.message || result || 'Failed to update container');
+        setResponse(null);
+      }
+    } catch (err) {
+      setError(err.message || 'An error occurred while updating container');
+      setResponse(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUninstall = async () => {
     if (!uninstallTarget) {
       return;
@@ -1099,14 +1262,14 @@ export const DevicesLCM = () => {
     if (!deviceID || isSupported !== true) return;
 
     // Don't auto-refresh if loading or dialogs are open
-    if (loading || showInstallDialog || showUninstallDialog) return;
+    if (loading || showInstallDialog || showUninstallDialog || showUpdateDialog) return;
 
     const interval = setInterval(() => {
       fetchDeploymentUnits();
     }, 5000); // Refresh every 5 seconds
 
     return () => clearInterval(interval);
-  }, [deviceID, loading, showInstallDialog, showUninstallDialog, isSupported]);
+  }, [deviceID, loading, showInstallDialog, showUninstallDialog, showUpdateDialog, isSupported]);
 
   // Refresh UUID when dialog opens
   useEffect(() => {
@@ -1304,19 +1467,39 @@ export const DevicesLCM = () => {
                             </TableCell>
                             <TableCell>{formatTimeAgo(unit.installedTime)}</TableCell>
                             <TableCell align="right">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => {
-                                  setUninstallTarget(unit);
-                                  setShowUninstallDialog(true);
-                                }}
-                                disabled={loading || uninstalling || isSupported === false || checkingSupport}
-                              >
-                                <SvgIcon>
-                                  <TrashIcon />
-                                </SvgIcon>
-                              </IconButton>
+                              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleUpdate(unit)}
+                                  disabled={loading || uninstalling || isSupported === false || checkingSupport || !unit.url}
+                                  sx={{
+                                    color: 'error.main',
+                                    '&:hover': {
+                                      backgroundColor: 'error.light',
+                                      color: 'error.dark',
+                                    },
+                                  }}
+                                  title="Update container (upgrade/downgrade)"
+                                >
+                                  <SvgIcon>
+                                    <ArrowUpIcon />
+                                  </SvgIcon>
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => {
+                                    setUninstallTarget(unit);
+                                    setShowUninstallDialog(true);
+                                  }}
+                                  disabled={loading || uninstalling || isSupported === false || checkingSupport}
+                                >
+                                  <SvgIcon>
+                                    <TrashIcon />
+                                  </SvgIcon>
+                                </IconButton>
+                              </Box>
                             </TableCell>
                           </TableRow>
                         );
@@ -1575,6 +1758,129 @@ export const DevicesLCM = () => {
             disabled={loading}
           >
             {loading ? <CircularProgress size={20} /> : 'Uninstall'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Update Dialog */}
+      <Dialog 
+        open={showUpdateDialog} 
+        onClose={() => {
+          setShowUpdateDialog(false);
+          setUpdateTarget(null);
+          setUpdateTag('');
+          setUpdateAvailableTags([]);
+        }} 
+        maxWidth="md" 
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">Update Container</Typography>
+            <IconButton onClick={() => {
+              setShowUpdateDialog(false);
+              setUpdateTarget(null);
+              setUpdateTag('');
+              setUpdateAvailableTags([]);
+            }}>
+              <SvgIcon>
+                <XMarkIcon />
+              </SvgIcon>
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={3} mt={1}>
+            {updateTarget && (() => {
+              const urlInfo = parseDockerUrl(updateTarget.url);
+              const currentTag = urlInfo?.tag || '';
+              
+              return (
+                <>
+                  {/* Container name (read-only) */}
+                  <TextField
+                    label="Container Name"
+                    variant="outlined"
+                    fullWidth
+                    value={urlInfo?.container || ''}
+                    disabled
+                    helperText="Container name cannot be changed"
+                  />
+
+                  {/* Available tags dropdown */}
+                  <FormControl fullWidth>
+                    <InputLabel id="update-tag-select-label">Available Tags</InputLabel>
+                    <Select
+                      labelId="update-tag-select-label"
+                      value={updateTag}
+                      onChange={(e) => setUpdateTag(e.target.value)}
+                      disabled={loading || loadingUpdateTags || updateAvailableTags.length === 0}
+                      label="Available Tags"
+                    >
+                      {loadingUpdateTags ? (
+                        <MenuItem value="" disabled>
+                          <CircularProgress size={16} sx={{ mr: 1 }} />
+                          Loading tags...
+                        </MenuItem>
+                      ) : updateAvailableTags.length > 0 ? (
+                        updateAvailableTags.map((tag) => {
+                          const isCurrentTag = tag === currentTag;
+                          return (
+                            <MenuItem 
+                              key={tag} 
+                              value={tag}
+                              disabled={isCurrentTag}
+                              sx={isCurrentTag ? {
+                                color: 'text.disabled',
+                                fontStyle: 'italic',
+                              } : {}}
+                            >
+                              {tag} {isCurrentTag ? '(current)' : ''}
+                            </MenuItem>
+                          );
+                        })
+                      ) : (
+                        <MenuItem value="" disabled>
+                          No tags available
+                        </MenuItem>
+                      )}
+                    </Select>
+                  </FormControl>
+
+                  {/* Privileged checkbox */}
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={updatePrivileged}
+                        onChange={(e) => setUpdatePrivileged(e.target.checked)}
+                        disabled={loading}
+                      />
+                    }
+                    label="Privileged (default: True)"
+                  />
+                </>
+              );
+            })()}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setShowUpdateDialog(false);
+              setUpdateTarget(null);
+              setUpdateTag('');
+              setUpdateAvailableTags([]);
+            }} 
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpdateSubmit}
+            variant="contained"
+            disabled={loading || !updateTag || loadingUpdateTags}
+          >
+            {loading ? <CircularProgress size={20} /> : 'Update'}
           </Button>
         </DialogActions>
       </Dialog>
