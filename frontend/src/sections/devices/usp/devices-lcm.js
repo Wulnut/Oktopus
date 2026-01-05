@@ -206,6 +206,7 @@ export const DevicesLCM = () => {
   const [response, setResponse] = useState(null);
   const [isSupported, setIsSupported] = useState(null); // Device.SoftwareModules. support check (null = unknown, true = supported, false = unsupported)
   const [checkingSupport, setCheckingSupport] = useState(true);
+  const [updateStatuses, setUpdateStatuses] = useState(new Map()); // Map<instance, {hasUpdate: boolean, latestTag: string}>
   
   // Install dialog state
   const [showInstallDialog, setShowInstallDialog] = useState(false);
@@ -606,6 +607,137 @@ export const DevicesLCM = () => {
       setLoadingDockerImages(false);
     }
   }, [dockerRegistryUrl]);
+
+  // Parse docker:// URL to extract container name and tag
+  // We use the local registry from compose, so we don't need the host
+  const parseDockerUrl = (url) => {
+    if (!url || !url.startsWith('docker://')) {
+      return null;
+    }
+    
+    try {
+      // Format: docker://host/container:tag
+      const match = url.match(/^docker:\/\/[^\/]+\/([^:]+):(.+)$/);
+      if (!match) {
+        return null;
+      }
+      
+      return {
+        container: match[1],
+        tag: match[2],
+      };
+    } catch (err) {
+      console.error('Error parsing docker URL:', err);
+      return null;
+    }
+  };
+
+  // Fetch tags for a specific container from the local registry (via nginx proxy)
+  // Uses the registry running in compose at 127.0.0.1:443
+  const fetchContainerTags = async (containerName) => {
+    try {
+      // Use the local registry from compose (127.0.0.1:443)
+      // Nginx proxy handles the SSL and routing
+      const tagsProxyUrl = `/docker-registry/v2/${containerName}/tags/list?registry=127.0.0.1:443`;
+      const tagsResponse = await fetch(tagsProxyUrl, {
+        method: 'GET',
+        credentials: 'omit',
+      });
+
+      if (!tagsResponse.ok) {
+        return null;
+      }
+
+      const tagsData = await tagsResponse.json();
+      if (!tagsData.tags || tagsData.tags.length === 0) {
+        return [];
+      }
+
+      // Sort tags in descending order (newest first)
+      return sortTags(tagsData.tags);
+    } catch (err) {
+      console.error(`Error fetching tags for ${containerName}:`, err);
+      return null;
+    }
+  };
+
+  // Check if there's a newer version available
+  // Checks against the local registry running in compose
+  const checkForUpdates = async (unit) => {
+    if (!unit.url) {
+      return { hasUpdate: false, latestTag: null };
+    }
+
+    const urlInfo = parseDockerUrl(unit.url);
+    if (!urlInfo) {
+      return { hasUpdate: false, latestTag: null };
+    }
+
+    const availableTags = await fetchContainerTags(urlInfo.container);
+    if (!availableTags || availableTags.length === 0) {
+      return { hasUpdate: false, latestTag: null };
+    }
+
+    const currentTag = urlInfo.tag;
+    const latestTag = availableTags[0]; // Already sorted, newest first
+
+    // Compare versions
+    const currentVersion = parseVersion(currentTag);
+    const latestVersion = parseVersion(latestTag);
+
+    // If both are numeric, compare them
+    if (currentVersion !== null && latestVersion !== null) {
+      const maxLength = Math.max(currentVersion.length, latestVersion.length);
+      for (let i = 0; i < maxLength; i++) {
+        const currentPart = currentVersion[i] || 0;
+        const latestPart = latestVersion[i] || 0;
+        if (latestPart > currentPart) {
+          return { hasUpdate: true, latestTag };
+        }
+        if (latestPart < currentPart) {
+          return { hasUpdate: false, latestTag };
+        }
+      }
+      // Versions are equal
+      return { hasUpdate: false, latestTag };
+    }
+
+    // If non-numeric, compare alphabetically
+    if (currentVersion === null && latestVersion === null) {
+      return { hasUpdate: latestTag > currentTag, latestTag };
+    }
+
+    // Mixed: numeric tags are considered newer than non-numeric
+    if (currentVersion === null && latestVersion !== null) {
+      return { hasUpdate: true, latestTag };
+    }
+    if (currentVersion !== null && latestVersion === null) {
+      return { hasUpdate: false, latestTag };
+    }
+
+    return { hasUpdate: false, latestTag };
+  };
+
+  // Check update status for all deployment units
+  useEffect(() => {
+    const checkAllUpdates = async () => {
+      if (deploymentUnits.length === 0) {
+        setUpdateStatuses(new Map());
+        return;
+      }
+
+      const statusMap = new Map();
+      const updatePromises = deploymentUnits.map(async (unit) => {
+        const updateInfo = await checkForUpdates(unit);
+        statusMap.set(unit.instance, updateInfo);
+      });
+
+      await Promise.all(updatePromises);
+      setUpdateStatuses(statusMap);
+    };
+
+    checkAllUpdates();
+  }, [deploymentUnits]);
 
   // Auto-fetch images when install dialog opens
   useEffect(() => {
@@ -1111,11 +1243,34 @@ export const DevicesLCM = () => {
                               />
                             </TableCell>
                             <TableCell>
-                              <Chip
-                                label={unit.resolved ? 'Up to date' : 'Requires update'}
-                                size="small"
-                                color={unit.resolved ? 'success' : 'warning'}
-                              />
+                              {(() => {
+                                const updateInfo = updateStatuses.get(unit.instance);
+                                if (!updateInfo) {
+                                  return (
+                                    <Chip
+                                      label="Checking..."
+                                      size="small"
+                                      color="default"
+                                    />
+                                  );
+                                }
+                                if (updateInfo.hasUpdate) {
+                                  return (
+                                    <Chip
+                                      label={`Update available (${updateInfo.latestTag})`}
+                                      size="small"
+                                      color="warning"
+                                    />
+                                  );
+                                }
+                                return (
+                                  <Chip
+                                    label="Up to date"
+                                    size="small"
+                                    color="success"
+                                  />
+                                );
+                              })()}
                             </TableCell>
                             <TableCell>{formatTimeAgo(unit.installedTime)}</TableCell>
                             <TableCell align="right">
