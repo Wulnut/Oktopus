@@ -608,29 +608,19 @@ export const DevicesLCM = () => {
   }, [dockerRegistryUrl]);
 
   // Auto-fetch images when install dialog opens
-  // NOTE: Auto-fetch is intentionally commented out to allow manual registry URL input
-  // Uncomment the code below if you want to auto-fetch on dialog open
-  // useEffect(() => {
-  //   if (showInstallDialog) {
-  //     fetchDockerImages();
-  //   } else {
-  //     // Reset state when dialog closes
-  //     setDockerImages([]);
-  //     setDockerImagesError(null);
-  //     setSelectedImageOption('custom');
-  //     setInstallUrl('');
-  //   }
-  // }, [showInstallDialog, fetchDockerImages]);
-
-  // Reset state when dialog closes
   useEffect(() => {
-    if (!showInstallDialog) {
+    if (showInstallDialog && dockerRegistryUrl.trim()) {
+      fetchDockerImages();
+    } else if (!showInstallDialog) {
+      // Reset state when dialog closes
       setDockerImages([]);
       setDockerImagesError(null);
+      setSelectedContainer('');
+      setSelectedTag('');
       setSelectedImageOption('custom');
       setInstallUrl('');
     }
-  }, [showInstallDialog]);
+  }, [showInstallDialog, dockerRegistryUrl, fetchDockerImages]);
 
   // Ensure subscription exists for async operation
   // Returns true if subscription exists or was created successfully, false on error
