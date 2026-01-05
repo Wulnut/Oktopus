@@ -30,11 +30,14 @@ import {
   Select,
   MenuItem,
   Menu,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import PlusIcon from '@heroicons/react/24/solid/PlusIcon';
 import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import EllipsisVerticalIcon from '@heroicons/react/24/outline/EllipsisVerticalIcon';
+import ArrowUpTrayIcon from '@heroicons/react/24/outline/ArrowUpTrayIcon';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useBackendContext } from 'src/contexts/backend-context';
 import { useRouter } from 'next/router';
@@ -141,10 +144,12 @@ const Page = () => {
   // Upload dialog state
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [containerName, setContainerName] = useState('');
+  const [selectedContainerOption, setSelectedContainerOption] = useState(''); // '' or 'new' or container name
+  const [customContainerName, setCustomContainerName] = useState(''); // For new containers
   const [containerTag, setContainerTag] = useState('');
   const [containerFile, setContainerFile] = useState(null);
   const [uploadError, setUploadError] = useState(null);
+  const [tagError, setTagError] = useState(null);
   
   // Delete state
   const [deleting, setDeleting] = useState({});
@@ -372,15 +377,45 @@ const Page = () => {
     }
   };
 
+  // Validate tag uniqueness
+  const validateTag = (containerName, tag) => {
+    if (!containerName || !tag) {
+      setTagError(null);
+      return true;
+    }
+
+    const container = containers.find(c => c.name === containerName);
+    if (container && container.tags && container.tags.includes(tag)) {
+      setTagError(`Tag "${tag}" already exists for this container`);
+      return false;
+    }
+    
+    setTagError(null);
+    return true;
+  };
+
+  // Get current container name (either selected or custom)
+  const getCurrentContainerName = () => {
+    if (selectedContainerOption === 'new') {
+      return customContainerName.trim();
+    }
+    return selectedContainerOption;
+  };
+
   // Handle upload
   const handleUpload = async () => {
-    if (!containerName.trim()) {
+    const containerName = getCurrentContainerName();
+    
+    if (!containerName) {
       setUploadError('Container name is required');
       return;
     }
     if (!containerTag.trim()) {
       setUploadError('Tag is required');
       return;
+    }
+    if (!validateTag(containerName, containerTag.trim())) {
+      return; // Tag validation error already set
     }
     if (!containerFile) {
       setUploadError('Container file is required');
@@ -389,10 +424,11 @@ const Page = () => {
 
     setUploading(true);
     setUploadError(null);
+    setTagError(null);
 
     try {
       const formData = new FormData();
-      formData.append('name', containerName.trim());
+      formData.append('name', containerName);
       formData.append('tag', containerTag.trim());
       formData.append('file', containerFile);
 
@@ -419,9 +455,11 @@ const Page = () => {
       if (response.status === 200) {
         setSuccess('Container uploaded and pushed to registry successfully');
         setShowUploadDialog(false);
-        setContainerName('');
+        setSelectedContainerOption('');
+        setCustomContainerName('');
         setContainerTag('');
         setContainerFile(null);
+        setTagError(null);
         // Refresh containers list
         setTimeout(() => {
           fetchContainers();
@@ -466,7 +504,15 @@ const Page = () => {
                     <PlusIcon />
                   </SvgIcon>
                 )}
-                onClick={() => setShowUploadDialog(true)}
+                onClick={() => {
+                  setSelectedContainerOption('new');
+                  setCustomContainerName('');
+                  setContainerTag('');
+                  setContainerFile(null);
+                  setUploadError(null);
+                  setTagError(null);
+                  setShowUploadDialog(true);
+                }}
                 variant="contained"
               >
                 Upload Container
@@ -546,6 +592,32 @@ const Page = () => {
                               </TableCell>
                               <TableCell align="right">
                                 <Stack direction="row" spacing={1} justifyContent="flex-end">
+                                  <Tooltip title="Upload new tag">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        setSelectedContainerOption(container.name);
+                                        setCustomContainerName('');
+                                        setContainerTag('');
+                                        setContainerFile(null);
+                                        setUploadError(null);
+                                        setTagError(null);
+                                        setShowUploadDialog(true);
+                                      }}
+                                      disabled={isDeletingTag || isDeletingContainer}
+                                      sx={{
+                                        color: 'primary.main',
+                                        '&:hover': {
+                                          backgroundColor: 'error.light',
+                                          color: 'error.dark',
+                                        },
+                                      }}
+                                    >
+                                      <SvgIcon fontSize="small">
+                                        <ArrowUpTrayIcon />
+                                      </SvgIcon>
+                                    </IconButton>
+                                  </Tooltip>
                                   {hasTags ? (
                                     <>
                                       <Tooltip title="Delete selected tag">
@@ -622,10 +694,12 @@ const Page = () => {
         onClose={() => {
           if (!uploading) {
             setShowUploadDialog(false);
-            setContainerName('');
+            setSelectedContainerOption('');
+            setCustomContainerName('');
             setContainerTag('');
             setContainerFile(null);
             setUploadError(null);
+            setTagError(null);
           }
         }}
         maxWidth="sm"
@@ -638,10 +712,12 @@ const Page = () => {
               onClick={() => {
                 if (!uploading) {
                   setShowUploadDialog(false);
-                  setContainerName('');
+                  setSelectedContainerOption('');
+                  setCustomContainerName('');
                   setContainerTag('');
                   setContainerFile(null);
                   setUploadError(null);
+                  setTagError(null);
                 }
               }}
               disabled={uploading}
@@ -660,30 +736,73 @@ const Page = () => {
               </Alert>
             )}
 
-            <TextField
-              label="Container Name"
-              variant="outlined"
-              fullWidth
-              required
-              value={containerName}
-              onChange={(e) => setContainerName(e.target.value)}
-              disabled={uploading}
-              placeholder="e.g., my_cortexa53_container"
-              helperText="Name of the container image"
-              name="container-name"
-              id="container-name"
-            />
+            {/* Container selection dropdown */}
+            <FormControl fullWidth>
+              <InputLabel id="container-select-label">Container</InputLabel>
+              <Select
+                labelId="container-select-label"
+                value={selectedContainerOption}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedContainerOption(value);
+                  setCustomContainerName('');
+                  setContainerTag('');
+                  setTagError(null);
+                }}
+                disabled={uploading}
+                label="Container"
+              >
+                <MenuItem value="new">
+                  <em>New Container</em>
+                </MenuItem>
+                {containers.map((container) => (
+                  <MenuItem key={container.name} value={container.name}>
+                    {container.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
+            {/* Custom container name input (shown only when "New Container" is selected) */}
+            {selectedContainerOption === 'new' && (
+              <TextField
+                label="New Container Name"
+                variant="outlined"
+                fullWidth
+                required
+                value={customContainerName}
+                onChange={(e) => {
+                  setCustomContainerName(e.target.value);
+                  // Re-validate tag when container name changes
+                  if (containerTag) {
+                    validateTag(e.target.value.trim(), containerTag.trim());
+                  }
+                }}
+                disabled={uploading}
+                placeholder="e.g., my_cortexa53_container"
+                helperText="Name for the new container"
+                name="container-name"
+                id="container-name"
+              />
+            )}
+
+            {/* Tag input */}
             <TextField
               label="Tag"
               variant="outlined"
               fullWidth
               required
               value={containerTag}
-              onChange={(e) => setContainerTag(e.target.value)}
-              disabled={uploading}
+              onChange={(e) => {
+                setContainerTag(e.target.value);
+                // Validate tag uniqueness
+                const containerName = getCurrentContainerName();
+                validateTag(containerName, e.target.value.trim());
+              }}
+              disabled={uploading || !selectedContainerOption}
               placeholder="e.g., v0.0.1"
-              helperText="Version tag for the container"
+              helperText={tagError || "Version tag for the container"}
+              error={!!tagError}
               name="container-tag"
               id="container-tag"
             />
@@ -719,10 +838,12 @@ const Page = () => {
             onClick={() => {
               if (!uploading) {
                 setShowUploadDialog(false);
-                setContainerName('');
+                setSelectedContainerOption('');
+                setCustomContainerName('');
                 setContainerTag('');
                 setContainerFile(null);
                 setUploadError(null);
+                setTagError(null);
               }
             }}
             disabled={uploading}
@@ -732,7 +853,14 @@ const Page = () => {
           <Button
             onClick={handleUpload}
             variant="contained"
-            disabled={uploading || !containerName.trim() || !containerTag.trim() || !containerFile}
+            disabled={
+              uploading || 
+              !selectedContainerOption || 
+              (selectedContainerOption === 'new' && !customContainerName.trim()) ||
+              !containerTag.trim() || 
+              !containerFile ||
+              !!tagError
+            }
           >
             {uploading ? <CircularProgress size={20} /> : 'Upload'}
           </Button>
