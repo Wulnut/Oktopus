@@ -255,6 +255,55 @@ services:
       usp_network:
         ipv4_address: 172.16.235.19
 
+  #/* -------------------------------- Docker Registry -------------------------------- */
+  registry-certs-generator:
+    build:
+      context: ./registry-certs-generator
+      dockerfile: Dockerfile
+    container_name: registry-certs-generator
+    network_mode: host
+    environment:
+      - CERT_DIR=/certs
+      - CA_PASSPHRASE=${CA_PASSPHRASE:-registry-ca-passphrase}
+      - FORCE_REGENERATE=${FORCE_REGENERATE:-false}
+    volumes:
+      - registry-certs:/certs
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -f /certs/server-cert.pem && test -f /certs/server-key.pem && test -f /certs/ca.pem"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: "no"
+    profiles: [registry]
+
+  registry:
+    image: registry:2
+    container_name: registry
+    restart: always
+    ports:
+      - 443:5000
+    environment:
+      - REGISTRY_HTTP_ADDR=0.0.0.0:5000
+      - REGISTRY_HTTP_TLS_CERTIFICATE=/certs/server-cert.pem
+      - REGISTRY_HTTP_TLS_KEY=/certs/server-key.pem
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+    volumes:
+      - registry-certs:/certs:ro
+      - registry-data:/var/lib/registry
+    depends_on:
+      registry-certs-generator:
+        condition: service_healthy
+    networks:
+      usp_network:
+        ipv4_address: 172.16.235.20
+    profiles: [registry]
+  #/* -------------------------------------------------------------------------- */
+
+volumes:
+  registry-data:
+  registry-certs:
+
 networks:
   usp_network:
     driver: bridge
