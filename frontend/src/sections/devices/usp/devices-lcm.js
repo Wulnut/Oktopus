@@ -409,6 +409,13 @@ export const DevicesLCM = () => {
       });
     }
     
+    // Sort deployment units by instance number (as decimal integers)
+    units.sort((a, b) => {
+      const instanceA = parseInt(a.instance, 10);
+      const instanceB = parseInt(b.instance, 10);
+      return instanceA - instanceB;
+    });
+    
     setDeploymentUnits(units);
     setAgentRequests(requests);
   };
