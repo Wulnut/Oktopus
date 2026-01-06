@@ -881,6 +881,37 @@ const getDeviceParameterInstances = async (raw) =>{
         return inputArgsValue
     }
   }
+
+  // Extract command name from command path
+  // Example: "Device.SoftwareModules.DeploymentUnit.3.Update()" -> "Update"
+  const extractCommandName = (commandPath) => {
+    if (!commandPath) return '';
+    const parts = commandPath.split('.');
+    if (parts.length === 0) return '';
+    const lastPart = parts[parts.length - 1];
+    // Remove parentheses if present
+    return lastPart.replace(/\(\)$/, '');
+  }
+
+  // Generate unique command_key in format: command_yyyymmdd_hhmmss_XXXX
+  // Example: "Update_20250105_143022_a3f2"
+  const generateUniqueCommandKey = (commandPath) => {
+    const commandName = extractCommandName(commandPath);
+    if (!commandName) return '';
+    
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    
+    // Generate 4 random hex characters
+    const randomHex = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+    
+    return `${commandName}_${year}${month}${day}_${hours}${minutes}${seconds}_${randomHex}`;
+  }
   
   const showParameters = () => {
 
@@ -1167,9 +1198,12 @@ const getDeviceParameterInstances = async (raw) =>{
                         setOpenCommandDialog(false)
                     }}>Cancel</Button>
                     <Button onClick={async ()=>{
+                       const commandPath = Object.keys(deviceCommandToExecute)[0];
+                       const commandKey = generateUniqueCommandKey(commandPath);
                        let raw = JSON.stringify(
                         {
-                            "command": Object.keys(deviceCommandToExecute)[0],
+                            "command": commandPath,
+                            "command_key": commandKey,
                             "input_args": inputjow(),
                             "send_resp": true
                         }
@@ -1202,7 +1236,19 @@ const getDeviceParameterInstances = async (raw) =>{
                             setDeviceCommandToExecute(null)
                             setOpenCommandDialog(false)
                             setShowLoading(false)
-                            if (content.operation_results[0].OperationResp.CmdFailure != undefined){
+                            
+                            const operationResult = content.operation_results?.[0];
+                            const operationResp = operationResult?.OperationResp;
+                            
+                            // Check for CmdFailure first
+                            if (operationResp?.CmdFailure != undefined){
+                                setErrorModalText(JSON.stringify(content, null, 2))
+                                setErrorModal(true)
+                                return
+                            }
+                            
+                            // Check for OperSuccess or any successful response
+                            if (operationResp?.OperSuccess !== undefined || !operationResp?.CmdFailure) {
                                 setErrorModalText(JSON.stringify(content, null, 2))
                                 setErrorModal(true)
                                 return
