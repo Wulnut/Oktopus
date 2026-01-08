@@ -2,9 +2,14 @@
 # Usage: docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up
 # Or: docker-compose --env-file .env.dev up (if using profiles)
 
-version: '3.8'
 
 services:
+  controller:
+    build:
+      context: ../../backend/services/controller
+      dockerfile: build/Dockerfile
+    # Override image to use local build instead of registry
+
   frontend:
     build:
       context: ../../frontend
@@ -25,4 +30,10 @@ services:
       - NODE_ENV=development
       # Override .env file - use empty string for relative URLs (works with nginx proxy)
       - NEXT_PUBLIC_REST_ENDPOINT=
+
+  stomp-adapter:
+    build:
+      context: ../../backend/services/mtp/stomp-adapter
+      dockerfile: build/Dockerfile
+    # Override image to use local build instead of registry
 

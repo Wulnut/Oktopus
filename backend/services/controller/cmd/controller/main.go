@@ -11,6 +11,7 @@ import (
 	"github.com/leandrofars/oktopus/internal/config"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/nats"
+	"github.com/leandrofars/oktopus/internal/usp"
 )
 
 func main() {
@@ -25,6 +26,9 @@ func main() {
 	bridge := bridge.NewBridge(js, nc)
 
 	db := db.NewDatabase(c.Mongo.Ctx, c.Mongo.Uri)
+
+	// Start message interceptor BEFORE API starts (to capture all messages)
+	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, db, c.Controller.ControllerId)
 
 	api := api.NewApi(c, js, nc, bridge, db, kv)
 	api.StartApi()

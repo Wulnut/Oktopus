@@ -1,0 +1,116 @@
+package db
+
+import (
+	"context"
+	"errors"
+	"log"
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+// UspMessage represents a stored USP message
+type UspMessage struct {
+	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Timestamp    time.Time           `bson:"timestamp" json:"timestamp"`
+	DeviceSerial string              `bson:"device_serial" json:"device_serial"`
+	Direction    string              `bson:"direction" json:"direction"` // "sent" or "received"
+	Source       string              `bson:"source" json:"source"`       // "controller" or "device"
+	MTP          string              `bson:"mtp" json:"mtp"`              // "mqtt", "ws", "stomp", or "unknown"
+	MsgID        string              `bson:"msg_id" json:"msg_id"`
+	MsgType      string              `bson:"msg_type" json:"msg_type"` // OPERATE, NOTIFY, etc.
+	FullRecord   bson.M              `bson:"full_record" json:"full_record"` // JSON representation of the protobuf record
+}
+
+// UspMessageError represents a failed message parsing/storage attempt
+type UspMessageError struct {
+	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Timestamp    time.Time          `bson:"timestamp" json:"timestamp"`
+	DeviceSerial string             `bson:"device_serial" json:"device_serial"`
+	Subject      string             `bson:"subject" json:"subject"`
+	RawData      []byte             `bson:"raw_data" json:"raw_data"`
+	ErrorMessage string             `bson:"error_message" json:"error_message"`
+	ErrorType    string             `bson:"error_type" json:"error_type"` // "parse_error", "validation_error", "storage_error"
+}
+
+var ErrorMessageNotFound = errors.New("Message not found")
+
+// StoreUspMessage stores a USP message in the database
+func (d *Database) StoreUspMessage(ctx context.Context, msg UspMessage) error {
+	_, err := d.messages.InsertOne(ctx, msg)
+	if err != nil {
+		log.Printf("Failed to store USP message: %v", err)
+		return err
+	}
+	return nil
+}
+
+// GetMessageHistory retrieves message history for a device using cursor-based pagination
+func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, limit int, cursorID string) ([]UspMessage, string, error) {
+	filter := bson.M{"device_serial": deviceSerial}
+
+	// If cursor provided, add it to filter
+	if cursorID != "" {
+		objectID, err := primitive.ObjectIDFromHex(cursorID)
+		if err != nil {
+			return nil, "", err
+		}
+		filter["_id"] = bson.M{"$lt": objectID} // Get messages before this ID (newest first)
+	}
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "_id", Value: -1}}). // Sort by _id descending (newest first)
+		SetLimit(int64(limit + 1))                 // Fetch one extra to check if there's more
+
+	cursor, err := d.messages.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, "", err
+	}
+	defer cursor.Close(ctx)
+
+	var messages []UspMessage
+	if err = cursor.All(ctx, &messages); err != nil {
+		return nil, "", err
+	}
+
+	// Check if there are more messages
+	// We fetched limit+1 to check if there are more
+	var nextCursor string
+	if len(messages) > limit {
+		// We got more than limit, so there are more messages
+		// Set cursor to the (limit+1)th message's ID (the extra one we fetched)
+		nextCursor = messages[limit].ID.Hex()
+		// Return only the first limit messages
+		messages = messages[:limit]
+	}
+	// If len(messages) <= limit, we got all remaining messages, so no cursor needed
+
+	return messages, nextCursor, nil
+}
+
+// GetMessageByMsgID retrieves a message by its message ID
+func (d *Database) GetMessageByMsgID(ctx context.Context, msgID string) (*UspMessage, error) {
+	var result UspMessage
+	err := d.messages.FindOne(ctx, bson.M{"msg_id": msgID}).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, ErrorMessageNotFound
+		}
+		return nil, err
+	}
+	return &result, nil
+}
+
+// StoreUspMessageError stores a failed message parsing/storage attempt
+func (d *Database) StoreUspMessageError(ctx context.Context, errMsg UspMessageError) error {
+	_, err := d.messagesErrors.InsertOne(ctx, errMsg)
+	if err != nil {
+		log.Printf("Failed to store error message: %v", err)
+		return err
+	}
+	return nil
+}
+

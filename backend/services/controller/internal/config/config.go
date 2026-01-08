@@ -30,10 +30,15 @@ type RestApi struct {
 	Ctx  context.Context
 }
 
+type Controller struct {
+	ControllerId string
+}
+
 type Config struct {
-	RestApi RestApi
-	Nats    Nats
-	Mongo   Mongo
+	RestApi   RestApi
+	Nats      Nats
+	Mongo     Mongo
+	Controller Controller
 }
 
 type Tls struct {
@@ -55,6 +60,7 @@ func NewConfig() *Config {
 	serverCA := flag.String("server_ca", lookupEnvOrString("SERVER_CA", "rootCA.pem"), "server CA file to TLS connection")
 	flApiPort := flag.String("api_port", lookupEnvOrString("REST_API_PORT", "8000"), "Rest api port")
 	mongoUri := flag.String("mongo_uri", lookupEnvOrString("MONGO_URI", "mongodb://localhost:27017"), "uri for mongodb server")
+	controllerId := flag.String("controller_id", lookupEnvOrString("CONTROLLER_ID", "oktopusController"), "usp controller endpoint id")
 	flHelp := flag.Bool("help", false, "Help")
 
 	/*
@@ -92,6 +98,9 @@ func NewConfig() *Config {
 		Mongo: Mongo{
 			Uri: *mongoUri,
 			Ctx: ctx,
+		},
+		Controller: Controller{
+			ControllerId: *controllerId,
 		},
 	}
 }

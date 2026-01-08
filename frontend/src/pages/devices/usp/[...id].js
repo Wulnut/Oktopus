@@ -15,6 +15,7 @@ import { useRouter } from 'next/router';
 import { DevicesRPC } from 'src/sections/devices/usp/devices-rpc';
 import { DevicesDiscovery } from 'src/sections/devices/usp/devices-discovery';
 import { DevicesLCM } from 'src/sections/devices/usp/devices-lcm';
+import { DevicesHistory } from 'src/sections/devices/usp/devices-history';
 import EnvelopeIcon from '@heroicons/react/24/outline/EnvelopeIcon';
 import MagnifyingGlassIcon from '@heroicons/react/24/solid/MagnifyingGlassIcon';
 import WifiIcon from '@heroicons/react/24/outline/WifiIcon';
@@ -27,6 +28,7 @@ import CommandLineIcon from '@heroicons/react/24/outline/CommandLineIcon';
 import CubeTransparentIcon from '@heroicons/react/24/outline/CubeTransparentIcon';
 import MapPin from '@heroicons/react/24/outline/MapPinIcon';
 import ArrowTrendingUp from '@heroicons/react/24/outline/ArrowTrendingUpIcon';
+import ClockIcon from '@heroicons/react/24/outline/ClockIcon';
 
 const Page = () => {
     const router = useRouter()
@@ -45,6 +47,8 @@ const Page = () => {
                 return <DevicesDiscovery/>
             case "lcm":
                 return <DevicesLCM/>
+            case "history":
+                return <DevicesHistory/>
             default:
                 router.replace(`/devices/usp/${deviceID}/discovery`)
         }
@@ -104,6 +108,12 @@ const Page = () => {
                         icon={<SvgIcon><EnvelopeIcon/></SvgIcon>} 
                         iconPosition={"end"} 
                         label="Messages" />
+                        <Tab 
+                        value={"history"} 
+                        onClick={()=>{router.push(`/devices/usp/${deviceID}/history`)}}
+                        icon={<SvgIcon><ClockIcon/></SvgIcon>} 
+                        iconPosition={"end"} 
+                        label="History" />
                     </Tabs>
                     <Button
                         variant="outlined"

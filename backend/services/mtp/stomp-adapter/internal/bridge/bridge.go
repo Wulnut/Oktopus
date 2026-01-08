@@ -43,17 +43,18 @@ type (
 )
 
 type Bridge struct {
-	Pub   Publisher
-	Sub   Subscriber
-	Stomp config.Stomp
-	Ctx   context.Context
+	Pub    Publisher
+	Sub    Subscriber
+	Stomp  config.Stomp
+	Ctx    context.Context
+	conn   *stomp.Conn
 }
 
-func NewBridge(p Publisher, s Subscriber, ctx context.Context, stomp config.Stomp) *Bridge {
+func NewBridge(p Publisher, s Subscriber, ctx context.Context, stompConfig config.Stomp) *Bridge {
 	return &Bridge{
 		Pub:   p,
 		Sub:   s,
-		Stomp: stomp,
+		Stomp: stompConfig,
 		Ctx:   ctx,
 	}
 }
@@ -74,6 +75,7 @@ func (b *Bridge) StartBridge() {
 			if err != nil {
 				continue
 			}
+			b.conn = conn
 			b.subscribe(conn)
 
 			sub, err := conn.Subscribe(STOMP_STATUS_QUEUE, stomp.AckAuto)
@@ -97,10 +99,10 @@ func (b *Bridge) StartBridge() {
 						deviceQueue := strings.Split(fmtBody[0], "/")
 						device := deviceQueue[len(deviceQueue)-1]
 						status := fmtBody[1]
-						log.Println("Device:", device, "Status:", status)
+						log.Printf("[STOMP] Device status update: device=%s, status=%s", device, status)
 						b.Pub(NATS_STOMP_SUBJECT_PREFIX+device+".status", []byte(status))
 					} else {
-						log.Println("Invalid status message", body)
+						log.Printf("[STOMP] WARNING: Invalid status message format: %s", body)
 					}
 				}
 			}
@@ -167,40 +169,48 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 
 	b.Sub(NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"*.api", func(msg *nats.Msg) {
 
-		log.Printf("Received message on api subject")
+		log.Printf("[STOMP] Received message on NATS api subject: %s, size=%d bytes", msg.Subject, len(msg.Data))
 
 		subj := strings.Split(msg.Subject, ".")
 		device := subj[len(subj)-2]
 
 		deviceApiQueue := STOMP_QUEUE_PREFIX + "controller/" + device + "/api"
+		agentQueue := STOMP_QUEUE_PREFIX + "agent/" + device
 
+		log.Printf("[STOMP] Creating temporary subscription for device %s on queue %s", device, deviceApiQueue)
 		sub, err := st.Subscribe(deviceApiQueue, stomp.AckAuto)
 		if err != nil {
-			log.Println("cannot subscribe to", STOMP_STATUS_QUEUE, err.Error())
+			log.Printf("[STOMP] ERROR: cannot subscribe to %s: %v", deviceApiQueue, err)
 			return
 		}
-		log.Println("Subscribed to", deviceApiQueue)
+		log.Printf("[STOMP] SUCCESS: Subscribed to temporary queue %s (subscription ID: %s)", deviceApiQueue, sub.Id())
 
-		err = st.Send(STOMP_QUEUE_PREFIX+"agent/"+device, "application/vnd.bbf.usp.msg", msg.Data, func(f *frame.Frame) error {
+		log.Printf("[STOMP] Sending message to device %s on STOMP queue %s (reply-to: %s), size=%d bytes", device, agentQueue, deviceApiQueue, len(msg.Data))
+		err = st.Send(agentQueue, "application/vnd.bbf.usp.msg", msg.Data, func(f *frame.Frame) error {
 			f.Header.Set("reply-to-dest", deviceApiQueue)
 			return nil
 		})
 
 		if err != nil {
-			log.Printf("send stomp msg error: %q", err)
+			log.Printf("[STOMP] ERROR: send stomp msg error: %q", err)
 			return
 		}
+		log.Printf("[STOMP] SUCCESS: Sent message to device %s on STOMP queue %s", device, agentQueue)
 
 		select {
 		case data := <-sub.C:
 			body := data.Body
+			log.Printf("[STOMP] Received response on temporary subscription for device %s (queue: %s), size=%d bytes", device, deviceApiQueue, len(body))
 			err = b.Pub(DEVICE_SUBJECT_PREFIX+device+".api", body)
 			if err != nil {
-				log.Printf("send nats msg error: %q", err)
+				log.Printf("[STOMP] ERROR: send nats msg error: %q", err)
+			} else {
+				log.Printf("[STOMP] SUCCESS: Published response to NATS subject %s", DEVICE_SUBJECT_PREFIX+device+".api")
 			}
 		case <-time.After(DEVICE_TIMEOUT_RESPONSE):
-			log.Println("Timeout waiting for device info response")
+			log.Printf("[STOMP] WARNING: Timeout waiting for device %s response on queue %s", device, deviceApiQueue)
 		}
+		log.Printf("[STOMP] Unsubscribing from temporary subscription for device %s (queue: %s)", device, deviceApiQueue)
 		sub.Unsubscribe()
 	})
 
