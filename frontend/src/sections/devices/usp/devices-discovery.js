@@ -16,6 +16,7 @@ import {
   TextField,
   Button,
   Backdrop,
+  Alert,
 } from '@mui/material';
 import ArrowRightIcon from '@heroicons/react/24/solid/ArrowRightIcon';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -244,7 +245,7 @@ function ShowParamsWithValues({
               .filter(paramKey => instancePattern.test(paramKey))
               .map((paramKey, h)=>{
                 console.log('Instance:', paramKey, deviceParametersValue[paramKey]);
-                let obj = deviceParameters.req_obj_results[0].supported_objs[0]
+                let obj = deviceParameters?.req_obj_results?.[0]?.supported_objs?.[0]
                 let access = obj?.access
                 return (
                   <List dense={true} key={h}>
@@ -463,6 +464,8 @@ const [deviceParametersValue, setDeviceParametersValue] = useState({})
 const [open, setOpen] = useState(false)
 const [errorModal, setErrorModal] = useState(false)
 const [errorModalText, setErrorModalText] = useState("")
+const [deviceOfflineError, setDeviceOfflineError] = useState(false)
+const [deviceOfflineErrorText, setDeviceOfflineErrorText] = useState("")
 const [showLoading, setShowLoading] = useState(false)
 const [openCommandDialog, setOpenCommandDialog] = useState(false)
 const [deviceCommandToExecute, setDeviceCommandToExecute] = useState(null)
@@ -552,15 +555,25 @@ const getDeviceParameters = async (raw) =>{
         body: raw
     };
 
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/parameters`, requestOptions))
-    if (result.status != 200) {
+    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/parameters`, requestOptions)
+    if (result.status !== 200) {
         if (result.status === 401){
             router.push("/auth/login")
+            return null
         }
-        console.log('Please check your email and password');
-    }else {
-        return result.json()
+        // Get error message from response
+        let errorText = await result.text()
+        try {
+            const errorJson = JSON.parse(errorText)
+            errorText = typeof errorJson === 'string' ? errorJson : JSON.stringify(errorJson, null, 2)
+        } catch (e) {
+            // If not JSON, use text as is
+        }
+        // Remove surrounding quotes if present
+        errorText = errorText.trim().replace(/^["']|["']$/g, '')
+        throw new Error(errorText || `Request failed with status ${result.status}`)
     }
+    return result.json()
 }
 
 /*
@@ -711,25 +724,37 @@ const getDeviceParameterInstances = async (raw) =>{
 
   const updateDeviceParameters = async (param) => {
     console.log("UpdateDeviceParameters => param = ", param)
-    let raw = JSON.stringify({
-            "obj_paths": [param],
-            "first_level_only" : true,
-            "return_commands" : true,
-            "return_events" : true,
-            "return_params" : true 
-    })
+    setShowLoading(true)
+    
+    try {
+        let raw = JSON.stringify({
+                "obj_paths": [param],
+                "first_level_only" : true,
+                "return_commands" : true,
+                "return_events" : true,
+                "return_params" : true 
+        })
 
-    let content = await getDeviceParameters(raw)
+        let content = await getDeviceParameters(raw)
 
-    console.log("content:",content)
+        console.log("content:",content)
 
-    let paramsInfo = {}
-    let commandsInfo = {}
+        // Check if content is valid and has required structure
+        if (!content || !content.req_obj_results || content.req_obj_results.length === 0 || 
+            !content.req_obj_results[0].supported_objs || content.req_obj_results[0].supported_objs.length === 0) {
+            console.error("Invalid content structure:", content)
+            setErrorModalText("Invalid response structure from device.")
+            setErrorModal(true)
+            return
+        }
 
-    let supportedParams = content.req_obj_results[0].supported_objs[0].supported_params //TODO: fixme when more then one supported_objs
-    let supportedCommands = content.req_obj_results[0].supported_objs[0].supported_commands
+        let paramsInfo = {}
+        let commandsInfo = {}
 
-    let parametersToFetch = () => {
+        let supportedParams = content.req_obj_results[0].supported_objs[0].supported_params //TODO: fixme when more then one supported_objs
+        let supportedCommands = content.req_obj_results[0].supported_objs[0].supported_commands
+
+        let parametersToFetch = () => {
         let paramsToFetch = []
         for (let i =0; i < supportedParams.length ;i++){
             
@@ -760,86 +785,100 @@ const getDeviceParameterInstances = async (raw) =>{
         return paramsToFetch
     }
 
-    if (supportedParams !== undefined) {
-        const fetchparameters = parametersToFetch()
-        console.log("parameters to fetch: ", fetchparameters)
+        if (supportedParams !== undefined) {
+            const fetchparameters = parametersToFetch()
+            console.log("parameters to fetch: ", fetchparameters)
 
-        raw = JSON.stringify({
-            "param_paths": fetchparameters,
-            "max_depth": 1
-        })
+            raw = JSON.stringify({
+                "param_paths": fetchparameters,
+                "max_depth": 1
+            })
 
-        let result = await getDeviceParametersValue(raw)
-        console.log("result:", result)
-        console.log("/-------------------------------------------------------/")
+            let result = await getDeviceParametersValue(raw)
+            console.log("result:", result)
+            console.log("/-------------------------------------------------------/")
 
-        let values = {}
-        let commands = {}
+            let values = {}
+            let commands = {}
 
-        console.log("VALUES:",values)
-        result.req_path_results.map((x)=>{
-            if (!x.resolved_path_results){
-                values[x.requested_path] = {}
+            console.log("VALUES:",values)
+            result.req_path_results.map((x)=>{
+                if (!x.resolved_path_results){
+                    values[x.requested_path] = {}
+                    setDeviceParametersValue(values)
+                    return
+                }
+
+                let paths = x.requested_path.split(".")
+                if(paths[paths.length -2] == "*"){
+                    x.resolved_path_results.map(y=>{
+                        // console.log(y.result_params)
+                        // console.log(y.resolved_path)
+                        let key = Object.keys(y.result_params)[0]
+                        // console.log(key)
+                        // console.log(paramsInfo[key].value)
+                        // console.log(paramsInfo[key])
+                        // console.log(y.result_params[key])
+                        // console.log({[key]:paramsInfo[key]})
+
+                        //console.log("Take a look here mate: ",{...paramsInfo[key], value: y.result_params[key]})
+                        if (!values[y.resolved_path]){
+                            values[y.resolved_path] = []
+                        }
+
+                        if (!commands[y.resolved_path]){
+                            commands[y.resolved_path] = []
+                        }
+
+                        if (y.result_params[key] == ""){
+                            y.result_params[key] = "\"\""
+                        }
+                        
+                        values[y.resolved_path].push({[key]:{...paramsInfo[key], value: y.result_params[key]}})
+                    })
+                }else{
+                    Object.keys(x.resolved_path_results[0].result_params).forEach((key, index) =>{
+                        if (x.resolved_path_results[0].result_params[key] != ""){
+                            paramsInfo[key].value = x.resolved_path_results[0].result_params[key]
+                        }else{
+                            paramsInfo[key].value = "\"\""
+                        }
+                        values = paramsInfo
+                    })
+                }
+
+                //console.log("values:", values)
                 setDeviceParametersValue(values)
-                return
+                //console.log("commands:", commandsInfo)
+                setDeviceCommands(commandsInfo)
+            })
+            // Always set deviceCommands after processing
+            if (supportedCommands && supportedCommands.length > 0) {
+                setDeviceCommands(commandsInfo);
+            } else {
+                setDeviceCommands({});
             }
-
-            let paths = x.requested_path.split(".")
-            if(paths[paths.length -2] == "*"){
-                x.resolved_path_results.map(y=>{
-                    // console.log(y.result_params)
-                    // console.log(y.resolved_path)
-                    let key = Object.keys(y.result_params)[0]
-                    // console.log(key)
-                    // console.log(paramsInfo[key].value)
-                    // console.log(paramsInfo[key])
-                    // console.log(y.result_params[key])
-                    // console.log({[key]:paramsInfo[key]})
-
-                    //console.log("Take a look here mate: ",{...paramsInfo[key], value: y.result_params[key]})
-                    if (!values[y.resolved_path]){
-                        values[y.resolved_path] = []
-                    }
-
-                    if (!commands[y.resolved_path]){
-                        commands[y.resolved_path] = []
-                    }
-
-                    if (y.result_params[key] == ""){
-                        y.result_params[key] = "\"\""
-                    }
-                    
-                    values[y.resolved_path].push({[key]:{...paramsInfo[key], value: y.result_params[key]}})
-                })
-            }else{
-                Object.keys(x.resolved_path_results[0].result_params).forEach((key, index) =>{
-                    if (x.resolved_path_results[0].result_params[key] != ""){
-                        paramsInfo[key].value = x.resolved_path_results[0].result_params[key]
-                    }else{
-                        paramsInfo[key].value = "\"\""
-                    }
-                    values = paramsInfo
-                })
-            }
-
-            //console.log("values:", values)
-            setDeviceParametersValue(values)
-            //console.log("commands:", commandsInfo)
-            setDeviceCommands(commandsInfo)
-        })
-        // Always set deviceCommands after processing
-        if (supportedCommands && supportedCommands.length > 0) {
-            setDeviceCommands(commandsInfo);
-        } else {
-            setDeviceCommands({});
+            console.log("values:", values)
+            console.log("commands:", commandsInfo)
+            console.log("/-------------------------------------------------------/")
+            setDeviceParameters(content)
+        }else{
+            console.log("fixme")
+            setDeviceParameters(content)
         }
-        console.log("values:", values)
-        console.log("commands:", commandsInfo)
-        console.log("/-------------------------------------------------------/")
-        setDeviceParameters(content)
-    }else{
-        console.log("fixme")
-        setDeviceParameters(content)
+    } catch (error) {
+        console.error("Error in updateDeviceParameters:", error)
+        const errorMsg = error.message || "An error occurred while retrieving device parameters."
+        // Check if it's a device offline error (503 or contains "offline")
+        if (errorMsg.toLowerCase().includes("offline") || errorMsg.includes("503")) {
+            setDeviceOfflineErrorText(errorMsg)
+            setDeviceOfflineError(true)
+        } else {
+            setErrorModalText(errorMsg)
+            setErrorModal(true)
+        }
+    } finally {
+        setShowLoading(false)
     }
   }
 
@@ -914,6 +953,10 @@ const getDeviceParameterInstances = async (raw) =>{
   }
   
   const showParameters = () => {
+    // Check if deviceParameters is valid
+    if (!deviceParameters || !deviceParameters.req_obj_results || deviceParameters.req_obj_results.length === 0) {
+        return null
+    }
 
     return deviceParameters.req_obj_results.map((a,b)=>{
         return a.supported_objs.map((x,i)=> {
@@ -1005,9 +1048,21 @@ const getDeviceParameterInstances = async (raw) =>{
     })
   }
   
-  return ( deviceParameters ?
+  return ( deviceParameters || errorModal || deviceOfflineError ?
     <Card>
         <CardContent>
+            {deviceOfflineError && deviceOfflineErrorText && (
+                <Alert 
+                    severity="error" 
+                    onClose={() => {
+                        setDeviceOfflineError(false)
+                        setDeviceOfflineErrorText("")
+                    }}
+                    sx={{ mb: 2 }}
+                >
+                    {deviceOfflineErrorText}
+                </Alert>
+            )}
             {showParameters()}
         </CardContent>
                     <Dialog open={open} 
@@ -1132,16 +1187,15 @@ const getDeviceParameterInstances = async (raw) =>{
                                     setErrorModalText("")
                                     setErrorModal(false)
                                 }}>
-                                <SvgIcon 
-                                >
-                                < XMarkIcon/>
+                                <SvgIcon>
+                                <XMarkIcon/>
                             </SvgIcon>
                         </IconButton>
                     </Box>
                 </Box>
                 </DialogTitle>    
                     <DialogContent dividers={scroll === 'paper'}>
-                    <DialogContentText id="scroll-dialog-description"tabIndex={-1}>
+                    <DialogContentText id="scroll-dialog-description" tabIndex={-1}>
                     <pre style={{color: 'black'}}>
                         {errorModalText}
                     </pre>
