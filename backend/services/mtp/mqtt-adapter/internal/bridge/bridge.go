@@ -64,10 +64,11 @@ func (b *Bridge) StartBridge(serverUrl, clientId string) {
 	status := make(chan *paho.Publish)
 	controller := make(chan *paho.Publish)
 	apiMsg := make(chan *paho.Publish)
+	asyncMsg := make(chan *paho.Publish)
 
-	go b.mqttMessageHandler(status, controller, apiMsg)
+	go b.mqttMessageHandler(status, controller, apiMsg, asyncMsg)
 
-	pahoClientConfig := buildClientConfig(status, controller, apiMsg, clientId)
+	pahoClientConfig := buildClientConfig(status, controller, apiMsg, asyncMsg, clientId)
 
 	autopahoClientConfig := autopaho.ClientConfig{
 		BrokerUrls: []*url.URL{
@@ -163,7 +164,7 @@ func getDeviceFromSubject(subject string) string {
 	return device
 }
 
-func (b *Bridge) mqttMessageHandler(status, controller, apiMsg chan *paho.Publish) {
+func (b *Bridge) mqttMessageHandler(status, controller, apiMsg, asyncMsg chan *paho.Publish) {
 	for {
 		select {
 		case d := <-status:
@@ -172,6 +173,8 @@ func (b *Bridge) mqttMessageHandler(status, controller, apiMsg chan *paho.Publis
 			b.Pub(NATS_MQTT_SUBJECT_PREFIX+getDeviceFromTopic(c.Topic)+".info", c.Payload)
 		case a := <-apiMsg:
 			b.Pub(DEVICE_SUBJECT_PREFIX+getDeviceFromTopic(a.Topic)+".api", a.Payload)
+		case async := <-asyncMsg:
+			b.Pub(NATS_MQTT_SUBJECT_PREFIX+getDeviceFromTopic(async.Topic)+".async", async.Payload)
 		}
 	}
 }
@@ -197,6 +200,10 @@ func subscribe(ctx context.Context, qos int, c *autopaho.ConnectionManager) {
 				Topic: MQTT_TOPIC_PREFIX + "+/status/+",
 				QoS:   byte(qos),
 			},
+			{
+				Topic: MQTT_TOPIC_PREFIX + "+/async/+",
+				QoS:   byte(qos),
+			},
 		},
 	}); err != nil {
 		log.Fatalln(err)
@@ -205,9 +212,10 @@ func subscribe(ctx context.Context, qos int, c *autopaho.ConnectionManager) {
 	log.Printf("Subscribed to %s", MQTT_TOPIC_PREFIX+"+/controller/+")
 	log.Printf("Subscribed to %s", MQTT_TOPIC_PREFIX+"+/status/+")
 	log.Printf("Subscribed to %s", MQTT_TOPIC_PREFIX+"+/api/+")
+	log.Printf("Subscribed to %s", MQTT_TOPIC_PREFIX+"+/async/+")
 }
 
-func buildClientConfig(status, controller, apiMsg chan *paho.Publish, id string) *paho.ClientConfig {
+func buildClientConfig(status, controller, apiMsg, asyncMsg chan *paho.Publish, id string) *paho.ClientConfig {
 	log.Println("Starting new MQTT client")
 	singleHandler := paho.NewSingleHandlerRouter(func(p *paho.Publish) {
 
@@ -217,6 +225,8 @@ func buildClientConfig(status, controller, apiMsg chan *paho.Publish, id string)
 			controller <- p
 		} else if strings.Contains(p.Topic, "api") {
 			apiMsg <- p
+		} else if strings.Contains(p.Topic, "async") {
+			asyncMsg <- p
 		} else {
 			log.Println("No handler for topic: ", p.Topic)
 		}

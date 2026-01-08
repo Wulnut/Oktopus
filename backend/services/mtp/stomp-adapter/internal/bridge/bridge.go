@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -43,19 +44,22 @@ type (
 )
 
 type Bridge struct {
-	Pub    Publisher
-	Sub    Subscriber
-	Stomp  config.Stomp
-	Ctx    context.Context
-	conn   *stomp.Conn
+	Pub         Publisher
+	Sub         Subscriber
+	Stomp       config.Stomp
+	Ctx         context.Context
+	conn        *stomp.Conn
+	asyncSubs   map[string]*stomp.Subscription // device -> persistent subscription for async messages
+	asyncSubsMu sync.RWMutex                   // mutex for asyncSubs
 }
 
 func NewBridge(p Publisher, s Subscriber, ctx context.Context, stompConfig config.Stomp) *Bridge {
 	return &Bridge{
-		Pub:   p,
-		Sub:   s,
-		Stomp: stompConfig,
-		Ctx:   ctx,
+		Pub:       p,
+		Sub:       s,
+		Stomp:     stompConfig,
+		Ctx:       ctx,
+		asyncSubs: make(map[string]*stomp.Subscription),
 	}
 }
 
@@ -76,6 +80,8 @@ func (b *Bridge) StartBridge() {
 				continue
 			}
 			b.conn = conn
+			// Clean up any existing subscriptions before creating new ones
+			b.cleanupAllAsyncSubscriptions()
 			b.subscribe(conn)
 
 			sub, err := conn.Subscribe(STOMP_STATUS_QUEUE, stomp.AckAuto)
@@ -101,6 +107,15 @@ func (b *Bridge) StartBridge() {
 						status := fmtBody[1]
 						log.Printf("[STOMP] Device status update: device=%s, status=%s", device, status)
 						b.Pub(NATS_STOMP_SUBJECT_PREFIX+device+".status", []byte(status))
+						
+						// Handle persistent subscriptions based on device status
+						if status == "1" {
+							// Device is online - create persistent subscription for async messages
+							b.createAsyncSubscription(device, conn)
+						} else if status == "0" {
+							// Device is offline - remove persistent subscription
+							b.removeAsyncSubscription(device)
+						}
 					} else {
 						log.Printf("[STOMP] WARNING: Invalid status message format: %s", body)
 					}
@@ -269,4 +284,89 @@ func tcpInfo(conn *net.TCPConn) (*unix.TCPInfo, error) {
 		return nil, err
 	}
 	return info, nil
+}
+
+// createAsyncSubscription creates a persistent subscription to receive async messages (STOMPConnect, MQTTConnect, Disconnect, NOTIFY) from a device
+func (b *Bridge) createAsyncSubscription(device string, conn *stomp.Conn) {
+	b.asyncSubsMu.Lock()
+	defer b.asyncSubsMu.Unlock()
+	
+	// Check if subscription already exists
+	if _, exists := b.asyncSubs[device]; exists {
+		return
+	}
+	
+	asyncQueue := STOMP_QUEUE_PREFIX + "controller/" + device + "/async"
+	log.Printf("[STOMP] Creating async subscription for device %s on queue %s", device, asyncQueue)
+	sub, err := conn.Subscribe(asyncQueue, stomp.AckAuto)
+	if err != nil {
+		log.Printf("[STOMP] ERROR: Failed to create async subscription for device %s: %v", device, err)
+		return
+	}
+	
+	b.asyncSubs[device] = sub
+	log.Printf("[STOMP] Async subscription created for device %s", device)
+	go b.handleAsyncMessages(device, sub)
+}
+
+// removeAsyncSubscription removes the persistent async subscription for a device
+func (b *Bridge) removeAsyncSubscription(device string) {
+	b.asyncSubsMu.Lock()
+	defer b.asyncSubsMu.Unlock()
+	
+	sub, exists := b.asyncSubs[device]
+	if !exists {
+		return
+	}
+	
+	if err := sub.Unsubscribe(); err != nil {
+		log.Printf("[STOMP] ERROR: Failed to unsubscribe async subscription for device %s: %v", device, err)
+	}
+	
+	delete(b.asyncSubs, device)
+}
+
+// handleAsyncMessages handles incoming async messages (STOMPConnect, MQTTConnect, Disconnect, NOTIFY) from a device's persistent subscription
+func (b *Bridge) handleAsyncMessages(device string, sub *stomp.Subscription) {
+	for {
+		if !sub.Active() {
+			b.asyncSubsMu.Lock()
+			delete(b.asyncSubs, device)
+			b.asyncSubsMu.Unlock()
+			return
+		}
+		
+		select {
+		case msg, ok := <-sub.C:
+			if !ok {
+				b.asyncSubsMu.Lock()
+				delete(b.asyncSubs, device)
+				b.asyncSubsMu.Unlock()
+				return
+			}
+			
+			log.Printf("[STOMP] Received async message from device %s, size=%d bytes", device, len(msg.Body))
+			err := b.Pub(NATS_STOMP_SUBJECT_PREFIX+device+".async", msg.Body)
+			if err != nil {
+				log.Printf("[STOMP] ERROR: Failed to publish async message for device %s: %v", device, err)
+			}
+			
+		case <-b.Ctx.Done():
+			return
+		}
+	}
+}
+
+// cleanupAllAsyncSubscriptions removes all persistent async subscriptions (called on connection loss)
+func (b *Bridge) cleanupAllAsyncSubscriptions() {
+	b.asyncSubsMu.Lock()
+	defer b.asyncSubsMu.Unlock()
+	
+	for device, sub := range b.asyncSubs {
+		if err := sub.Unsubscribe(); err != nil {
+			log.Printf("[STOMP] ERROR: Failed to unsubscribe device %s during cleanup: %v", device, err)
+		}
+	}
+	
+	b.asyncSubs = make(map[string]*stomp.Subscription)
 }

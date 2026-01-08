@@ -37,3 +37,15 @@ services:
       dockerfile: build/Dockerfile
     # Override image to use local build instead of registry
 
+  mqtt-adapter:
+    build:
+      context: ../../backend/services/mtp/mqtt-adapter
+      dockerfile: build/Dockerfile
+    # Override image to use local build instead of registry
+
+  adapter:
+    build:
+      context: ../../backend/services/mtp/adapter
+      dockerfile: build/Dockerfile
+    # Override image to use local build instead of registry
+

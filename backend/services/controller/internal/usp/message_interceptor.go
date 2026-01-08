@@ -213,38 +213,17 @@ func handleSentMessage(ctx context.Context, msg *nats.Msg, d db.Database, contro
 // handleReceivedMessage processes messages being received FROM devices
 func handleReceivedMessage(ctx context.Context, msg *nats.Msg, nc *nats.Conn, d db.Database, controllerID string) {
 	deviceSerial := extractDeviceSerial(msg.Subject)
-	log.Printf("[INTERCEPTOR] Received message on subject: %s, device: %s, size: %d bytes", msg.Subject, deviceSerial, len(msg.Data))
+	
+	// Skip non-protobuf messages (e.g., status messages which are just "0" or "1")
+	if len(msg.Data) < 2 {
+		return
+	}
 
 	// Parse record
 	var record usp_record.Record
 	if err := proto.Unmarshal(msg.Data, &record); err != nil {
-		log.Printf("[INTERCEPTOR] ERROR: Failed to parse record for device %s: %v", deviceSerial, err)
+		log.Printf("ERROR: Failed to parse record for device %s: %v", deviceSerial, err)
 		storeError(ctx, d, msg, deviceSerial, "parse_error", err.Error())
-		return
-	}
-
-	// Parse message from record payload
-	var uspMsg usp_msg.Msg
-	noSessionContext := record.GetNoSessionContext()
-	if noSessionContext == nil {
-		log.Printf("Record does not have NoSessionContext")
-		storeError(ctx, d, msg, deviceSerial, "parse_error", "record does not have NoSessionContext")
-		return
-	}
-
-	if err := proto.Unmarshal(noSessionContext.Payload, &uspMsg); err != nil {
-		log.Printf("[INTERCEPTOR] ERROR: Failed to parse USP message for device %s: %v", deviceSerial, err)
-		storeError(ctx, d, msg, deviceSerial, "parse_error", err.Error())
-		return
-	}
-
-	msgType := uspMsg.Header.MsgType.String()
-	log.Printf("[INTERCEPTOR] Parsed message: device=%s, msg_id=%s, msg_type=%s", deviceSerial, uspMsg.Header.MsgId, msgType)
-
-	// Validate message
-	if err := validateMessage(uspMsg, deviceSerial); err != nil {
-		log.Printf("[INTERCEPTOR] ERROR: Message validation failed for device %s: %v", deviceSerial, err)
-		storeError(ctx, d, msg, deviceSerial, "validation_error", err.Error())
 		return
 	}
 
@@ -254,13 +233,48 @@ func handleReceivedMessage(ctx context.Context, msg *nats.Msg, nc *nats.Conn, d 
 	// Extract MTP from subject (for device subjects, look up device MTP)
 	mtp := extractMTP(ctx, msg.Subject, nc, deviceSerial)
 
-	// Store message
-	log.Printf("[INTERCEPTOR] Storing message: device=%s, msg_type=%s, source=%s, mtp=%s", deviceSerial, msgType, source, mtp)
-	if err := StoreUspMessage(ctx, d, uspMsg, record, deviceSerial, "received", source, mtp); err != nil {
-		log.Printf("[INTERCEPTOR] ERROR: Failed to store message for device %s: %v", deviceSerial, err)
-		storeError(ctx, d, msg, deviceSerial, "storage_error", err.Error())
+	// Check if record has NoSessionContext (USP message) or is a connection management record
+	noSessionContext := record.GetNoSessionContext()
+	if noSessionContext != nil {
+		// This is a USP message (NOTIFY, REGISTER, DEREGISTER, etc.)
+		var uspMsg usp_msg.Msg
+		if err := proto.Unmarshal(noSessionContext.Payload, &uspMsg); err != nil {
+			log.Printf("ERROR: Failed to parse USP message for device %s: %v", deviceSerial, err)
+			storeError(ctx, d, msg, deviceSerial, "parse_error", err.Error())
+			return
+		}
+
+		// Validate message
+		if err := validateMessage(uspMsg, deviceSerial); err != nil {
+			log.Printf("ERROR: Message validation failed for device %s: %v", deviceSerial, err)
+			storeError(ctx, d, msg, deviceSerial, "validation_error", err.Error())
+			return
+		}
+
+		// Store message
+		if err := StoreUspMessage(ctx, d, uspMsg, record, deviceSerial, "received", source, mtp); err != nil {
+			log.Printf("ERROR: Failed to store message for device %s: %v", deviceSerial, err)
+			storeError(ctx, d, msg, deviceSerial, "storage_error", err.Error())
+		}
 	} else {
-		log.Printf("[INTERCEPTOR] SUCCESS: Stored message for device %s, msg_type=%s, msg_id=%s", deviceSerial, msgType, uspMsg.Header.MsgId)
+		// This is a connection management record (MQTTConnect, STOMPConnect, Disconnect, etc.)
+		recordType := "UNKNOWN_RECORD"
+		if record.GetMqttConnect() != nil {
+			recordType = "MQTTConnect"
+		} else if record.GetStompConnect() != nil {
+			recordType = "STOMPConnect"
+		} else if record.GetWebsocketConnect() != nil {
+			recordType = "WebSocketConnect"
+		} else if record.GetDisconnect() != nil {
+			recordType = "Disconnect"
+		} else if record.GetSessionContext() != nil {
+			recordType = "SessionContext"
+		}
+
+		if err := StoreUspRecord(ctx, d, record, deviceSerial, "received", source, mtp, recordType); err != nil {
+			log.Printf("ERROR: Failed to store record for device %s: %v", deviceSerial, err)
+			storeError(ctx, d, msg, deviceSerial, "storage_error", err.Error())
+		}
 	}
 }
 
@@ -309,7 +323,7 @@ func extractDeviceSerial(subject string) string {
 }
 
 // extractMTP extracts MTP (Media Type) from NATS subject
-// Pattern: "{mtp}-adapter.usp.v1.{sn}.api" or "device.usp.v1.{sn}.api"
+// Pattern: "{mtp}-adapter.usp.v1.{sn}.api" or "device.usp.v1.{sn}.api" or "{mtp}.usp.v1.{sn}.{type}"
 // For device subjects, it looks up the device MTP from the device registry
 func extractMTP(ctx context.Context, subject string, nc *nats.Conn, deviceSerial string) string {
 	// For adapter subjects: extract MTP from prefix
@@ -321,6 +335,17 @@ func extractMTP(ctx context.Context, subject string, nc *nats.Conn, deviceSerial
 	}
 	if strings.HasPrefix(subject, "stomp-adapter.usp.v1.") {
 		return entity.Stomp
+	}
+
+	// For MTP-specific subjects (mqtt.usp.v1., stomp.usp.v1., ws.usp.v1.): extract MTP from prefix
+	if strings.HasPrefix(subject, "mqtt.usp.v1.") {
+		return entity.Mqtt
+	}
+	if strings.HasPrefix(subject, "stomp.usp.v1.") {
+		return entity.Stomp
+	}
+	if strings.HasPrefix(subject, "ws.usp.v1.") {
+		return entity.Websockets
 	}
 
 	// For device subjects: look up device MTP from device registry

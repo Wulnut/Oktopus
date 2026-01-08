@@ -101,3 +101,56 @@ func StoreUspMessage(ctx context.Context, d db.Database, msg usp_msg.Msg, record
 	return nil
 }
 
+// StoreUspRecord stores a USP record (including Connect/Disconnect records without NoSessionContext)
+// For records without NoSessionContext, recordType is used as msg_type and a generated ID is used as msg_id
+func StoreUspRecord(ctx context.Context, d db.Database, record usp_record.Record, deviceSerial, direction, source, mtp, recordType string) error {
+	// Convert protobuf record to JSON
+	protojsonMarshaler := protojson.MarshalOptions{
+		EmitUnpopulated: true,
+		UseProtoNames:   true,
+	}
+
+	recordJSONBytes, err := protojsonMarshaler.Marshal(&record)
+	if err != nil {
+		return fmt.Errorf("failed to marshal record to JSON: %w", err)
+	}
+
+	// Parse JSON bytes into bson.M for MongoDB storage
+	var recordJSON bson.M
+	if err := json.Unmarshal(recordJSONBytes, &recordJSON); err != nil {
+		return fmt.Errorf("failed to unmarshal JSON to bson.M: %w", err)
+	}
+
+	// For records with NoSessionContext, try to extract msg_id from payload if already converted to JSON
+	msgID := fmt.Sprintf("%s-%d", recordType, time.Now().UnixNano())
+	if noSessionContext, ok := recordJSON["no_session_context"].(map[string]interface{}); ok {
+		if payload, ok := noSessionContext["payload"].(map[string]interface{}); ok {
+			if header, ok := payload["header"].(map[string]interface{}); ok {
+				if id, ok := header["msg_id"].(string); ok && id != "" {
+					msgID = id
+				}
+			}
+		}
+	}
+
+	// Create UspMessage struct
+	uspMsg := db.UspMessage{
+		Timestamp:    time.Now(),
+		DeviceSerial: deviceSerial,
+		Direction:    direction,
+		Source:       source,
+		MTP:          mtp,
+		MsgID:        msgID,
+		MsgType:      recordType,
+		FullRecord:   recordJSON,
+	}
+
+	// Store in database
+	if err := d.StoreUspMessage(ctx, uspMsg); err != nil {
+		log.Printf("Failed to store USP record: %v", err)
+		return err
+	}
+
+	return nil
+}
+
