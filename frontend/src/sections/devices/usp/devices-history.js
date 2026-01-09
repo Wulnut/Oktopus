@@ -123,6 +123,7 @@ export const DevicesHistory = () => {
   const [hasMore, setHasMore] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(null);
+  const newestMessageIdRef = useRef(null); // Track the newest message ID for auto-refresh
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [showBasicInfo, setShowBasicInfo] = useState(false);
@@ -135,7 +136,8 @@ export const DevicesHistory = () => {
   const [clearingHistory, setClearingHistory] = useState(false);
 
   // Fetch message history
-  const fetchMessages = useCallback(async (cursor = '', append = false) => {
+  // mode: 'replace' (default), 'prepend' (for load more - add older messages to top), 'refresh' (for auto-refresh - add new messages to top)
+  const fetchMessages = useCallback(async (cursor = '', mode = 'replace') => {
     setLoading(true);
     setError(null);
     try {
@@ -172,9 +174,80 @@ export const DevicesHistory = () => {
         'GET'
       );
       if (status === 200 && result) {
-        setMessages(append ? prev => [...prev, ...result.messages] : result.messages || []);
-        setNextCursor(result.next_cursor || '');
-        setHasMore(result.has_more || false);
+        const newMessages = result.messages || [];
+        
+        if (mode === 'replace') {
+          // Initial load or manual refresh - replace all messages
+          setMessages(newMessages);
+          // Track the newest message ID (first in the list since sorted newest first)
+          if (newMessages.length > 0) {
+            newestMessageIdRef.current = newMessages[0].id;
+          }
+          setNextCursor(result.next_cursor || '');
+          setHasMore(result.has_more || false);
+        } else if (mode === 'prepend') {
+          // Load More - append older messages to the bottom (they're already sorted newest first)
+          setMessages(prev => {
+            // Combine existing messages with new messages (older ones)
+            // Remove duplicates based on message ID
+            const existingIds = new Set(prev.map(m => m.id));
+            const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id));
+            return [...prev, ...uniqueNewMessages];
+          });
+          setNextCursor(result.next_cursor || '');
+          setHasMore(result.has_more || false);
+        } else if (mode === 'refresh') {
+          // Auto-refresh - only add new messages that are newer than the current newest
+          setMessages(prev => {
+            if (prev.length === 0) {
+              // If list is empty, just set the new messages
+              if (newMessages.length > 0) {
+                newestMessageIdRef.current = newMessages[0].id;
+              }
+              return newMessages;
+            }
+            
+            // Find messages that are newer than the current newest
+            const currentNewestId = newestMessageIdRef.current;
+            if (!currentNewestId) {
+              // No reference point, just merge and deduplicate
+              const existingIds = new Set(prev.map(m => m.id));
+              const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id));
+              if (uniqueNewMessages.length > 0) {
+                newestMessageIdRef.current = uniqueNewMessages[0].id;
+              }
+              return [...uniqueNewMessages, ...prev];
+            }
+            
+            // Find the index of the newest message in the new results
+            const newestIndex = newMessages.findIndex(m => m.id === currentNewestId);
+            if (newestIndex === -1) {
+              // Current newest not found in new results, all new messages are newer
+              const existingIds = new Set(prev.map(m => m.id));
+              const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id));
+              if (uniqueNewMessages.length > 0) {
+                newestMessageIdRef.current = uniqueNewMessages[0].id;
+              }
+              return [...uniqueNewMessages, ...prev];
+            }
+            
+            // Get only messages before the current newest (i.e., newer messages)
+            const newerMessages = newMessages.slice(0, newestIndex);
+            if (newerMessages.length > 0) {
+              // Remove duplicates
+              const existingIds = new Set(prev.map(m => m.id));
+              const uniqueNewerMessages = newerMessages.filter(m => !existingIds.has(m.id));
+              if (uniqueNewerMessages.length > 0) {
+                newestMessageIdRef.current = uniqueNewerMessages[0].id;
+                return [...uniqueNewerMessages, ...prev];
+              }
+            }
+            
+            // No new messages
+            return prev;
+          });
+          // Don't update cursor or hasMore for auto-refresh
+        }
       } else {
         setError('Failed to fetch message history');
       }
@@ -189,7 +262,8 @@ export const DevicesHistory = () => {
     if (deviceID) {
       setNextCursor('');
       setHasMore(false);
-      fetchMessages();
+      newestMessageIdRef.current = null; // Reset when device changes
+      fetchMessages('', 'replace');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceID, limit, fromDate, toDate]);
@@ -203,7 +277,10 @@ export const DevicesHistory = () => {
       return;
     }
     
-    const interval = setInterval(() => fetchMessages(), 5000);
+    // Auto-refresh: only fetch new messages and prepend them
+    const interval = setInterval(() => {
+      fetchMessages('', 'refresh');
+    }, 5000);
     setAutoRefreshInterval(interval);
     return () => {
       clearInterval(interval);
@@ -212,7 +289,7 @@ export const DevicesHistory = () => {
   }, [autoRefresh, deviceID, fetchMessages]);
 
   const handleLoadMore = () => {
-    if (nextCursor && !loading) fetchMessages(nextCursor, true);
+    if (nextCursor && !loading) fetchMessages(nextCursor, 'prepend');
   };
 
   const handleRefresh = () => fetchMessages();
