@@ -79,3 +79,36 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// deviceClearHistory deletes all message history for a device
+func (a *Api) deviceClearHistory(w http.ResponseWriter, r *http.Request) {
+	// Extract device serial from URL: /api/device/{sn}/history
+	vars := mux.Vars(r)
+	deviceSerial := vars["sn"]
+
+	// Delete messages and errors
+	messagesCount, errorsCount, err := a.db.DeleteMessageHistory(r.Context(), deviceSerial)
+	if err != nil {
+		log.Printf("Failed to delete message history: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(utils.Marshall(err.Error()))
+		return
+	}
+
+	// Return success response with counts
+	response := map[string]interface{}{
+		"success":        true,
+		"messages_count": messagesCount,
+		"errors_count":   errorsCount,
+		"total_count":    messagesCount + errorsCount,
+	}
+
+	// Set content type and encode JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Failed to encode response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(utils.Marshall("Failed to encode response"))
+		return
+	}
+}
+

@@ -129,3 +129,26 @@ func (d *Database) StoreUspMessageError(ctx context.Context, errMsg UspMessageEr
 	return nil
 }
 
+// DeleteMessageHistory deletes all messages and error messages for a device
+// Returns the count of deleted messages and errors
+func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string) (int64, int64, error) {
+	// Delete from messages collection
+	messagesResult, err := d.messages.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	if err != nil {
+		log.Printf("Failed to delete messages: %v", err)
+		return 0, 0, err
+	}
+	
+	// Delete from messages_errors collection
+	errorsResult, err := d.messagesErrors.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	if err != nil {
+		log.Printf("Failed to delete error messages: %v", err)
+		return messagesResult.DeletedCount, 0, err
+	}
+	
+	log.Printf("Deleted %d messages and %d error messages for device %s", 
+		messagesResult.DeletedCount, errorsResult.DeletedCount, deviceSerial)
+	
+	return messagesResult.DeletedCount, errorsResult.DeletedCount, nil
+}
+

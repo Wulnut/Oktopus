@@ -39,6 +39,7 @@ import ChevronDownIcon from '@heroicons/react/24/outline/ChevronDownIcon';
 import ChevronRightIcon from '@heroicons/react/24/outline/ChevronRightIcon';
 import CodeBracketIcon from '@heroicons/react/24/outline/CodeBracketIcon';
 import DocumentTextIcon from '@heroicons/react/24/outline/DocumentTextIcon';
+import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 
 // Color mapping for message types (same color for request/response pairs)
 const getMessageTypeColor = (msgType) => {
@@ -130,6 +131,8 @@ export const DevicesHistory = () => {
   const bracketRefs = useRef(new Map());
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false);
+  const [clearingHistory, setClearingHistory] = useState(false);
 
   // Fetch message history
   const fetchMessages = useCallback(async (cursor = '', append = false) => {
@@ -213,6 +216,30 @@ export const DevicesHistory = () => {
   };
 
   const handleRefresh = () => fetchMessages();
+
+  const handleClearHistory = async () => {
+    setClearingHistory(true);
+    try {
+      const { status } = await httpRequest(
+        `/api/device/${deviceID}/history`,
+        'DELETE'
+      );
+      if (status === 200) {
+        // Clear the messages list and reset pagination
+        setMessages([]);
+        setNextCursor('');
+        setHasMore(false);
+        setClearHistoryDialogOpen(false);
+        // Optionally show success message
+      } else {
+        setError('Failed to clear message history');
+      }
+    } catch (err) {
+      setError(err.message || 'An error occurred while clearing message history');
+    } finally {
+      setClearingHistory(false);
+    }
+  };
 
   // Recursively collect all paths in a JSON object for full expansion
   const getAllPaths = (obj, prefix = '') => {
@@ -691,6 +718,15 @@ export const DevicesHistory = () => {
             <IconButton onClick={handleRefresh} disabled={loading}>
               <SvgIcon><ArrowPathIcon /></SvgIcon>
             </IconButton>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<SvgIcon><TrashIcon /></SvgIcon>}
+              onClick={() => setClearHistoryDialogOpen(true)}
+              disabled={loading}
+            >
+              Clear History
+            </Button>
           </Stack>
         </Stack>
       </CardActions>
@@ -892,6 +928,36 @@ export const DevicesHistory = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Clear History Confirmation Dialog */}
+      <Dialog
+        open={clearHistoryDialogOpen}
+        onClose={() => !clearingHistory && setClearHistoryDialogOpen(false)}
+      >
+        <DialogTitle>Clear Message History</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to clear history and permanently delete all of the messages for device <strong>{deviceID}</strong>?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setClearHistoryDialogOpen(false)}
+            disabled={clearingHistory}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleClearHistory}
+            color="error"
+            variant="contained"
+            disabled={clearingHistory}
+            startIcon={clearingHistory ? <CircularProgress size={16} /> : <SvgIcon><TrashIcon /></SvgIcon>}
+          >
+            {clearingHistory ? 'Clearing...' : 'Yes'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Card>
