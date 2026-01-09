@@ -57,10 +57,17 @@ const getMessageTypeColor = (msgType) => {
   return colorMap[baseType] || '#9E9E9E';
 };
 
-// Format timestamp to readable date/time
+// Format timestamp to DD/MM/YYYY HH:mm:ss format (24-hour time)
 const formatTimestamp = (timestamp) => {
   if (!timestamp) return 'N/A';
-  return new Date(timestamp).toLocaleString();
+  const date = new Date(timestamp);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
 };
 
 // Format time ago
@@ -121,6 +128,8 @@ export const DevicesHistory = () => {
   const [expandedKeys, setExpandedKeys] = useState(new Set());
   const [showTextView, setShowTextView] = useState(false);
   const bracketRefs = useRef(new Map());
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   // Fetch message history
   const fetchMessages = useCallback(async (cursor = '', append = false) => {
@@ -129,6 +138,32 @@ export const DevicesHistory = () => {
     try {
       const params = new URLSearchParams({ limit: limit.toString() });
       if (cursor) params.append('cursor', cursor);
+      
+      // Convert datetime-local (local time) to UTC ISO string for backend
+      // datetime-local format: "YYYY-MM-DDTHH:mm" (in user's local timezone)
+      if (fromDate) {
+        // Create Date object from datetime-local string (interpreted as local time)
+        const localDate = new Date(fromDate);
+        // Convert to UTC and format as YYYY-MM-DDTHH:mm
+        const year = localDate.getUTCFullYear();
+        const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getUTCDate()).padStart(2, '0');
+        const hours = String(localDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
+        const utcString = `${year}-${month}-${day}T${hours}:${minutes}`;
+        params.append('from', utcString);
+      }
+      if (toDate) {
+        const localDate = new Date(toDate);
+        const year = localDate.getUTCFullYear();
+        const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getUTCDate()).padStart(2, '0');
+        const hours = String(localDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
+        const utcString = `${year}-${month}-${day}T${hours}:${minutes}`;
+        params.append('to', utcString);
+      }
+      
       const { result, status } = await httpRequest(
         `/api/device/${deviceID}/history?${params.toString()}`,
         'GET'
@@ -145,12 +180,16 @@ export const DevicesHistory = () => {
     } finally {
       setLoading(false);
     }
-  }, [deviceID, limit, httpRequest]);
+  }, [deviceID, limit, fromDate, toDate, httpRequest]);
 
   useEffect(() => {
-    if (deviceID) fetchMessages();
+    if (deviceID) {
+      setNextCursor('');
+      setHasMore(false);
+      fetchMessages();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceID, limit]);
+  }, [deviceID, limit, fromDate, toDate]);
 
   useEffect(() => {
     if (!autoRefresh || !deviceID) {
@@ -601,8 +640,34 @@ export const DevicesHistory = () => {
     <Card>
       <CardHeader title="Message History" subheader={`Messages for device: ${deviceID}`} />
       <CardActions>
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%', justifyContent: 'space-between' }}>
-          <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+            <TextField
+              label="From"
+              type="datetime-local"
+              value={fromDate}
+              onChange={(e) => {
+                setFromDate(e.target.value);
+                setNextCursor('');
+                setHasMore(false);
+              }}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              sx={{ minWidth: 200 }}
+            />
+            <TextField
+              label="To"
+              type="datetime-local"
+              value={toDate}
+              onChange={(e) => {
+                setToDate(e.target.value);
+                setNextCursor('');
+                setHasMore(false);
+              }}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              sx={{ minWidth: 200 }}
+            />
             <FormControl size="small" sx={{ minWidth: 120 }}>
               <InputLabel>Page Size</InputLabel>
               <Select

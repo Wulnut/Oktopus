@@ -49,8 +49,23 @@ func (d *Database) StoreUspMessage(ctx context.Context, msg UspMessage) error {
 }
 
 // GetMessageHistory retrieves message history for a device using cursor-based pagination
-func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, limit int, cursorID string) ([]UspMessage, string, error) {
+// fromTime and toTime are optional time filters. If nil, no time filtering is applied.
+func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, limit int, cursorID string, fromTime, toTime *time.Time) ([]UspMessage, string, error) {
 	filter := bson.M{"device_serial": deviceSerial}
+
+	// Add timestamp filters
+	if fromTime != nil || toTime != nil {
+		timestampFilter := bson.M{}
+		if fromTime != nil {
+			timestampFilter["$gte"] = *fromTime
+		}
+		if toTime != nil {
+			timestampFilter["$lte"] = *toTime
+		}
+		if len(timestampFilter) > 0 {
+			filter["timestamp"] = timestampFilter
+		}
+	}
 
 	// If cursor provided, add it to filter
 	if cursorID != "" {

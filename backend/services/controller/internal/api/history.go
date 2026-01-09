@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/leandrofars/oktopus/internal/utils"
@@ -16,7 +17,7 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	deviceSerial := vars["sn"]
 
-	// Parse query params: limit (default 50), cursor (optional)
+	// Parse query params: limit (default 50), cursor (optional), from (optional), to (optional)
 	limit := 50
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
@@ -25,8 +26,35 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	cursor := r.URL.Query().Get("cursor")
 
-	// Call db.GetMessageHistory() with cursor-based pagination
-	messages, nextCursor, err := a.db.GetMessageHistory(r.Context(), deviceSerial, limit, cursor)
+	// Parse date filters
+	// datetime-local format: "2006-01-02T15:04" (no timezone, treated as UTC)
+	var fromTime *time.Time
+	if fromStr := r.URL.Query().Get("from"); fromStr != "" {
+		// Parse as UTC since datetime-local doesn't include timezone info
+		parsed, err := time.Parse("2006-01-02T15:04", fromStr)
+		if err == nil {
+			// Treat as UTC
+			parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(),
+				parsed.Hour(), parsed.Minute(), 0, 0, time.UTC)
+			fromTime = &parsed
+		}
+	}
+
+	var toTime *time.Time
+	if toStr := r.URL.Query().Get("to"); toStr != "" {
+		// Parse as UTC since datetime-local doesn't include timezone info
+		parsed, err := time.Parse("2006-01-02T15:04", toStr)
+		if err == nil {
+			// Treat as UTC and set to end of the selected minute (59 seconds, 999 milliseconds)
+			// This ensures we include all messages up to and including the selected minute
+			parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(),
+				parsed.Hour(), parsed.Minute(), 59, 999000000, time.UTC)
+			toTime = &parsed
+		}
+	}
+
+	// Call db.GetMessageHistory() with cursor-based pagination and date filters
+	messages, nextCursor, err := a.db.GetMessageHistory(r.Context(), deviceSerial, limit, cursor, fromTime, toTime)
 	if err != nil {
 		log.Printf("Failed to get message history: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
