@@ -5,12 +5,42 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/utils"
 )
+
+// Allowed message types for validation
+var allowedMessageTypes = map[string]bool{
+	"GET": true, "GET_RESP": true, "SET": true, "SET_RESP": true,
+	"ADD": true, "ADD_RESP": true, "DELETE": true, "DELETE_RESP": true,
+	"OPERATE": true, "OPERATE_RESP": true, "NOTIFY": true, "NOTIFY_RESP": true,
+	"STOMPConnect": true, "MQTTConnect": true, "Disconnect": true, "WebSocketConnect": true,
+	"GET_SUPPORTED_DM": true, "GET_SUPPORTED_DM_RESP": true,
+	"GET_INSTANCES": true, "GET_INSTANCES_RESP": true,
+	"GET_SUPPORTED_PROTO": true, "GET_SUPPORTED_PROTO_RESP": true,
+	"REGISTER": true, "REGISTER_RESP": true,
+	"DEREGISTER": true, "DEREGISTER_RESP": true,
+	"ERROR": true, "SessionContext": true, "UNKNOWN_RECORD": true,
+}
+
+// Allowed sources for validation
+var allowedSources = map[string]bool{
+	"controller": true,
+	"device":     true,
+	"unknown":    true,
+}
+
+// Allowed MTPs for validation
+var allowedMTPs = map[string]bool{
+	"mqtt":    true,
+	"ws":      true,
+	"stomp":   true,
+	"unknown": true,
+}
 
 // deviceMessageHistory retrieves message history for a device
 func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +84,13 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Validate date range: fromTime must be <= toTime
+	if fromTime != nil && toTime != nil && fromTime.After(*toTime) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(utils.Marshall("Invalid date range: 'from' date must be before or equal to 'to' date"))
+		return
+	}
+
 	// Parse filter query parameters
 	var filters *db.MessageFilters
 	msgTypes := r.URL.Query()["msg_type"]
@@ -77,6 +114,49 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 	msgTypesFiltered := filterEmptyStrings(msgTypes)
 	sourcesFiltered := filterEmptyStrings(sources)
 	mtpsFiltered := filterEmptyStrings(mtps)
+
+	// Validate filter values against allowed sets
+	// Validate message types
+	for _, msgType := range msgTypesFiltered {
+		if !allowedMessageTypes[msgType] {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(utils.Marshall("Invalid message type: " + msgType))
+			return
+		}
+	}
+
+	// Validate sources
+	for _, source := range sourcesFiltered {
+		if !allowedSources[source] {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(utils.Marshall("Invalid source: " + source))
+			return
+		}
+	}
+
+	// Validate MTPs
+	for _, mtp := range mtpsFiltered {
+		if !allowedMTPs[mtp] {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(utils.Marshall("Invalid MTP: " + mtp))
+			return
+		}
+	}
+
+	// Validate message ID length (prevent extremely long strings)
+	if len(msgID) > 500 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(utils.Marshall("Message ID too long (max 500 characters)"))
+		return
+	}
+
+	// Sanitize message ID: remove any potentially dangerous characters for regex
+	// (This is already handled by escapeRegex, but we validate length here)
+	if msgID != "" && strings.ContainsAny(msgID, "\x00\n\r") {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(utils.Marshall("Invalid message ID: contains invalid characters"))
+		return
+	}
 
 	// Create filters struct if any filter parameter is present
 	// If parameter exists but is empty (after filtering), it means "return nothing"
@@ -122,19 +202,46 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 // deviceClearHistory deletes all message history for a device
+// TODO: Add proper role-based authorization (e.g., admin-only or device owner check)
+// Currently, any authenticated user can delete any device's history
 func (a *Api) deviceClearHistory(w http.ResponseWriter, r *http.Request) {
 	// Extract device serial from URL: /api/device/{sn}/history
 	vars := mux.Vars(r)
 	deviceSerial := vars["sn"]
 
+	// Get user email from context (set by authentication middleware)
+	userEmail := r.Context().Value("email")
+	if userEmail == nil {
+		// This should not happen if middleware is working correctly, but check anyway
+		log.Printf("Warning: Clear History called without authenticated user")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(utils.Marshall("Unauthorized: authentication required"))
+		return
+	}
+
+	// Log the action for audit purposes
+	log.Printf("User %v clearing message history for device %s", userEmail, deviceSerial)
+
+	// TODO: Add authorization check here
+	// Example: Check if user is admin or owns the device
+	// if !isAdmin(userEmail) && !ownsDevice(userEmail, deviceSerial) {
+	//     w.WriteHeader(http.StatusForbidden)
+	//     w.Write(utils.Marshall("Forbidden: insufficient permissions"))
+	//     return
+	// }
+
 	// Delete messages and errors
 	messagesCount, errorsCount, err := a.db.DeleteMessageHistory(r.Context(), deviceSerial)
 	if err != nil {
-		log.Printf("Failed to delete message history: %v", err)
+		log.Printf("Failed to delete message history for device %s by user %v: %v", deviceSerial, userEmail, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(utils.Marshall(err.Error()))
 		return
 	}
+
+	// Log successful deletion
+	log.Printf("User %v successfully deleted %d messages and %d errors for device %s",
+		userEmail, messagesCount, errorsCount, deviceSerial)
 
 	// Return success response with counts
 	response := map[string]interface{}{

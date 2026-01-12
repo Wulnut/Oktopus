@@ -175,6 +175,11 @@ func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, l
 				filter["msg_id"] = filters.MessageID
 			} else {
 				// Partial match - substring search (case-insensitive)
+				// WARNING: $regex queries cannot efficiently use indexes and may cause full collection scans
+				// on large datasets. For better performance, consider:
+				// 1. Using exact match when possible
+				// 2. Adding a text index on msg_id field for full-text search
+				// 3. Limiting the dataset size with other filters (date range, device_serial, etc.)
 				// Escape special regex characters to make it a simple substring search
 				escaped := escapeRegex(filters.MessageID)
 				filter["msg_id"] = bson.M{"$regex": escaped, "$options": "i"}
@@ -245,25 +250,61 @@ func (d *Database) StoreUspMessageError(ctx context.Context, errMsg UspMessageEr
 }
 
 // DeleteMessageHistory deletes all messages and error messages for a device
+// Uses MongoDB transaction to ensure atomicity (both deletions succeed or both fail)
 // Returns the count of deleted messages and errors
 func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string) (int64, int64, error) {
-	// Delete from messages collection
-	messagesResult, err := d.messages.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	// Start a session for the transaction
+	session, err := d.client.StartSession()
 	if err != nil {
-		log.Printf("Failed to delete messages: %v", err)
+		log.Printf("Failed to start session for transaction: %v", err)
 		return 0, 0, err
 	}
-	
-	// Delete from messages_errors collection
-	errorsResult, err := d.messagesErrors.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	defer session.EndSession(ctx)
+
+	var messagesCount, errorsCount int64
+
+	// Execute transaction
+	err = mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error {
+		// Start transaction
+		if err := session.StartTransaction(); err != nil {
+			return err
+		}
+
+		// Delete from messages collection
+		messagesResult, err := d.messages.DeleteMany(sc, bson.M{"device_serial": deviceSerial})
+		if err != nil {
+			session.AbortTransaction(sc)
+			log.Printf("Failed to delete messages in transaction: %v", err)
+			return err
+		}
+		messagesCount = messagesResult.DeletedCount
+
+		// Delete from messages_errors collection
+		errorsResult, err := d.messagesErrors.DeleteMany(sc, bson.M{"device_serial": deviceSerial})
+		if err != nil {
+			session.AbortTransaction(sc)
+			log.Printf("Failed to delete error messages in transaction: %v", err)
+			return err
+		}
+		errorsCount = errorsResult.DeletedCount
+
+		// Commit transaction
+		if err := session.CommitTransaction(sc); err != nil {
+			log.Printf("Failed to commit transaction: %v", err)
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Printf("Failed to delete error messages: %v", err)
-		return messagesResult.DeletedCount, 0, err
+		log.Printf("Transaction failed for device %s: %v", deviceSerial, err)
+		return 0, 0, err
 	}
-	
-	log.Printf("Deleted %d messages and %d error messages for device %s", 
-		messagesResult.DeletedCount, errorsResult.DeletedCount, deviceSerial)
-	
-	return messagesResult.DeletedCount, errorsResult.DeletedCount, nil
+
+	log.Printf("Deleted %d messages and %d error messages for device %s",
+		messagesCount, errorsCount, deviceSerial)
+
+	return messagesCount, errorsCount, nil
 }
 

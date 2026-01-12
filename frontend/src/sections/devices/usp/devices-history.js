@@ -352,12 +352,22 @@ export const DevicesHistory = () => {
       const params = new URLSearchParams({ limit: limit.toString() });
       if (cursor) params.append('cursor', cursor);
       
-      // Convert datetime-local (local time) to UTC ISO string for backend
-      // datetime-local format: "YYYY-MM-DDTHH:mm" (in user's local timezone)
+      // Convert datetime-local string to UTC format for backend
+      // datetime-local format: "YYYY-MM-DDTHH:mm" (interpreted as user's local timezone)
+      // Backend expects: "YYYY-MM-DDTHH:mm" in UTC
+      // 
+      // The datetime-local input provides a string like "2024-01-15T14:30" which represents
+      // the local time the user selected. We need to convert this to UTC.
+      // 
+      // Strategy: Parse the string as if it's in the user's local timezone, then convert to UTC
       if (fromDate) {
-        // Create Date object from datetime-local string (interpreted as local time)
+        // Parse the datetime-local string as local time
+        // datetime-local format is "YYYY-MM-DDTHH:mm" without timezone info
+        // When we create a Date from this, JavaScript interprets it as local time
         const localDate = new Date(fromDate);
-        // Convert to UTC and format as YYYY-MM-DDTHH:mm
+        
+        // Now convert to UTC and format as YYYY-MM-DDTHH:mm
+        // This correctly converts the local time to UTC
         const year = localDate.getUTCFullYear();
         const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
         const day = String(localDate.getUTCDate()).padStart(2, '0');
@@ -367,6 +377,7 @@ export const DevicesHistory = () => {
         params.append('from', utcString);
       }
       if (toDate) {
+        // Same conversion for 'to' date
         const localDate = new Date(toDate);
         const year = localDate.getUTCFullYear();
         const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
