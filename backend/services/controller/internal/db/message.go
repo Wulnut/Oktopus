@@ -250,23 +250,25 @@ func (d *Database) StoreUspMessageError(ctx context.Context, errMsg UspMessageEr
 }
 
 // DeleteMessageHistory deletes all messages and error messages for a device
-// Uses MongoDB transaction to ensure atomicity (both deletions succeed or both fail)
+// Attempts to use MongoDB transaction if replica set is available, otherwise falls back to sequential deletes
 // Returns the count of deleted messages and errors
 func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string) (int64, int64, error) {
-	// Start a session for the transaction
+	// Try to use transaction if replica set is available
 	session, err := d.client.StartSession()
 	if err != nil {
-		log.Printf("Failed to start session for transaction: %v", err)
-		return 0, 0, err
+		log.Printf("Failed to start session: %v", err)
+		return d.deleteMessageHistoryWithoutTransaction(ctx, deviceSerial)
 	}
 	defer session.EndSession(ctx)
 
 	var messagesCount, errorsCount int64
 
-	// Execute transaction
+	// Try to execute with transaction
 	err = mongo.WithSession(ctx, session, func(sc mongo.SessionContext) error {
-		// Start transaction
+		// Try to start transaction
 		if err := session.StartTransaction(); err != nil {
+			// If transaction fails (e.g., not a replica set), fall back to non-transactional
+			log.Printf("Transaction not available (likely standalone MongoDB), using fallback: %v", err)
 			return err
 		}
 
@@ -297,12 +299,40 @@ func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string
 		return nil
 	})
 
+	// If transaction failed (e.g., standalone MongoDB), use fallback
 	if err != nil {
-		log.Printf("Transaction failed for device %s: %v", deviceSerial, err)
-		return 0, 0, err
+		log.Printf("Transaction not available, using fallback method for device %s", deviceSerial)
+		return d.deleteMessageHistoryWithoutTransaction(ctx, deviceSerial)
 	}
 
-	log.Printf("Deleted %d messages and %d error messages for device %s",
+	log.Printf("Deleted %d messages and %d error messages for device %s (using transaction)",
+		messagesCount, errorsCount, deviceSerial)
+
+	return messagesCount, errorsCount, nil
+}
+
+// deleteMessageHistoryWithoutTransaction deletes messages without using transactions
+// Used as fallback when MongoDB is not configured as a replica set
+func (d *Database) deleteMessageHistoryWithoutTransaction(ctx context.Context, deviceSerial string) (int64, int64, error) {
+	// Delete from messages collection
+	messagesResult, err := d.messages.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	if err != nil {
+		log.Printf("Failed to delete messages: %v", err)
+		return 0, 0, err
+	}
+	messagesCount := messagesResult.DeletedCount
+
+	// Delete from messages_errors collection
+	errorsResult, err := d.messagesErrors.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	if err != nil {
+		log.Printf("Failed to delete error messages: %v", err)
+		// Return messages count even if errors deletion failed
+		// This is acceptable since they're separate collections
+		return messagesCount, 0, err
+	}
+	errorsCount := errorsResult.DeletedCount
+
+	log.Printf("Deleted %d messages and %d error messages for device %s (without transaction)",
 		messagesCount, errorsCount, deviceSerial)
 
 	return messagesCount, errorsCount, nil

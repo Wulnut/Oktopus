@@ -215,13 +215,18 @@ services:
     container_name: nginx
     ports:
       - 80:80
+    # Mount complete nginx.conf (includes http context + server config)
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       usp_network:
         ipv4_address: 172.16.235.17
+    # Validate config on startup
+    command: >
+      sh -c "nginx -t && nginx -g 'daemon off;'"
 
   file-server:
     image: oktopusp/file-server
@@ -303,6 +308,7 @@ services:
 volumes:
   registry-data:
   registry-certs:
+  nginx_logs:
 
 networks:
   usp_network:
