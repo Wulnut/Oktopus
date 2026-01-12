@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/utils"
 )
 
@@ -53,8 +54,49 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Call db.GetMessageHistory() with cursor-based pagination and date filters
-	messages, nextCursor, err := a.db.GetMessageHistory(r.Context(), deviceSerial, limit, cursor, fromTime, toTime)
+	// Parse filter query parameters
+	var filters *db.MessageFilters
+	msgTypes := r.URL.Query()["msg_type"]
+	sources := r.URL.Query()["source"]
+	mtps := r.URL.Query()["mtp"]
+	msgID := r.URL.Query().Get("msg_id")
+	msgIDExact := r.URL.Query().Get("msg_id_exact") == "true"
+
+	// Filter out empty strings from arrays (they indicate "empty" filter)
+	// Empty arrays after filtering mean "return nothing" for that filter category
+	filterEmptyStrings := func(arr []string) []string {
+		result := []string{}
+		for _, s := range arr {
+			if s != "" {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+
+	msgTypesFiltered := filterEmptyStrings(msgTypes)
+	sourcesFiltered := filterEmptyStrings(sources)
+	mtpsFiltered := filterEmptyStrings(mtps)
+
+	// Create filters struct if any filter parameter is present
+	// If parameter exists but is empty (after filtering), it means "return nothing"
+	_, hasMsgType := r.URL.Query()["msg_type"]
+	_, hasSource := r.URL.Query()["source"]
+	_, hasMtp := r.URL.Query()["mtp"]
+	hasMsgID := msgID != ""
+
+	if hasMsgType || hasSource || hasMtp || hasMsgID {
+		filters = &db.MessageFilters{
+			MessageTypes:  msgTypesFiltered,
+			Sources:       sourcesFiltered,
+			MTPs:          mtpsFiltered,
+			MessageID:     msgID,
+			MessageIDExact: msgIDExact,
+		}
+	}
+
+	// Call db.GetMessageHistory() with cursor-based pagination, date filters, and message filters
+	messages, nextCursor, err := a.db.GetMessageHistory(r.Context(), deviceSerial, limit, cursor, fromTime, toTime, filters)
 	if err != nil {
 		log.Printf("Failed to get message history: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)

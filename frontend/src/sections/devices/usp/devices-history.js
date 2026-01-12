@@ -31,6 +31,8 @@ import {
   DialogActions,
   Divider,
   TextField,
+  Checkbox,
+  Grid,
 } from '@mui/material';
 import { useRouter } from 'next/router';
 import { useBackendContext } from 'src/contexts/backend-context';
@@ -110,6 +112,43 @@ const commonStyles = {
   },
 };
 
+// Available filter options
+// Each item is an array - pairs have 2 elements, singles have 1 element
+const MESSAGE_TYPES = [
+  ['GET', 'GET_RESP'],
+  ['SET', 'SET_RESP'],
+  ['ADD', 'ADD_RESP'],
+  ['DELETE', 'DELETE_RESP'],
+  ['OPERATE', 'OPERATE_RESP'],
+  ['NOTIFY', 'NOTIFY_RESP'],
+  ['STOMPConnect', 'MQTTConnect'],
+  ['Disconnect', 'WebSocketConnect'],
+  ['GET_SUPPORTED_DM', 'GET_SUPPORTED_DM_RESP'],
+  ['GET_INSTANCES', 'GET_INSTANCES_RESP'],
+  ['GET_SUPPORTED_PROTO', 'GET_SUPPORTED_PROTO_RESP'],
+  ['REGISTER', 'REGISTER_RESP'],
+  ['DEREGISTER', 'DEREGISTER_RESP'],
+  ['ERROR'],
+  ['SessionContext'],
+  ['UNKNOWN_RECORD'],
+];
+
+// Flatten for easy lookup (used in getDefaultFilters and Select All)
+const MESSAGE_TYPES_FLAT = MESSAGE_TYPES.flat();
+
+const SOURCES = [
+  { value: 'controller', label: 'Controller' },
+  { value: 'device', label: 'Agent' },
+  { value: 'unknown', label: 'Unknown' },
+];
+
+const MTPS = [
+  { value: 'mqtt', label: 'MQTT' },
+  { value: 'ws', label: 'WS' },
+  { value: 'stomp', label: 'STOMP' },
+  { value: 'unknown', label: 'Unknown' },
+];
+
 export const DevicesHistory = () => {
   const router = useRouter();
   const { httpRequest } = useBackendContext();
@@ -134,6 +173,175 @@ export const DevicesHistory = () => {
   const [toDate, setToDate] = useState('');
   const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+  
+  // Get default filter state (all checkboxes selected)
+  const getDefaultFilters = () => ({
+    messageTypes: [...MESSAGE_TYPES_FLAT], // All message types selected
+    sources: SOURCES.map(s => s.value), // All sources selected
+    mtps: MTPS.map(m => m.value), // All MTPs selected
+    messageId: '',
+    messageIdExact: false,
+  });
+  
+  const [filters, setFilters] = useState(getDefaultFilters());
+  // Temporary filter state for modal (only applied on "Apply")
+  const [tempFilters, setTempFilters] = useState({
+    messageTypes: [],
+    sources: [],
+    mtps: [],
+    messageId: '',
+    messageIdExact: false,
+  });
+  const [tempFromDate, setTempFromDate] = useState('');
+  const [tempToDate, setTempToDate] = useState('');
+  
+  // Refs to keep latest filter values for auto-refresh (initialized after state)
+  const filtersRef = useRef(filters);
+  const fromDateRef = useRef(fromDate);
+  const toDateRef = useRef(toDate);
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    filtersRef.current = filters;
+    fromDateRef.current = fromDate;
+    toDateRef.current = toDate;
+  }, [filters, fromDate, toDate]);
+
+  // Update URL query params with current filters (only when user changes filters, not on auto-refresh)
+  // Use ref to avoid recreating the function and causing infinite loops
+  const updateURLParamsRef = useRef(null);
+  updateURLParamsRef.current = () => {
+    if (!router.isReady) return;
+    
+    const currentFilters = filtersRef.current;
+    const currentFromDate = fromDateRef.current;
+    const currentToDate = toDateRef.current;
+    
+    // Check if filters are in default state (all selected = no filtering)
+    // Need to check both length AND that all expected values are present
+    const allMessageTypesSelected = 
+      currentFilters.messageTypes.length === MESSAGE_TYPES_FLAT.length &&
+      MESSAGE_TYPES_FLAT.every(type => currentFilters.messageTypes.includes(type));
+    const allSourcesSelected = 
+      currentFilters.sources.length === SOURCES.length &&
+      SOURCES.every(s => currentFilters.sources.includes(s.value));
+    const allMtpsSelected = 
+      currentFilters.mtps.length === MTPS.length &&
+      MTPS.every(m => currentFilters.mtps.includes(m.value));
+    
+    const isDefaultState = 
+      allMessageTypesSelected &&
+      allSourcesSelected &&
+      allMtpsSelected &&
+      currentFilters.messageId === '' &&
+      currentFromDate === '' &&
+      currentToDate === '';
+    
+    // Build new query - remove filter params if in default state
+    const newQuery = { ...router.query };
+    
+    if (isDefaultState) {
+      // Remove all filter params from URL
+      delete newQuery.from;
+      delete newQuery.to;
+      delete newQuery.msg_type;
+      delete newQuery.source;
+      delete newQuery.mtp;
+      delete newQuery.msg_id;
+      delete newQuery.msg_id_exact;
+    } else {
+      // Add/update filter params - handle arrays properly for Next.js router
+      if (currentFromDate) newQuery.from = currentFromDate;
+      if (currentToDate) newQuery.to = currentToDate;
+      
+      // Set arrays directly (Next.js router handles arrays in query)
+      if (currentFilters.messageTypes.length > 0) {
+        newQuery.msg_type = currentFilters.messageTypes;
+      } else {
+        delete newQuery.msg_type;
+      }
+      if (currentFilters.sources.length > 0) {
+        newQuery.source = currentFilters.sources;
+      } else {
+        delete newQuery.source;
+      }
+      if (currentFilters.mtps.length > 0) {
+        newQuery.mtp = currentFilters.mtps;
+      } else {
+        delete newQuery.mtp;
+      }
+      
+      if (currentFilters.messageId) {
+        newQuery.msg_id = currentFilters.messageId;
+        if (currentFilters.messageIdExact) {
+          newQuery.msg_id_exact = 'true';
+        } else {
+          delete newQuery.msg_id_exact;
+        }
+      } else {
+        delete newQuery.msg_id;
+        delete newQuery.msg_id_exact;
+      }
+    }
+    
+    // Only update if something actually changed to avoid infinite loops
+    const currentQuery = router.query;
+    const hasChanges = 
+      (currentFromDate !== (currentQuery.from || '')) ||
+      (currentToDate !== (currentQuery.to || '')) ||
+      (currentFilters.messageId !== (currentQuery.msg_id || '')) ||
+      (currentFilters.messageIdExact !== (currentQuery.msg_id_exact === 'true')) ||
+      JSON.stringify(currentFilters.messageTypes.sort()) !== JSON.stringify((Array.isArray(currentQuery.msg_type) ? currentQuery.msg_type : currentQuery.msg_type ? [currentQuery.msg_type] : []).sort()) ||
+      JSON.stringify(currentFilters.sources.sort()) !== JSON.stringify((Array.isArray(currentQuery.source) ? currentQuery.source : currentQuery.source ? [currentQuery.source] : []).sort()) ||
+      JSON.stringify(currentFilters.mtps.sort()) !== JSON.stringify((Array.isArray(currentQuery.mtp) ? currentQuery.mtp : currentQuery.mtp ? [currentQuery.mtp] : []).sort());
+    
+    if (hasChanges) {
+      // Update URL without page reload
+      router.push(
+        {
+          pathname: router.pathname,
+          query: newQuery,
+        },
+        undefined,
+        { shallow: true }
+      );
+    }
+  };
+
+  // Read filters from URL query params on mount only (not on every query change)
+  const hasReadURLParams = useRef(false);
+  useEffect(() => {
+    if (!deviceID || !router.isReady || hasReadURLParams.current) return;
+    
+    const query = router.query;
+    
+    // If no filter params in URL, keep default state (all selected)
+    // Only set filters if filter params are explicitly present in URL
+    const hasFilterParams = query.msg_type !== undefined || query.source !== undefined || 
+                           query.mtp !== undefined || query.msg_id !== undefined;
+    
+    if (hasFilterParams) {
+      const newFilters = {
+        messageTypes: query.msg_type ? (Array.isArray(query.msg_type) ? query.msg_type : [query.msg_type]) : [],
+        sources: query.source ? (Array.isArray(query.source) ? query.source : [query.source]) : [],
+        mtps: query.mtp ? (Array.isArray(query.mtp) ? query.mtp : [query.mtp]) : [],
+        messageId: query.msg_id || '',
+        messageIdExact: query.msg_id_exact === 'true',
+      };
+      setFilters(newFilters);
+    }
+    // If no filter params, keep default state (already set in useState)
+    
+    if (query.from) setFromDate(query.from);
+    if (query.to) setToDate(query.to);
+    hasReadURLParams.current = true;
+  }, [deviceID, router.isReady]);
+  
+  // Reset URL params read flag when device changes
+  useEffect(() => {
+    hasReadURLParams.current = false;
+  }, [deviceID]);
 
   // Fetch message history
   // mode: 'replace' (default), 'prepend' (for load more - add older messages to top), 'refresh' (for auto-refresh - add new messages to top)
@@ -167,6 +375,63 @@ export const DevicesHistory = () => {
         const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
         const utcString = `${year}-${month}-${day}T${hours}:${minutes}`;
         params.append('to', utcString);
+      }
+      
+      // Check if filters are in default state (all selected = no filtering)
+      // Need to check both length AND that all expected values are present
+      const allMessageTypesSelected = 
+        filters.messageTypes.length === MESSAGE_TYPES_FLAT.length &&
+        MESSAGE_TYPES_FLAT.every(type => filters.messageTypes.includes(type));
+      const allSourcesSelected = 
+        filters.sources.length === SOURCES.length &&
+        SOURCES.every(s => filters.sources.includes(s.value));
+      const allMtpsSelected = 
+        filters.mtps.length === MTPS.length &&
+        MTPS.every(m => filters.mtps.includes(m.value));
+      
+      const isDefaultState = 
+        allMessageTypesSelected &&
+        allSourcesSelected &&
+        allMtpsSelected &&
+        filters.messageId === '' &&
+        !filters.messageIdExact &&
+        !fromDate &&
+        !toDate;
+
+      // Always send filter params to backend so it knows what filters to apply
+      // Message Types
+      if (filters.messageTypes.length === 0) {
+        // None selected - send empty parameter to indicate "return nothing"
+        params.append('msg_type', '');
+      } else {
+        // Send all selected values
+        filters.messageTypes.forEach(type => params.append('msg_type', type));
+      }
+
+      // Sources - always send (even in default state, send all values)
+      if (filters.sources.length === 0) {
+        // None selected - send empty parameter to indicate "return nothing"
+        params.append('source', '');
+      } else {
+        // Send all selected values
+        filters.sources.forEach(source => params.append('source', source));
+      }
+
+      // MTPs - always send (even in default state, send all values)
+      if (filters.mtps.length === 0) {
+        // None selected - send empty parameter to indicate "return nothing"
+        params.append('mtp', '');
+      } else {
+        // Send all selected values
+        filters.mtps.forEach(mtp => params.append('mtp', mtp));
+      }
+
+      // Message ID: only send if set
+      if (filters.messageId) {
+        params.append('msg_id', filters.messageId);
+        if (filters.messageIdExact) {
+          params.append('msg_id_exact', 'true');
+        }
       }
       
       const { result, status } = await httpRequest(
@@ -256,17 +521,65 @@ export const DevicesHistory = () => {
     } finally {
       setLoading(false);
     }
-  }, [deviceID, limit, fromDate, toDate, httpRequest]);
+  }, [deviceID, limit, fromDate, toDate, filters, httpRequest]);
 
+  // Track last fetch params to avoid unnecessary refetches
+  const lastFetchParamsRef = useRef(null);
+  
   useEffect(() => {
-    if (deviceID) {
-      setNextCursor('');
-      setHasMore(false);
-      newestMessageIdRef.current = null; // Reset when device changes
-      fetchMessages('', 'replace');
+    if (!deviceID) return;
+    
+    // Create a key for current fetch params
+    const fetchKey = JSON.stringify({
+      deviceID,
+      limit,
+      fromDate,
+      toDate,
+      filters,
+    });
+    
+    // Only fetch if params actually changed
+    if (lastFetchParamsRef.current === fetchKey) {
+      return;
     }
+    
+    lastFetchParamsRef.current = fetchKey;
+    setNextCursor('');
+    setHasMore(false);
+    newestMessageIdRef.current = null; // Reset when device changes
+    fetchMessages('', 'replace');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceID, limit, fromDate, toDate]);
+  }, [deviceID, limit, fromDate, toDate, filters]);
+  
+  // Update URL when filters change (but not on initial load or during auto-refresh)
+  const isInitialMount = useRef(true);
+  const skipNextUpdate = useRef(false);
+  const lastUpdateRef = useRef({ fromDate: '', toDate: '', filters: { messageTypes: [], sources: [], mtps: [], messageId: '', messageIdExact: false } });
+  
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      lastUpdateRef.current = { fromDate, toDate, filters };
+      return;
+    }
+    if (skipNextUpdate.current) {
+      skipNextUpdate.current = false;
+      return;
+    }
+    
+    // Only update if values actually changed
+    const hasChanged = 
+      fromDate !== lastUpdateRef.current.fromDate ||
+      toDate !== lastUpdateRef.current.toDate ||
+      JSON.stringify(filters) !== JSON.stringify(lastUpdateRef.current.filters);
+    
+    if (hasChanged && deviceID && router.isReady) {
+      lastUpdateRef.current = { fromDate, toDate, filters };
+      if (updateURLParamsRef.current) {
+        updateURLParamsRef.current();
+      }
+    }
+  }, [deviceID, fromDate, toDate, filters, router.isReady]);
 
   useEffect(() => {
     if (!autoRefresh || !deviceID) {
@@ -278,21 +591,246 @@ export const DevicesHistory = () => {
     }
     
     // Auto-refresh: only fetch new messages and prepend them
-    const interval = setInterval(() => {
-      fetchMessages('', 'refresh');
+    // Use refs to access latest filters/date without recreating the interval
+    const interval = setInterval(async () => {
+      // Skip URL update during auto-refresh
+      skipNextUpdate.current = true;
+      
+      // Use refs to get latest values without recreating the interval
+      const currentFilters = filtersRef.current;
+      const currentFromDate = fromDateRef.current;
+      const currentToDate = toDateRef.current;
+      
+      // Build params with current filter values from refs
+      const params = new URLSearchParams({ limit: limit.toString() });
+      
+      if (currentFromDate) {
+        const localDate = new Date(currentFromDate);
+        const year = localDate.getUTCFullYear();
+        const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getUTCDate()).padStart(2, '0');
+        const hours = String(localDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
+        const utcString = `${year}-${month}-${day}T${hours}:${minutes}`;
+        params.append('from', utcString);
+      }
+      if (currentToDate) {
+        const localDate = new Date(currentToDate);
+        const year = localDate.getUTCFullYear();
+        const month = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getUTCDate()).padStart(2, '0');
+        const hours = String(localDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(localDate.getUTCMinutes()).padStart(2, '0');
+        const utcString = `${year}-${month}-${day}T${hours}:${minutes}`;
+        params.append('to', utcString);
+      }
+      
+      // Always send filter params to backend (same logic as fetchMessages)
+      // Message Types
+      if (currentFilters.messageTypes.length === 0) {
+        params.append('msg_type', '');
+      } else {
+        currentFilters.messageTypes.forEach(type => params.append('msg_type', type));
+      }
+
+      // Sources
+      if (currentFilters.sources.length === 0) {
+        params.append('source', '');
+      } else {
+        currentFilters.sources.forEach(source => params.append('source', source));
+      }
+
+      // MTPs
+      if (currentFilters.mtps.length === 0) {
+        params.append('mtp', '');
+      } else {
+        currentFilters.mtps.forEach(mtp => params.append('mtp', mtp));
+      }
+
+      // Message ID
+      if (currentFilters.messageId) {
+        params.append('msg_id', currentFilters.messageId);
+        if (currentFilters.messageIdExact) {
+          params.append('msg_id_exact', 'true');
+        }
+      }
+      
+      // Make the request directly without using fetchMessages to avoid dependency issues
+      try {
+        const { result, status } = await httpRequest(
+          `/api/device/${deviceID}/history?${params.toString()}`,
+          'GET'
+        );
+        if (status === 200 && result) {
+          const newMessages = result.messages || [];
+          setMessages(prev => {
+            if (prev.length === 0) {
+              if (newMessages.length > 0) {
+                newestMessageIdRef.current = newMessages[0].id;
+              }
+              return newMessages;
+            }
+            
+            const currentNewestId = newestMessageIdRef.current;
+            if (!currentNewestId) {
+              const existingIds = new Set(prev.map(m => m.id));
+              const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id));
+              if (uniqueNewMessages.length > 0) {
+                newestMessageIdRef.current = uniqueNewMessages[0].id;
+              }
+              return [...uniqueNewMessages, ...prev];
+            }
+            
+            const newestIndex = newMessages.findIndex(m => m.id === currentNewestId);
+            if (newestIndex === -1) {
+              const existingIds = new Set(prev.map(m => m.id));
+              const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id));
+              if (uniqueNewMessages.length > 0) {
+                newestMessageIdRef.current = uniqueNewMessages[0].id;
+              }
+              return [...uniqueNewMessages, ...prev];
+            }
+            
+            const newerMessages = newMessages.slice(0, newestIndex);
+            if (newerMessages.length > 0) {
+              const existingIds = new Set(prev.map(m => m.id));
+              const uniqueNewerMessages = newerMessages.filter(m => !existingIds.has(m.id));
+              if (uniqueNewerMessages.length > 0) {
+                newestMessageIdRef.current = uniqueNewerMessages[0].id;
+                return [...uniqueNewerMessages, ...prev];
+              }
+            }
+            
+            return prev;
+          });
+        }
+      } catch (err) {
+        // Silently fail during auto-refresh to avoid spamming errors
+        console.error('Auto-refresh error:', err);
+      }
     }, 5000);
     setAutoRefreshInterval(interval);
     return () => {
       clearInterval(interval);
       setAutoRefreshInterval(null);
     };
-  }, [autoRefresh, deviceID, fetchMessages]);
+    // Only recreate interval when autoRefresh, deviceID, or limit changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh, deviceID, limit, httpRequest]);
 
   const handleLoadMore = () => {
     if (nextCursor && !loading) fetchMessages(nextCursor, 'prepend');
   };
 
   const handleRefresh = () => fetchMessages();
+
+  // Open filter modal and copy current filters to temp state, or use defaults if no filters applied
+  const handleOpenFilterDialog = () => {
+    // If no filters are applied, use default state (all selected)
+    const hasFilters = filters.messageTypes.length > 0 || 
+                       filters.sources.length > 0 || 
+                       filters.mtps.length > 0 || 
+                       filters.messageId !== '' ||
+                       fromDate !== '' ||
+                       toDate !== '';
+    
+    if (hasFilters) {
+      setTempFilters({ ...filters });
+      setTempFromDate(fromDate);
+      setTempToDate(toDate);
+    } else {
+      setTempFilters(getDefaultFilters());
+      setTempFromDate('');
+      setTempToDate('');
+    }
+    setFilterDialogOpen(true);
+  };
+  
+  // Apply filters from temp state
+  const handleApplyFilters = () => {
+    // Check if filters are in default state (all selected = no filtering)
+    // Need to check both length AND that all expected values are present
+    const allMessageTypesSelected = 
+      tempFilters.messageTypes.length === MESSAGE_TYPES_FLAT.length &&
+      MESSAGE_TYPES_FLAT.every(type => tempFilters.messageTypes.includes(type));
+    const allSourcesSelected = 
+      tempFilters.sources.length === SOURCES.length &&
+      SOURCES.every(s => tempFilters.sources.includes(s.value));
+    const allMtpsSelected = 
+      tempFilters.mtps.length === MTPS.length &&
+      MTPS.every(m => tempFilters.mtps.includes(m.value));
+    
+    const isDefaultState = 
+      allMessageTypesSelected &&
+      allSourcesSelected &&
+      allMtpsSelected &&
+      tempFilters.messageId === '' &&
+      tempFromDate === '' &&
+      tempToDate === '';
+    
+    if (isDefaultState) {
+      // Set filters to default state (all selected)
+      setFilters(getDefaultFilters());
+      setFromDate('');
+      setToDate('');
+    } else {
+      // Apply the filters
+      setFilters({ ...tempFilters });
+      setFromDate(tempFromDate);
+      setToDate(tempToDate);
+    }
+    
+    setNextCursor('');
+    setHasMore(false);
+    setFilterDialogOpen(false);
+  };
+  
+  // Cancel - just close modal without applying
+  const handleCancelFilters = () => {
+    setFilterDialogOpen(false);
+  };
+  
+  // Clear all filters - return to default state (all selected)
+  const handleClearFilters = () => {
+    setTempFilters(getDefaultFilters());
+    setTempFromDate('');
+    setTempToDate('');
+  };
+  
+  // Handle temp filter changes in modal
+  const handleTempFilterChange = (filterType, value, checked) => {
+    setTempFilters(prev => {
+      const newFilters = { ...prev };
+      if (filterType === 'messageType') {
+        if (checked) {
+          newFilters.messageTypes = [...prev.messageTypes, value];
+        } else {
+          newFilters.messageTypes = prev.messageTypes.filter(t => t !== value);
+        }
+      } else if (filterType === 'source') {
+        if (checked) {
+          newFilters.sources = [...prev.sources, value];
+        } else {
+          newFilters.sources = prev.sources.filter(s => s !== value);
+        }
+      } else if (filterType === 'mtp') {
+        if (checked) {
+          newFilters.mtps = [...prev.mtps, value];
+        } else {
+          newFilters.mtps = prev.mtps.filter(m => m !== value);
+        }
+      }
+      return newFilters;
+    });
+  };
+  
+  const handleTempMessageIdChange = (value) => {
+    setTempFilters(prev => ({ ...prev, messageId: value }));
+  };
+  
+  const handleTempMessageIdExactChange = (checked) => {
+    setTempFilters(prev => ({ ...prev, messageIdExact: checked }));
+  };
 
   const handleClearHistory = async () => {
     setClearingHistory(true);
@@ -746,32 +1284,6 @@ export const DevicesHistory = () => {
       <CardActions>
         <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-            <TextField
-              label="From"
-              type="datetime-local"
-              value={fromDate}
-              onChange={(e) => {
-                setFromDate(e.target.value);
-                setNextCursor('');
-                setHasMore(false);
-              }}
-              InputLabelProps={{ shrink: true }}
-              size="small"
-              sx={{ minWidth: 200 }}
-            />
-            <TextField
-              label="To"
-              type="datetime-local"
-              value={toDate}
-              onChange={(e) => {
-                setToDate(e.target.value);
-                setNextCursor('');
-                setHasMore(false);
-              }}
-              InputLabelProps={{ shrink: true }}
-              size="small"
-              sx={{ minWidth: 200 }}
-            />
             <FormControl size="small" sx={{ minWidth: 120 }}>
               <InputLabel>Page Size</InputLabel>
               <Select
@@ -797,10 +1309,22 @@ export const DevicesHistory = () => {
             </IconButton>
             <Button
               variant="outlined"
+              onClick={handleOpenFilterDialog}
+              disabled={loading}
+            >
+              Filters
+            </Button>
+            <Button
+              variant="outlined"
               color="error"
               startIcon={<SvgIcon><TrashIcon /></SvgIcon>}
               onClick={() => setClearHistoryDialogOpen(true)}
               disabled={loading}
+              sx={{
+                '&:hover': {
+                  backgroundColor: 'error.main',
+                },
+              }}
             >
               Clear History
             </Button>
@@ -808,6 +1332,7 @@ export const DevicesHistory = () => {
         </Stack>
       </CardActions>
       <CardContent>
+        
         {error && (
           <Box sx={{ mb: 2 }}>
             <Typography color="error">{error}</Typography>
@@ -1035,6 +1560,330 @@ export const DevicesHistory = () => {
           >
             {clearingHistory ? 'Clearing...' : 'Yes'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Filter Dialog */}
+      <Dialog 
+        open={filterDialogOpen} 
+        onClose={handleCancelFilters}
+        maxWidth={false}
+        PaperProps={{
+          sx: { maxWidth: 500 }
+        }}
+      >
+        <DialogTitle>Filters</DialogTitle>
+        <DialogContent>
+          <Stack spacing={3} sx={{ mt: 1 }}>
+            {/* Date Range */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>Date Range</Typography>
+              <Stack direction="row" spacing={2}>
+                <TextField
+                  label="From"
+                  type="datetime-local"
+                  value={tempFromDate}
+                  onChange={(e) => setTempFromDate(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  size="small"
+                  fullWidth
+                />
+                <TextField
+                  label="To"
+                  type="datetime-local"
+                  value={tempToDate}
+                  onChange={(e) => setTempToDate(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  size="small"
+                  fullWidth
+                />
+              </Stack>
+            </Box>
+
+            {/* Message Type - Pairs layout */}
+            <Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="subtitle2">Message Type</Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      setTempFilters(prev => ({
+                        ...prev,
+                        messageTypes: [...MESSAGE_TYPES_FLAT],
+                      }));
+                    }}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      setTempFilters(prev => ({
+                        ...prev,
+                        messageTypes: [],
+                      }));
+                    }}
+                  >
+                    Unselect All
+                  </Button>
+                </Stack>
+              </Box>
+              <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 1, p: 1.5 }}>
+                <Grid container spacing={1}>
+                  {MESSAGE_TYPES.map((types, index) => (
+                    <Grid item xs={12} key={index}>
+                      {types.length === 2 ? (
+                        // Pair - display side by side
+                        <Stack direction="row" spacing={2}>
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={tempFilters.messageTypes.includes(types[0])}
+                                onChange={(e) => handleTempFilterChange('messageType', types[0], e.target.checked)}
+                                size="small"
+                                sx={{
+                                  '& .MuiSvgIcon-root': {
+                                    fontSize: '18px',
+                                  },
+                                }}
+                              />
+                            }
+                            label={types[0]}
+                            sx={{ 
+                              flex: 1, 
+                              m: 0, 
+                              fontSize: '0.75rem',
+                              border: '1px solid #e0e0e0',
+                              borderRadius: '4px',
+                              padding: '4px 8px',
+                              marginRight: '8px',
+                            }}
+                          />
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={tempFilters.messageTypes.includes(types[1])}
+                                onChange={(e) => handleTempFilterChange('messageType', types[1], e.target.checked)}
+                                size="small"
+                                sx={{
+                                  '& .MuiSvgIcon-root': {
+                                    fontSize: '18px',
+                                  },
+                                }}
+                              />
+                            }
+                            label={types[1]}
+                            sx={{ 
+                              flex: 1, 
+                              m: 0, 
+                              fontSize: '0.75rem',
+                              border: '1px solid #e0e0e0',
+                              borderRadius: '4px',
+                              padding: '4px 8px',
+                              marginRight: '8px',
+                            }}
+                          />
+                        </Stack>
+                      ) : (
+                        // Single - display alone
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={tempFilters.messageTypes.includes(types[0])}
+                              onChange={(e) => handleTempFilterChange('messageType', types[0], e.target.checked)}
+                              size="small"
+                              sx={{
+                                '& .MuiSvgIcon-root': {
+                                  fontSize: '18px',
+                                },
+                              }}
+                            />
+                          }
+                          label={types[0]}
+                          sx={{ 
+                            m: 0, 
+                            fontSize: '0.75rem',
+                            border: '1px solid #e0e0e0',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                            marginRight: '8px',
+                          }}
+                        />
+                      )}
+                    </Grid>
+                  ))}
+                </Grid>
+              </Box>
+            </Box>
+
+            {/* Source and MTP on one line */}
+            <Box>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>Source</Typography>
+                  <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 1, p: 1.5 }}>
+                    <Stack spacing={1}>
+                      {SOURCES.map((source) => (
+                        <FormControlLabel
+                          key={source.value}
+                          control={
+                            <Checkbox
+                              checked={tempFilters.sources.includes(source.value)}
+                              onChange={(e) => handleTempFilterChange('source', source.value, e.target.checked)}
+                              size="small"
+                              sx={{
+                                '& .MuiSvgIcon-root': {
+                                  fontSize: '18px',
+                                },
+                              }}
+                            />
+                          }
+                          label={source.label}
+                          sx={{ 
+                            m: 0,
+                            fontSize: '0.75rem',
+                            border: '1px solid #e0e0e0',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                          }}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1, justifyContent: 'center' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setTempFilters(prev => ({
+                          ...prev,
+                          sources: SOURCES.map(s => s.value),
+                        }));
+                      }}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setTempFilters(prev => ({
+                          ...prev,
+                          sources: [],
+                        }));
+                      }}
+                    >
+                      None
+                    </Button>
+                  </Stack>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>MTP</Typography>
+                  <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 1, p: 1.5 }}>
+                    <Stack spacing={1}>
+                      {MTPS.map((mtp) => (
+                        <FormControlLabel
+                          key={mtp.value}
+                          control={
+                            <Checkbox
+                              checked={tempFilters.mtps.includes(mtp.value)}
+                              onChange={(e) => handleTempFilterChange('mtp', mtp.value, e.target.checked)}
+                              size="small"
+                              sx={{
+                                '& .MuiSvgIcon-root': {
+                                  fontSize: '18px',
+                                },
+                              }}
+                            />
+                          }
+                          label={mtp.label}
+                          sx={{ 
+                            m: 0,
+                            fontSize: '0.75rem',
+                            border: '1px solid #e0e0e0',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                          }}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1, justifyContent: 'center' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setTempFilters(prev => ({
+                          ...prev,
+                          mtps: MTPS.map(m => m.value),
+                        }));
+                      }}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setTempFilters(prev => ({
+                          ...prev,
+                          mtps: [],
+                        }));
+                      }}
+                    >
+                      None
+                    </Button>
+                  </Stack>
+                </Grid>
+              </Grid>
+            </Box>
+
+            {/* Message ID */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>Message ID</Typography>
+              <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
+                <TextField
+                  label="Message ID"
+                  value={tempFilters.messageId}
+                  onChange={(e) => handleTempMessageIdChange(e.target.value)}
+                  size="small"
+                  sx={{ flex: 1, minWidth: 0 }}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={tempFilters.messageIdExact}
+                      onChange={(e) => handleTempMessageIdExactChange(e.target.checked)}
+                      size="small"
+                      sx={{
+                        '& .MuiSvgIcon-root': {
+                          fontSize: '18px',
+                        },
+                      }}
+                    />
+                  }
+                  label="Exact match"
+                  sx={{ 
+                    fontSize: '0.75rem',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    marginRight: '8px',
+                  }}
+                />
+              </Stack>
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClearFilters}>Clear</Button>
+          <Button onClick={handleCancelFilters}>Cancel</Button>
+          <Button onClick={handleApplyFilters} variant="contained">Apply</Button>
         </DialogActions>
       </Dialog>
     </Card>

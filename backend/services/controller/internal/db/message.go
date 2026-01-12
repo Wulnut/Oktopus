@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -38,6 +39,25 @@ type UspMessageError struct {
 
 var ErrorMessageNotFound = errors.New("Message not found")
 
+// MessageFilters represents filter criteria for message history queries
+type MessageFilters struct {
+	MessageTypes  []string // e.g., ["OPERATE", "GET"] - exact match only
+	Sources       []string // e.g., ["controller", "device", "unknown"]
+	MTPs          []string // e.g., ["mqtt", "ws", "unknown"]
+	MessageID     string   // Message ID to search for
+	MessageIDExact bool    // true = exact match, false = partial (substring) match
+}
+
+// escapeRegex escapes special regex characters to make a simple substring search
+func escapeRegex(s string) string {
+	specialChars := []string{"\\", "^", "$", ".", "|", "?", "*", "+", "(", ")", "[", "]", "{", "}"}
+	result := s
+	for _, char := range specialChars {
+		result = strings.ReplaceAll(result, char, "\\"+char)
+	}
+	return result
+}
+
 // StoreUspMessage stores a USP message in the database
 func (d *Database) StoreUspMessage(ctx context.Context, msg UspMessage) error {
 	_, err := d.messages.InsertOne(ctx, msg)
@@ -50,7 +70,8 @@ func (d *Database) StoreUspMessage(ctx context.Context, msg UspMessage) error {
 
 // GetMessageHistory retrieves message history for a device using cursor-based pagination
 // fromTime and toTime are optional time filters. If nil, no time filtering is applied.
-func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, limit int, cursorID string, fromTime, toTime *time.Time) ([]UspMessage, string, error) {
+// filters is optional. If nil, no additional filtering is applied.
+func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, limit int, cursorID string, fromTime, toTime *time.Time, filters *MessageFilters) ([]UspMessage, string, error) {
 	filter := bson.M{"device_serial": deviceSerial}
 
 	// Add timestamp filters
@@ -64,6 +85,100 @@ func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, l
 		}
 		if len(timestampFilter) > 0 {
 			filter["timestamp"] = timestampFilter
+		}
+	}
+
+	// Add message filters if provided
+	if filters != nil {
+		// Add message type filter - EXACT MATCH ONLY
+		// Empty array means "return nothing" for this filter
+		if len(filters.MessageTypes) > 0 {
+			filter["msg_type"] = bson.M{"$in": filters.MessageTypes}
+		} else {
+			// Explicitly empty array - return no results for this filter
+			filter["msg_type"] = bson.M{"$in": []string{}}
+		}
+
+		// Add source filter - handle "unknown" separately
+		// Empty array means "return nothing" for this filter
+		if len(filters.Sources) > 0 {
+			hasUnknown := false
+			sources := []string{}
+			for _, s := range filters.Sources {
+				if s == "unknown" {
+					hasUnknown = true
+				} else {
+					sources = append(sources, s)
+				}
+			}
+
+			if hasUnknown && len(sources) > 0 {
+
+				// Mix of known sources and unknown - use $in with all values including nil and empty
+				allSources := make([]interface{}, len(sources)+2)
+				for i, s := range sources {
+					allSources[i] = s
+				}
+				allSources[len(sources)] = nil
+				allSources[len(sources)+1] = ""
+				filter["source"] = bson.M{"$in": allSources}
+			} else if hasUnknown {
+				// Only unknown selected
+				filter["source"] = bson.M{"$in": []interface{}{nil, ""}}
+			} else {
+				// Only known sources selected
+				filter["source"] = bson.M{"$in": sources}
+			}
+		} else {
+			// Explicitly empty array - return no results for this filter
+			filter["source"] = bson.M{"$in": []interface{}{}}
+		}
+
+		// Add MTP filter - handle "unknown" separately
+		// Empty array means "return nothing" for this filter
+		if len(filters.MTPs) > 0 {
+			hasUnknown := false
+			mtps := []string{}
+			for _, m := range filters.MTPs {
+				if m == "unknown" {
+					hasUnknown = true
+				} else {
+					mtps = append(mtps, m)
+				}
+			}
+
+			if hasUnknown && len(mtps) > 0 {
+				// Mix of known MTPs and unknown - use $in with all values including nil and empty
+				allMtps := make([]interface{}, len(mtps)+2)
+				for i, m := range mtps {
+					allMtps[i] = m
+				}
+				allMtps[len(mtps)] = nil
+				allMtps[len(mtps)+1] = ""
+				filter["mtp"] = bson.M{"$in": allMtps}
+			} else if hasUnknown {
+				// Only unknown selected
+				filter["mtp"] = bson.M{"$in": []interface{}{nil, ""}}
+			} else {
+				// Only known MTPs selected
+				filter["mtp"] = bson.M{"$in": mtps}
+			}
+		} else {
+			// Explicitly empty array - return no results for this filter
+			filter["mtp"] = bson.M{"$in": []interface{}{}}
+		}
+
+		// Add message ID filter - exact or partial (substring)
+		if filters.MessageID != "" {
+			if filters.MessageIDExact {
+				// Exact match - uses index
+				filter["msg_id"] = filters.MessageID
+			} else {
+				// Partial match - substring search (case-insensitive)
+				// Escape special regex characters to make it a simple substring search
+				escaped := escapeRegex(filters.MessageID)
+				filter["msg_id"] = bson.M{"$regex": escaped, "$options": "i"}
+			}
 		}
 	}
 
