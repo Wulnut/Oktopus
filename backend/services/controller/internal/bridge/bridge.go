@@ -44,13 +44,22 @@ func NatsUspInteraction(
 
 	ch := make(chan *nats.Msg, 64)
 	done := make(chan error)
-	_, err := nc.ChanSubscribe(subSubj, ch)
+	
+	// Subscribe only for this specific request
+	sub, err := nc.ChanSubscribe(subSubj, ch)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(utils.Marshall("Error to communicate with nats: " + err.Error()))
 		return []byte{}, err
 	}
+	
+	// Ensure subscription is cleaned up after request completes
+	defer func() {
+		if err := sub.Unsubscribe(); err != nil {
+			log.Printf("Error unsubscribing from %s: %v", subSubj, err)
+		}
+	}()
 
 	go func() {
 		select {
@@ -90,13 +99,22 @@ func NatsCustomReq[T entity.DataType](
 
 	ch := make(chan *nats.Msg, 64)
 	done := make(chan string)
-	_, err := nc.ChanSubscribe(subSubj, ch)
+	
+	// Subscribe only for this specific request
+	sub, err := nc.ChanSubscribe(subSubj, ch)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(utils.Marshall("Error to communicate with nats: " + err.Error()))
 		return nil, err
 	}
+	
+	// Ensure subscription is cleaned up after request completes
+	defer func() {
+		if err := sub.Unsubscribe(); err != nil {
+			log.Printf("Error unsubscribing from %s: %v", subSubj, err)
+		}
+	}()
 
 	select {
 	case msg := <-ch:
