@@ -33,6 +33,8 @@ import {
   MenuItem,
   InputLabel,
   FormControl,
+  Tooltip,
+  Switch,
 } from '@mui/material';
 import { useRouter } from 'next/router';
 import { useBackendContext } from 'src/contexts/backend-context';
@@ -194,6 +196,28 @@ const formatTimeAgo = (timestamp) => {
   }
 };
 
+// Format uptime from seconds (similar to formatTimeAgo)
+const formatUptime = (seconds) => {
+  if (!seconds && seconds !== 0) return 'Unknown';
+  
+  const totalSeconds = parseInt(seconds, 10);
+  if (isNaN(totalSeconds) || totalSeconds < 0) return 'Unknown';
+  
+  const diffMins = Math.floor(totalSeconds / 60);
+  const diffHours = Math.floor(totalSeconds / 3600);
+  const diffDays = Math.floor(totalSeconds / 86400);
+  
+  if (diffDays > 0) {
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  } else if (diffHours > 0) {
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    return `${diffHours} hour${diffHours > 1 ? 's' : ''} ${mins} minute${mins !== 1 ? 's' : ''} ago`;
+  } else {
+    return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+  }
+};
+
 export const DevicesLCM = () => {
   const router = useRouter();
   const { httpRequest } = useBackendContext();
@@ -202,6 +226,8 @@ export const DevicesLCM = () => {
   const [deploymentUnits, setDeploymentUnits] = useState([]);
   const [executionEnvironments, setExecutionEnvironments] = useState([]);
   const [agentRequests, setAgentRequests] = useState([]); // Device.LocalAgent.Request.*.
+  const [executionUnits, setExecutionUnits] = useState(new Map()); // Map<path, {name, status}> for ExecutionUnit data
+  const [executionUnitOperations, setExecutionUnitOperations] = useState(new Set()); // Set<path> for ExecutionUnits with active operations
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [response, setResponse] = useState(null);
@@ -316,6 +342,7 @@ export const DevicesLCM = () => {
             get: {
               paramPaths: [
                 'Device.SoftwareModules.DeploymentUnit.*.',
+                'Device.SoftwareModules.ExecutionUnit.*.',
                 'Device.LocalAgent.Request.*.',
               ],
               maxDepth: 2,
@@ -345,10 +372,11 @@ export const DevicesLCM = () => {
     }
   };
 
-  // Parse DeploymentUnits and AgentRequests from GET response
+  // Parse DeploymentUnits, ExecutionUnits, and AgentRequests from GET response
   const parseDeploymentUnits = (response) => {
     const units = [];
     const requests = [];
+    const execUnitsMap = new Map(); // Map<path, {name, status}>
     
     if (response.req_path_results) {
       response.req_path_results.forEach(pathResult => {
@@ -378,6 +406,27 @@ export const DevicesLCM = () => {
               return; // Skip to next item
             }
             
+            // Parse Device.SoftwareModules.ExecutionUnit.*.
+            if (resolvedPath.includes('Device.SoftwareModules.ExecutionUnit.')) {
+              if (resolved.result_params) {
+                const params = resolved.result_params;
+                // Normalize path: ensure it ends with a dot
+                let normalizedPath = resolvedPath;
+                if (!normalizedPath.endsWith('.')) {
+                  normalizedPath = normalizedPath + '.';
+                }
+                execUnitsMap.set(normalizedPath, {
+                  name: params.Name || 'Unknown',
+                  status: params.Status || 'Unknown',
+                  faultCode: params.ExecutionFaultCode || '',
+                  faultMessage: params.ExecutionFaultMessage || '',
+                  uptime: params.Uptime || '',
+                  autoStart: params.AutoStart === 'true' || params.AutoStart === true,
+                });
+              }
+              return; // Skip to next item
+            }
+            
             // Only process paths that are actually DeploymentUnit instances
             if (!resolvedPath.includes('Device.SoftwareModules.DeploymentUnit.')) {
               return;
@@ -400,6 +449,23 @@ export const DevicesLCM = () => {
                 return;
               }
               
+              // Parse ExecutionUnitList (comma-separated list)
+              const executionUnitList = params.ExecutionUnitList || '';
+              let executionUnits = [];
+              if (executionUnitList && executionUnitList.trim() !== '') {
+                // Split by comma and normalize paths (add dot if missing)
+                executionUnits = executionUnitList.split(',')
+                  .map(path => path.trim())
+                  .filter(path => path.length > 0)
+                  .map(path => {
+                    // Ensure path ends with a dot
+                    if (!path.endsWith('.')) {
+                      return path + '.';
+                    }
+                    return path;
+                  });
+              }
+              
               units.push({
                 instance: instanceIndex,
                 name: name,
@@ -412,6 +478,7 @@ export const DevicesLCM = () => {
                 alias: params.Alias || '',
                 duid: params.DUID || '',
                 path: resolvedPath,
+                executionUnitList: executionUnits, // Store normalized paths
               });
             }
           });
@@ -428,6 +495,7 @@ export const DevicesLCM = () => {
     
     setDeploymentUnits(units);
     setAgentRequests(requests);
+    setExecutionUnits(execUnitsMap);
   };
 
   // Check if a deployment unit is being uninstalled
@@ -1242,6 +1310,185 @@ export const DevicesLCM = () => {
     }
   };
 
+  // Handle Start/Stop for ExecutionUnit
+  const handleExecutionUnitStartStop = async (execUnitPath, currentStatus) => {
+    // Determine requested state based on current status
+    // If Active or Starting -> Stop (Idle)
+    // If Idle -> Start (Active)
+    // If Stopping -> reject (shouldn't happen, but handle gracefully)
+    let requestedState;
+    if (currentStatus === 'Active' || currentStatus === 'Starting') {
+      requestedState = 'Idle'; // Stop
+    } else if (currentStatus === 'Idle') {
+      requestedState = 'Active'; // Start
+    } else if (currentStatus === 'Stopping') {
+      setError('Cannot change state while ExecutionUnit is stopping');
+      return;
+    } else {
+      setError(`Cannot change state from ${currentStatus}`);
+      return;
+    }
+
+    // Block this ExecutionUnit
+    setExecutionUnitOperations(prev => new Set(prev).add(execUnitPath));
+    setLoading(true);
+    setError(null);
+    setResponse(null);
+
+    try {
+      // Remove trailing dot from path if present for command
+      const commandPath = execUnitPath.endsWith('.') 
+        ? execUnitPath.slice(0, -1) + '.SetRequestedState()'
+        : execUnitPath + '.SetRequestedState()';
+      
+      const operateCommand = {
+        header: {
+          msg_id: generateUUID(),
+          msg_type: 6, // OPERATE
+        },
+        body: {
+          request: {
+            operate: {
+              command: commandPath,
+              command_key: 'SetRequestedState',
+              send_resp: true,
+              input_args: {
+                RequestedState: requestedState,
+              },
+            },
+          },
+        },
+      };
+
+      const { result, status } = await httpRequest(
+        `/api/device/${deviceID}/any/generic`,
+        'PUT',
+        JSON.stringify(operateCommand),
+        null
+      );
+
+      if (status === 200) {
+        const operationResult = result?.operation_results?.[0];
+        const operationResp = operationResult?.OperationResp;
+        
+        // Check for ReqOutputArgs (success response for SetRequestedState)
+        if (operationResp?.ReqOutputArgs !== undefined) {
+          // Ignore _retval, just treat as success
+          setResponse(`ExecutionUnit ${requestedState === 'Active' ? 'started' : 'stopped'} successfully`);
+          setError(null);
+          // Refresh the list after a short delay
+          setTimeout(() => {
+            fetchDeploymentUnits();
+          }, 1000);
+        } 
+        // Check for CmdFailure
+        else if (operationResp?.CmdFailure) {
+          const errorMsg = operationResp.CmdFailure.err_msg || 
+                          `Failed to ${requestedState === 'Active' ? 'start' : 'stop'} ExecutionUnit`;
+          setError(errorMsg);
+          setResponse(null);
+        } 
+        // Fallback
+        else {
+          setError('Unknown response format from SetRequestedState operation');
+          setResponse(null);
+        }
+      } else {
+        setError(result?.message || result || `Failed to ${requestedState === 'Active' ? 'start' : 'stop'} ExecutionUnit`);
+        setResponse(null);
+      }
+    } catch (err) {
+      setError(err.message || `An error occurred while ${requestedState === 'Active' ? 'starting' : 'stopping'} ExecutionUnit`);
+      setResponse(null);
+    } finally {
+      setLoading(false);
+      // Unblock this ExecutionUnit
+      setExecutionUnitOperations(prev => {
+        const next = new Set(prev);
+        next.delete(execUnitPath);
+        return next;
+      });
+    }
+  };
+
+  // Handle AutoStart toggle for ExecutionUnit
+  const handleAutoStartToggle = async (execUnitPath, currentValue) => {
+    const newValue = !currentValue;
+    
+    // Block this ExecutionUnit
+    setExecutionUnitOperations(prev => new Set(prev).add(execUnitPath));
+    setLoading(true);
+    setError(null);
+    setResponse(null);
+
+    try {
+      const setCommand = {
+        header: {
+          msg_id: generateUUID(),
+          msg_type: 4, // SET
+        },
+        body: {
+          request: {
+            set: {
+              allow_partial: false,
+              update_objs: [
+                {
+                  obj_path: execUnitPath,
+                  param_settings: [
+                    {
+                      param: 'AutoStart',
+                      value: newValue.toString(),
+                      required: true,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      const { result, status } = await httpRequest(
+        `/api/device/${deviceID}/any/generic`,
+        'PUT',
+        JSON.stringify(setCommand),
+        null
+      );
+
+      if (status === 200) {
+        // Check for success in the response
+        const updateResult = result?.updated_obj_results?.[0];
+        if (updateResult?.oper_status?.OperStatus?.OperSuccess !== undefined) {
+          setResponse(`AutoStart ${newValue ? 'enabled' : 'disabled'} successfully`);
+          setError(null);
+          // Refresh the list after a short delay
+          setTimeout(() => {
+            fetchDeploymentUnits();
+          }, 1000);
+        } else {
+          const errorMsg = updateResult?.oper_status?.OperStatus?.OperFailure?.err_msg || 
+                          'Failed to update AutoStart';
+          setError(errorMsg);
+          setResponse(null);
+        }
+      } else {
+        setError(result?.message || result || 'Failed to update AutoStart');
+        setResponse(null);
+      }
+    } catch (err) {
+      setError(err.message || 'An error occurred while updating AutoStart');
+      setResponse(null);
+    } finally {
+      setLoading(false);
+      // Unblock this ExecutionUnit
+      setExecutionUnitOperations(prev => {
+        const next = new Set(prev);
+        next.delete(execUnitPath);
+        return next;
+      });
+    }
+  };
+
   // Initial load - check support first
   useEffect(() => {
     if (deviceID) {
@@ -1257,7 +1504,7 @@ export const DevicesLCM = () => {
     }
   }, [deviceID, isSupported, checkingSupport]);
 
-  // Auto-refresh deployment units list every 5 seconds
+  // Auto-refresh deployment units list every 10 seconds
   useEffect(() => {
     if (!deviceID || isSupported !== true) return;
 
@@ -1266,7 +1513,7 @@ export const DevicesLCM = () => {
 
     const interval = setInterval(() => {
       fetchDeploymentUnits();
-    }, 5000); // Refresh every 5 seconds
+    }, 10000); // Refresh every 10 seconds
 
     return () => clearInterval(interval);
   }, [deviceID, loading, showInstallDialog, showUninstallDialog, showUpdateDialog, isSupported]);
@@ -1378,7 +1625,7 @@ export const DevicesLCM = () => {
                       zIndex: 10,
                     }}
                   >
-                    <CircularProgress sx={{ color: '#fff' }} />
+                    <CircularProgress sx={{ color: '#ff9800' }} />
                   </Box>
                 )}
                 <Table>
@@ -1388,7 +1635,7 @@ export const DevicesLCM = () => {
                       <TableCell>Version</TableCell>
                       <TableCell>Status</TableCell>
                       <TableCell>Update Status</TableCell>
-                      <TableCell>Installed Time</TableCell>
+                      <TableCell>Install Time/Uptime</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
                   </TableHead>
@@ -1400,9 +1647,10 @@ export const DevicesLCM = () => {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      deploymentUnits.map((unit) => {
+                      deploymentUnits.flatMap((unit) => {
                         const uninstalling = isUninstalling(unit);
-                        return (
+                        const rows = [
+                          // Main DeploymentUnit row
                           <TableRow 
                             key={unit.instance}
                             sx={{
@@ -1465,7 +1713,11 @@ export const DevicesLCM = () => {
                                 );
                               })()}
                             </TableCell>
-                            <TableCell>{formatTimeAgo(unit.installedTime)}</TableCell>
+                            <TableCell>
+                              <Tooltip title="Installed Time" arrow>
+                                <span>{formatTimeAgo(unit.installedTime)}</span>
+                              </Tooltip>
+                            </TableCell>
                             <TableCell align="right">
                               <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
                                 <IconButton
@@ -1494,6 +1746,7 @@ export const DevicesLCM = () => {
                                     setShowUninstallDialog(true);
                                   }}
                                   disabled={loading || uninstalling || isSupported === false || checkingSupport}
+                                  title="Uninstall container"
                                 >
                                   <SvgIcon>
                                     <TrashIcon />
@@ -1502,8 +1755,143 @@ export const DevicesLCM = () => {
                               </Box>
                             </TableCell>
                           </TableRow>
-                        );
-                      }))
+                        ];
+                        
+                        // Add ExecutionUnit subrows if they exist
+                        if (unit.executionUnitList && unit.executionUnitList.length > 0) {
+                          unit.executionUnitList.forEach((execUnitPath) => {
+                            const execUnit = executionUnits.get(execUnitPath);
+                            // Only add subrow if ExecutionUnit data exists in the response
+                            if (execUnit) {
+                              const isOperating = executionUnitOperations.has(execUnitPath);
+                              rows.push(
+                                <TableRow 
+                                  key={`${unit.instance}-${execUnitPath}`}
+                                  sx={{
+                                    position: 'relative',
+                                    opacity: isOperating ? 0.5 : 1,
+                                    transition: 'opacity 0.3s ease-in-out',
+                                    backgroundColor: isOperating ? 'rgba(255, 152, 0, 0.1)' : 'rgba(0, 0, 0, 0.02)',
+                                    backgroundImage: isOperating ? 'linear-gradient(90deg, transparent, rgba(255, 152, 0, 0.2), transparent)' : 'none',
+                                    backgroundSize: isOperating ? '200% 100%' : 'auto',
+                                    animation: isOperating ? `${shimmer} 2s infinite linear` : 'none',
+                                  }}
+                                >
+                                  <TableCell sx={{ pl: 4 }}>
+                                    <Typography variant="body2" color="text.secondary">
+                                      └ {execUnit.name}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell></TableCell>
+                                  <TableCell>
+                                    <Chip
+                                      label={execUnit.status}
+                                      size="small"
+                                      color={
+                                        execUnit.status === 'Active' || execUnit.status === 'Running'
+                                          ? 'success'
+                                          : execUnit.status === 'Failed' || execUnit.status === 'Stopped'
+                                          ? 'error'
+                                          : 'default'
+                                      }
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    {execUnit.faultCode ? (
+                                      <Tooltip 
+                                        title={execUnit.faultMessage || 'No fault message available'} 
+                                        arrow
+                                      >
+                                        <Chip
+                                          label={execUnit.faultCode}
+                                          size="small"
+                                          color={execUnit.faultCode === 'NoFault' ? 'success' : 'error'}
+                                        />
+                                      </Tooltip>
+                                    ) : (
+                                      <Typography variant="body2" color="text.disabled">
+                                        -
+                                      </Typography>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {execUnit.uptime !== '' ? (
+                                      <Tooltip title="Uptime" arrow>
+                                        <span>{formatUptime(execUnit.uptime)}</span>
+                                      </Tooltip>
+                                    ) : (
+                                      <Typography variant="body2" color="text.disabled">
+                                        -
+                                      </Typography>
+                                    )}
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+                                      {(() => {
+                                        const isOperating = executionUnitOperations.has(execUnitPath);
+                                        return (
+                                          <>
+                                            <Tooltip title="AutoStart" arrow>
+                                              <FormControlLabel
+                                                control={
+                                                  <Switch
+                                                    checked={execUnit.autoStart || false}
+                                                    onChange={() => handleAutoStartToggle(execUnitPath, execUnit.autoStart)}
+                                                    size="small"
+                                                    disabled={loading || isSupported === false || checkingSupport || isOperating}
+                                                  />
+                                                }
+                                                label=""
+                                                sx={{ m: 0 }}
+                                              />
+                                            </Tooltip>
+                                            {(() => {
+                                              const isActive = execUnit.status === 'Active' || execUnit.status === 'Starting';
+                                              const isIdle = execUnit.status === 'Idle';
+                                              const isStopping = execUnit.status === 'Stopping';
+                                              const canToggle = isActive || isIdle;
+                                              
+                                              return (
+                                                <Tooltip 
+                                                  title={
+                                                    isOperating
+                                                      ? 'Operation in progress...'
+                                                      : isStopping 
+                                                      ? 'Cannot change state while stopping' 
+                                                      : canToggle 
+                                                      ? (isActive ? 'Stop ExecutionUnit' : 'Start ExecutionUnit')
+                                                      : `Cannot change state from ${execUnit.status}`
+                                                  } 
+                                                  arrow
+                                                >
+                                                  <span>
+                                                    <Button
+                                                      variant={isActive ? 'contained' : 'outlined'}
+                                                      color={isActive ? 'error' : 'success'}
+                                                      size="small"
+                                                      onClick={() => handleExecutionUnitStartStop(execUnitPath, execUnit.status)}
+                                                      disabled={loading || isSupported === false || checkingSupport || !canToggle || isOperating}
+                                                    >
+                                                      {isOperating ? '...' : (isActive ? 'Stop' : isIdle ? 'Start' : execUnit.status)}
+                                                    </Button>
+                                                  </span>
+                                                </Tooltip>
+                                              );
+                                            })()}
+                                          </>
+                                        );
+                                      })()}
+                                    </Box>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+                          });
+                        }
+                        
+                        return rows;
+                      })
+                    )
                     }
                   </TableBody>
                 </Table>
