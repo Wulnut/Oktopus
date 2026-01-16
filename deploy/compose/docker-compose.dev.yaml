@@ -35,13 +35,16 @@ services:
     build:
       context: ../../backend/services/mtp/stomp-adapter
       dockerfile: build/Dockerfile
-    # Override image to use local build instead of registry
 
   mqtt-adapter:
     build:
       context: ../../backend/services/mtp/mqtt-adapter
       dockerfile: build/Dockerfile
-    # Override image to use local build instead of registry
+
+  ws-adapter:
+    build:
+      context: ../../backend/services/mtp/ws-adapter
+      dockerfile: build/Dockerfile
 
   adapter:
     build:

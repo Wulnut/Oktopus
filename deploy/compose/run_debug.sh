@@ -1,2 +1,2 @@
-COMPOSE_PROFILES=nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,portainer,registry docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d
-
+COMPOSE_PROFILES=nats,cwmp,frontend,portainer,registry docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d
+COMPOSE_PROFILES=controller,adapter,ws,mqtt,stomp docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --build
