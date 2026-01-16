@@ -2,6 +2,7 @@ package nats
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -54,7 +55,7 @@ func StartNatsClient(c config.Nats) (
 		log.Fatalf("Failed to create KeyValue store: %v", err)
 	}
 
-	return kv, publisher(js), subscriber(nc)
+	return kv, publisher(js, nc), subscriber(nc)
 }
 
 func subscriber(nc *nats.Conn) func(string, func(*nats.Msg)) error {
@@ -67,8 +68,19 @@ func subscriber(nc *nats.Conn) func(string, func(*nats.Msg)) error {
 	}
 }
 
-func publisher(js jetstream.JetStream) func(string, []byte) error {
+func publisher(js jetstream.JetStream, nc *nats.Conn) func(string, []byte) error {
 	return func(subject string, payload []byte) error {
+		// Use regular NATS publish for device.usp.v1.* subjects (request/response, not persistent)
+		// These subjects don't match any JetStream stream, so using JetStream causes queue stalls
+		// The controller subscribes to these via regular NATS (nc.ChanSubscribe), so regular publish works
+		if strings.HasPrefix(subject, "device.usp.v1.") {
+			err := nc.Publish(subject, payload)
+			if err != nil {
+				log.Printf("error to send nats message: %q", err)
+			}
+			return err
+		}
+		// Use JetStream for other subjects that match streams (mqtt.usp.v1.*, etc.)
 		_, err := js.PublishAsync(subject, payload)
 		if err != nil {
 			log.Printf("error to send jetstream message: %q", err)
