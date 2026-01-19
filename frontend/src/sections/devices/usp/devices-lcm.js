@@ -35,6 +35,9 @@ import {
   FormControl,
   Tooltip,
   Switch,
+  Tabs,
+  Tab,
+  Grid,
 } from '@mui/material';
 import { useRouter } from 'next/router';
 import { useBackendContext } from 'src/contexts/backend-context';
@@ -272,6 +275,14 @@ export const DevicesLCM = () => {
   // Uninstall dialog state
   const [showUninstallDialog, setShowUninstallDialog] = useState(false);
   const [uninstallTarget, setUninstallTarget] = useState(null);
+
+  // ExecutionUnit detail modal state
+  const [showExecUnitDetailDialog, setShowExecUnitDetailDialog] = useState(false);
+  const [selectedExecUnitPath, setSelectedExecUnitPath] = useState(null);
+  const [execUnitDetailData, setExecUnitDetailData] = useState(null);
+  const [execUnitDetailRawResponse, setExecUnitDetailRawResponse] = useState(null);
+  const [loadingExecUnitDetail, setLoadingExecUnitDetail] = useState(false);
+  const [execUnitDetailViewMode, setExecUnitDetailViewMode] = useState('pretty'); // 'pretty' or 'raw'
 
   // Check if Device.SoftwareModules. is supported
   const checkSoftwareModulesSupport = async () => {
@@ -523,6 +534,123 @@ export const DevicesLCM = () => {
     });
     
     return !!matchingRequest;
+  };
+
+  // Fetch ExecutionUnit details
+  const fetchExecutionUnitDetail = async (execUnitPath) => {
+    if (!execUnitPath) return;
+
+    setLoadingExecUnitDetail(true);
+    setError(null);
+
+    try {
+      const getCommand = {
+        header: {
+          msg_id: generateUUID(),
+          msg_type: 1, // GET
+        },
+        body: {
+          request: {
+            get: {
+              paramPaths: [execUnitPath],
+              maxDepth: 4,
+            },
+          },
+        },
+      };
+
+      const { result, status } = await httpRequest(
+        `/api/device/${deviceID}/any/generic`,
+        'PUT',
+        JSON.stringify(getCommand),
+        null
+      );
+
+      if (status === 200 && result && result.req_path_results && result.req_path_results.length > 0) {
+        // Filter response to only include ExecutionUnit paths
+        // Extract ExecutionUnit instance number from requested path
+        const execUnitMatch = execUnitPath.match(/Device\.SoftwareModules\.ExecutionUnit\.(\d+)\./);
+        const execUnitInstance = execUnitMatch ? execUnitMatch[1] : null;
+        const execUnitBasePath = execUnitInstance ? `Device.SoftwareModules.ExecutionUnit.${execUnitInstance}.` : null;
+        
+        // Filter the response - we only requested one path, so keep all req_path_results
+        // but filter resolved_path_results to only include ExecutionUnit-related paths
+        const filteredResponse = {
+          req_path_results: result.req_path_results.map(pathResult => {
+            // Filter resolved_path_results to only include ExecutionUnit-related paths
+            const filteredResolved = (pathResult.resolved_path_results || []).filter(resolved => {
+              const resolvedPath = resolved.resolved_path || '';
+              // Include only paths that start with the ExecutionUnit base path
+              return execUnitBasePath && resolvedPath.startsWith(execUnitBasePath);
+            });
+            
+            return {
+              ...pathResult,
+              resolved_path_results: filteredResolved,
+            };
+          }),
+        };
+        
+        setExecUnitDetailRawResponse(filteredResponse);
+        parseExecutionUnitDetail(result);
+      } else {
+        setError('Failed to fetch ExecutionUnit details');
+        setExecUnitDetailData(null);
+        setExecUnitDetailRawResponse(null);
+      }
+    } catch (err) {
+      console.error('Failed to fetch ExecutionUnit details:', err);
+      setError(err.message || 'An error occurred while fetching ExecutionUnit details');
+      setExecUnitDetailData(null);
+      setExecUnitDetailRawResponse(null);
+    } finally {
+      setLoadingExecUnitDetail(false);
+    }
+  };
+
+  // Parse ExecutionUnit detail response
+  const parseExecutionUnitDetail = (response) => {
+    if (!response.req_path_results || response.req_path_results.length === 0) {
+      setExecUnitDetailData(null);
+      return;
+    }
+
+    const pathResult = response.req_path_results[0];
+    if (!pathResult.resolved_path_results) {
+      setExecUnitDetailData(null);
+      return;
+    }
+
+    // Find the main ExecutionUnit data
+    let execUnitData = null;
+    const portForwarding = [];
+    const autoRestart = null;
+
+    pathResult.resolved_path_results.forEach((resolved) => {
+      const resolvedPath = resolved.resolved_path || '';
+      
+      // Main ExecutionUnit data
+      if (resolvedPath.match(/^Device\.SoftwareModules\.ExecutionUnit\.\d+\.$/)) {
+        execUnitData = resolved.result_params || {};
+      }
+      
+      // Port Forwarding entries
+      if (resolvedPath.match(/^Device\.SoftwareModules\.ExecutionUnit\.\d+\.NetworkConfig\.PortForwarding\.\d+\.$/)) {
+        if (resolved.result_params) {
+          portForwarding.push({
+            Protocol: resolved.result_params.Protocol || '',
+            InternalPort: resolved.result_params.InternalPort || '',
+            ExternalPort: resolved.result_params.ExternalPort || '',
+            Interface: resolved.result_params.Interface || '',
+          });
+        }
+      }
+    });
+
+    setExecUnitDetailData({
+      ...execUnitData,
+      portForwarding,
+    });
   };
 
   // Fetch IP Interface Aliases for Port Forwarding
@@ -1731,6 +1859,23 @@ export const DevicesLCM = () => {
     }
   }, [showInstallDialog]);
 
+  // Refresh ExecutionUnit detail when modal opens
+  useEffect(() => {
+    if (showExecUnitDetailDialog && selectedExecUnitPath) {
+      // Reset state to ensure fresh data
+      setExecUnitDetailData(null);
+      setExecUnitDetailRawResponse(null);
+      setLoadingExecUnitDetail(true);
+      
+      // Fetch interface aliases if not already loaded
+      if (interfaceOptions.length === 0) {
+        fetchInterfaceAliases();
+      }
+      // Refresh ExecutionUnit data
+      fetchExecutionUnitDetail(selectedExecUnitPath);
+    }
+  }, [showExecUnitDetailDialog, selectedExecUnitPath]);
+
   return (
     <>
       <Card sx={{ position: 'relative' }}>
@@ -1973,6 +2118,11 @@ export const DevicesLCM = () => {
                               rows.push(
                                 <TableRow 
                                   key={`${unit.instance}-${execUnitPath}`}
+                                  onClick={() => {
+                                    setSelectedExecUnitPath(execUnitPath);
+                                    setShowExecUnitDetailDialog(true);
+                                    setExecUnitDetailViewMode('pretty');
+                                  }}
                                   sx={{
                                     position: 'relative',
                                     opacity: isOperating ? 0.5 : 1,
@@ -1981,6 +2131,10 @@ export const DevicesLCM = () => {
                                     backgroundImage: isOperating ? 'linear-gradient(90deg, transparent, rgba(255, 152, 0, 0.2), transparent)' : 'none',
                                     backgroundSize: isOperating ? '200% 100%' : 'auto',
                                     animation: isOperating ? `${shimmer} 2s infinite linear` : 'none',
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                      backgroundColor: isOperating ? 'rgba(255, 152, 0, 0.15)' : 'rgba(0, 0, 0, 0.05)',
+                                    },
                                   }}
                                 >
                                   <TableCell sx={{ pl: 4 }}>
@@ -2032,7 +2186,10 @@ export const DevicesLCM = () => {
                                     )}
                                   </TableCell>
                                   <TableCell align="right">
-                                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+                                    <Box 
+                                      sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
                                       {(() => {
                                         const isOperating = executionUnitOperations.has(execUnitPath);
                                         return (
@@ -2042,7 +2199,10 @@ export const DevicesLCM = () => {
                                                 control={
                                                   <Switch
                                                     checked={execUnit.autoStart || false}
-                                                    onChange={() => handleAutoStartToggle(execUnitPath, execUnit.autoStart)}
+                                                    onChange={(e) => {
+                                                      e.stopPropagation();
+                                                      handleAutoStartToggle(execUnitPath, execUnit.autoStart);
+                                                    }}
                                                     size="small"
                                                     disabled={loading || isSupported === false || checkingSupport || isOperating}
                                                   />
@@ -2075,7 +2235,10 @@ export const DevicesLCM = () => {
                                                       variant={isActive ? 'contained' : 'outlined'}
                                                       color={isActive ? 'error' : 'success'}
                                                       size="small"
-                                                      onClick={() => handleExecutionUnitStartStop(execUnitPath, execUnit.status)}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleExecutionUnitStartStop(execUnitPath, execUnit.status);
+                                                      }}
                                                       disabled={loading || isSupported === false || checkingSupport || !canToggle || isOperating}
                                                     >
                                                       {isOperating ? '...' : (isActive ? 'Stop' : isIdle ? 'Start' : execUnit.status)}
@@ -2598,6 +2761,257 @@ export const DevicesLCM = () => {
             {loading ? <CircularProgress size={20} /> : 'Update'}
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* ExecutionUnit Detail Dialog */}
+      <Dialog 
+        open={showExecUnitDetailDialog} 
+        onClose={() => {
+          setShowExecUnitDetailDialog(false);
+          setSelectedExecUnitPath(null);
+          setExecUnitDetailData(null);
+          setExecUnitDetailRawResponse(null);
+        }} 
+        maxWidth="lg" 
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">
+              ExecutionUnit Details
+              {selectedExecUnitPath && (
+                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                  {selectedExecUnitPath}
+                </Typography>
+              )}
+            </Typography>
+            <Box display="flex" gap={1}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={
+                  <SvgIcon>
+                    <ArrowPathIcon />
+                  </SvgIcon>
+                }
+                onClick={() => selectedExecUnitPath && fetchExecutionUnitDetail(selectedExecUnitPath)}
+                disabled={loadingExecUnitDetail}
+              >
+                Refresh
+              </Button>
+              <IconButton
+                onClick={() => {
+                  setShowExecUnitDetailDialog(false);
+                  setSelectedExecUnitPath(null);
+                  setExecUnitDetailData(null);
+                  setExecUnitDetailRawResponse(null);
+                }}
+                size="small"
+              >
+                <SvgIcon>
+                  <XMarkIcon />
+                </SvgIcon>
+              </IconButton>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '70vh' }}>
+          {loadingExecUnitDetail ? (
+            <Box display="flex" justifyContent="center" alignItems="center" py={4}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <Stack spacing={2} sx={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <Tabs
+                value={execUnitDetailViewMode}
+                onChange={(e, newValue) => setExecUnitDetailViewMode(newValue)}
+                sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+              >
+                <Tab label="Pretty View" value="pretty" />
+                <Tab label="Raw Response" value="raw" />
+              </Tabs>
+
+              {execUnitDetailViewMode === 'pretty' ? (
+                <Box sx={{ flex: 1, overflow: 'auto', pt: 2, minHeight: 0 }}>
+                  {execUnitDetailData ? (
+                    <Grid container spacing={2}>
+                      {/* Basic Information */}
+                      <Grid item xs={12}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                          Basic Information
+                        </Typography>
+                        <Divider sx={{ mb: 2 }} />
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Name</Typography>
+                        <Typography variant="body1" fontWeight="medium">{execUnitDetailData.Name || '-'}</Typography>
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Alias</Typography>
+                        <Typography variant="body1" fontWeight="medium">{execUnitDetailData.Alias || '-'}</Typography>
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Status</Typography>
+                        <Chip
+                          label={execUnitDetailData.Status || '-'}
+                          size="small"
+                          color={
+                            execUnitDetailData.Status === 'Active' || execUnitDetailData.Status === 'Running'
+                              ? 'success'
+                              : execUnitDetailData.Status === 'Failed' || execUnitDetailData.Status === 'Stopped'
+                              ? 'error'
+                              : 'default'
+                          }
+                        />
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Version</Typography>
+                        <Typography variant="body1" fontWeight="medium">{execUnitDetailData.Version || '-'}</Typography>
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Execution Fault Code</Typography>
+                        <Chip
+                          label={execUnitDetailData.ExecutionFaultCode || 'NoFault'}
+                          size="small"
+                          color={execUnitDetailData.ExecutionFaultCode === 'NoFault' ? 'success' : 'error'}
+                        />
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Execution Fault Message</Typography>
+                        <Typography variant="body1">{execUnitDetailData.ExecutionFaultMessage || '-'}</Typography>
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Uptime</Typography>
+                        <Typography variant="body1" fontWeight="medium">
+                          {execUnitDetailData.Uptime ? formatUptime(execUnitDetailData.Uptime) : '-'}
+                        </Typography>
+                      </Grid>
+
+                      {/* Resource Usage */}
+                      <Grid item xs={12}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ mt: 2 }}>
+                          Resource Usage
+                        </Typography>
+                        <Divider sx={{ mb: 2 }} />
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Disk Space</Typography>
+                        <Typography variant="body1" fontWeight="medium">
+                          {execUnitDetailData.DiskSpaceInUse || '0'} / {execUnitDetailData.AvailableDiskSpace || '0'}
+                        </Typography>
+                      </Grid>
+
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" color="text.secondary">Memory</Typography>
+                        <Typography variant="body1" fontWeight="medium">
+                          {execUnitDetailData.MemoryInUse || '0'} / {execUnitDetailData.AvailableMemory || '0'}
+                        </Typography>
+                      </Grid>
+
+                      {/* Port Forwarding */}
+                      {execUnitDetailData.portForwarding && execUnitDetailData.portForwarding.length > 0 && (
+                        <>
+                          <Grid item xs={12}>
+                            <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ mt: 2 }}>
+                              Port Forwarding
+                            </Typography>
+                            <Divider sx={{ mb: 2 }} />
+                          </Grid>
+
+                          {execUnitDetailData.portForwarding.map((pf, index) => {
+                            // Find interface alias
+                            const interfaceOption = interfaceOptions.find(opt => opt.value === pf.Interface);
+                            const interfaceDisplay = interfaceOption 
+                              ? `${interfaceOption.display} (${pf.Interface})`
+                              : pf.Interface;
+
+                            return (
+                              <Grid item xs={12} key={index}>
+                                <Box sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                                  <Stack spacing={1}>
+                                    <Typography variant="body2" color="text.secondary">Port Forwarding #{index + 1}</Typography>
+                                    <Grid container spacing={2}>
+                                      <Grid item xs={12} md={6}>
+                                        <Typography variant="body2" color="text.secondary">Interface</Typography>
+                                        <Typography variant="body1" fontWeight="medium">{interfaceDisplay}</Typography>
+                                      </Grid>
+                                      <Grid item xs={12} md={2}>
+                                        <Typography variant="body2" color="text.secondary">Protocol</Typography>
+                                        <Typography variant="body1" fontWeight="medium">{pf.Protocol || '-'}</Typography>
+                                      </Grid>
+                                      <Grid item xs={12} md={2}>
+                                        <Typography variant="body2" color="text.secondary">External Port</Typography>
+                                        <Typography variant="body1" fontWeight="medium">{pf.ExternalPort || '-'}</Typography>
+                                      </Grid>
+                                      <Grid item xs={12} md={2}>
+                                        <Typography variant="body2" color="text.secondary">Internal Port</Typography>
+                                        <Typography variant="body1" fontWeight="medium">{pf.InternalPort || '-'}</Typography>
+                                      </Grid>
+                                    </Grid>
+                                  </Stack>
+                                </Box>
+                              </Grid>
+                            );
+                          })}
+                        </>
+                      )}
+                    </Grid>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" align="center" py={4}>
+                      No data available
+                    </Typography>
+                  )}
+                </Box>
+              ) : (
+                <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <TextField
+                    multiline
+                    fullWidth
+                    value={execUnitDetailRawResponse ? JSON.stringify(execUnitDetailRawResponse, null, 2) : ''}
+                    InputProps={{
+                      readOnly: true,
+                      sx: {
+                        fontFamily: 'monospace',
+                        fontSize: '0.75rem',
+                      },
+                    }}
+                    sx={{
+                      flex: 1,
+                      minHeight: 0,
+                      display: 'flex',
+                      '& .MuiInputBase-root': {
+                        flex: 1,
+                        minHeight: 0,
+                        height: '100%',
+                        alignItems: 'stretch',
+                        backgroundColor: '#f5f5f5',
+                      },
+                      '& .MuiInputBase-input': {
+                        flex: 1,
+                        minHeight: 0,
+                        height: '100% !important',
+                        overflow: 'auto !important',
+                        resize: 'none',
+                        padding: '16px !important',
+                      },
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: 'rgba(0, 0, 0, 0.23)',
+                      },
+                    }}
+                  />
+                </Box>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
       </Dialog>
     </>
   );
