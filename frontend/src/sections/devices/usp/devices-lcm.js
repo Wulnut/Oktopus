@@ -44,6 +44,8 @@ import PlusCircleIcon from '@heroicons/react/24/outline/PlusCircleIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import ArrowUpIcon from '@heroicons/react/24/outline/ArrowUpIcon';
+import PlusIcon from '@heroicons/react/24/solid/PlusIcon';
+import MinusIcon from '@heroicons/react/24/outline/MinusIcon';
 
 // Animation keyframes for uninstalling indicator
 const shimmer = keyframes`
@@ -241,6 +243,9 @@ export const DevicesLCM = () => {
   const [installUuid, setInstallUuid] = useState(generateUUID());
   const [installExecEnv, setInstallExecEnv] = useState('Device.SoftwareModules.ExecEnv.1.');
   const [installPrivileged, setInstallPrivileged] = useState(true);
+  const [portForwarding, setPortForwarding] = useState([]); // Array of {Interface, InternalPort, ExternalPort, Protocol}
+  const [interfaceOptions, setInterfaceOptions] = useState([]); // Array of {key: "Device.IP.Interface.{i}.Alias", value: "Device.IP.Interface.{i}."}
+  const [loadingInterfaces, setLoadingInterfaces] = useState(false);
   
   // Update dialog state
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
@@ -518,6 +523,84 @@ export const DevicesLCM = () => {
     });
     
     return !!matchingRequest;
+  };
+
+  // Fetch IP Interface Aliases for Port Forwarding
+  const fetchInterfaceAliases = async () => {
+    setLoadingInterfaces(true);
+    try {
+      const getCommand = {
+        header: {
+          msg_id: generateUUID(),
+          msg_type: 1, // GET
+        },
+        body: {
+          request: {
+            get: {
+              paramPaths: [
+                'Device.IP.Interface.*.Alias',
+              ],
+              maxDepth: 1,
+            },
+          },
+        },
+      };
+
+      const { result, status } = await httpRequest(
+        `/api/device/${deviceID}/any/generic`,
+        'PUT',
+        JSON.stringify(getCommand),
+        null
+      );
+
+      if (status === 200 && result) {
+        const interfaces = [];
+        
+        if (result.req_path_results) {
+          result.req_path_results.forEach(pathResult => {
+            if (pathResult.resolved_path_results) {
+              pathResult.resolved_path_results.forEach(resolved => {
+                const resolvedPath = resolved.resolved_path || '';
+                const alias = resolved.result_params?.Alias || '';
+                
+                if (resolvedPath && alias) {
+                  // Extract instance number from path like "Device.IP.Interface.3."
+                  const match = resolvedPath.match(/Device\.IP\.Interface\.(\d+)\./);
+                  if (match) {
+                    const instanceNum = match[1];
+                    const interfacePath = `Device.IP.Interface.${instanceNum}.`;
+                    const aliasKey = `Device.IP.Interface.${instanceNum}.Alias`;
+                    
+                    interfaces.push({
+                      key: aliasKey,
+                      value: interfacePath,
+                      alias: alias.toLowerCase(), // Store lowercase for comparison
+                      display: alias, // Original case for display
+                    });
+                  }
+                }
+              });
+            }
+          });
+        }
+        
+        // Sort by instance number
+        interfaces.sort((a, b) => {
+          const aNum = parseInt(a.value.match(/\d+/)?.[0] || '0', 10);
+          const bNum = parseInt(b.value.match(/\d+/)?.[0] || '0', 10);
+          return aNum - bNum;
+        });
+        
+        setInterfaceOptions(interfaces);
+      } else {
+        setInterfaceOptions([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch interface aliases:', err);
+      setInterfaceOptions([]);
+    } finally {
+      setLoadingInterfaces(false);
+    }
   };
 
   // Fetch Execution Environments list
@@ -846,10 +929,11 @@ export const DevicesLCM = () => {
     checkAllUpdates();
   }, [deploymentUnits]);
 
-  // Auto-fetch images when install dialog opens
+  // Auto-fetch images and interfaces when install dialog opens
   useEffect(() => {
     if (showInstallDialog) {
       fetchDockerImages();
+      fetchInterfaceAliases();
     } else if (!showInstallDialog) {
       // Reset state when dialog closes
       setDockerImages([]);
@@ -858,6 +942,7 @@ export const DevicesLCM = () => {
       setSelectedTag('');
       setSelectedImageOption('custom');
       setInstallUrl('');
+      setPortForwarding([]);
     }
   }, [showInstallDialog, fetchDockerImages]);
 
@@ -961,10 +1046,107 @@ export const DevicesLCM = () => {
     return true;
   };
 
+  // Helper functions for Port Forwarding
+  const getDefaultInterface = () => {
+    if (interfaceOptions.length === 0) return '';
+    
+    // Try to find "lan" (case-insensitive)
+    const lanOption = interfaceOptions.find(opt => opt.alias === 'lan');
+    if (lanOption) return lanOption.value;
+    
+    // Try to find "wan" (case-insensitive)
+    const wanOption = interfaceOptions.find(opt => opt.alias === 'wan');
+    if (wanOption) return wanOption.value;
+    
+    // Return first option
+    return interfaceOptions[0]?.value || '';
+  };
+
+  // Check if port forwarding entries are valid (no empty ports and valid range)
+  const isPortForwardingValid = () => {
+    if (portForwarding.length === 0) return true; // Empty is valid (no port forwarding)
+    
+    // All entries must have Interface, InternalPort, ExternalPort, and Protocol
+    // And ports must be in valid range (1000-65535)
+    return portForwarding.every((pf) => {
+      if (!pf.Interface || !pf.InternalPort || !pf.ExternalPort || !pf.Protocol) {
+        return false;
+      }
+      
+      const internalPort = parseInt(pf.InternalPort, 10);
+      const externalPort = parseInt(pf.ExternalPort, 10);
+      
+      // Check if ports are valid integers and in range
+      if (isNaN(internalPort) || isNaN(externalPort)) {
+        return false;
+      }
+      
+      return internalPort >= 1 && internalPort <= 65535 &&
+             externalPort >= 1000 && externalPort <= 65535;
+    });
+  };
+
+  const addPortForwarding = () => {
+    const defaultInterface = getDefaultInterface();
+    setPortForwarding([
+      ...portForwarding,
+      {
+        Interface: defaultInterface,
+        InternalPort: '',
+        ExternalPort: '',
+        Protocol: 'TCP',
+      },
+    ]);
+  };
+
+  const removePortForwarding = (index) => {
+    setPortForwarding(portForwarding.filter((_, i) => i !== index));
+  };
+
+  const updatePortForwarding = (index, field, value) => {
+    const updated = [...portForwarding];
+    updated[index] = { ...updated[index], [field]: value };
+    setPortForwarding(updated);
+  };
+
   // Handle Install
   const handleInstall = async () => {
     if (!installUrl.trim()) {
       setError('URL is required');
+      return;
+    }
+
+    // Validate port forwarding - no empty ports allowed and valid range
+    if (!isPortForwardingValid()) {
+      // Check what's wrong and provide specific error message
+      const invalidEntry = portForwarding.find((pf) => {
+        if (!pf.Interface || !pf.InternalPort || !pf.ExternalPort || !pf.Protocol) {
+          return true;
+        }
+        const internalPort = parseInt(pf.InternalPort, 10);
+        const externalPort = parseInt(pf.ExternalPort, 10);
+        if (isNaN(internalPort) || isNaN(externalPort)) {
+          return true;
+        }
+        return internalPort < 1 || internalPort > 65535 ||
+               externalPort < 1000 || externalPort > 65535;
+      });
+      
+      if (invalidEntry) {
+        if (!invalidEntry.Interface || !invalidEntry.InternalPort || !invalidEntry.ExternalPort || !invalidEntry.Protocol) {
+          setError('Port forwarding entries must have Interface, Internal Port, External Port, and Protocol filled in');
+        } else {
+          const internalPort = parseInt(invalidEntry.InternalPort, 10);
+          const externalPort = parseInt(invalidEntry.ExternalPort, 10);
+          if (isNaN(internalPort) || isNaN(externalPort)) {
+            setError('Ports must be valid numbers');
+          } else {
+            setError(`Internal Port must be in the range 1-65535; External Port must be in the range 1000-65535. Found: Internal=${internalPort}, External=${externalPort}`);
+          }
+        }
+      } else {
+        setError('Port forwarding entries must have Interface, Internal Port, External Port, and Protocol filled in, and ports must be in range 1000-65535');
+      }
       return;
     }
 
@@ -981,7 +1163,36 @@ export const DevicesLCM = () => {
         return;
       }
 
-      // Step 2: Send Install command
+      // Step 2: Build input_args
+      const inputArgs = {
+        URL: installUrl,
+        UUID: installUuid,
+        ExecutionEnvRef: installExecEnv,
+        Privileged: installPrivileged.toString(),
+      };
+
+      // Add NetworkConfig if port forwarding is configured
+      if (portForwarding.length > 0) {
+        // Filter out incomplete entries (missing ports or interface)
+        const validPortForwarding = portForwarding.filter(
+          (pf) => pf.Interface && pf.InternalPort && pf.ExternalPort && pf.Protocol
+        );
+
+        if (validPortForwarding.length > 0) {
+          // Format as JSON string
+          const networkConfig = {
+            PortForwarding: validPortForwarding.map((pf) => ({
+              Interface: pf.Interface,
+              ExternalPort: parseInt(pf.ExternalPort, 10),
+              InternalPort: parseInt(pf.InternalPort, 10),
+              Protocol: pf.Protocol,
+            })),
+          };
+          inputArgs.NetworkConfig = JSON.stringify(networkConfig);
+        }
+      }
+
+      // Step 3: Send Install command
       const installCommand = {
         header: {
           msg_id: generateUUID(),
@@ -993,12 +1204,7 @@ export const DevicesLCM = () => {
               command: installCommandPath,
               command_key: 'InstallDU',
               send_resp: true,
-              input_args: {
-                URL: installUrl,
-                UUID: installUuid,
-                ExecutionEnvRef: installExecEnv,
-                Privileged: installPrivileged.toString(),
-              },
+              input_args: inputArgs,
             },
           },
         },
@@ -1024,7 +1230,7 @@ export const DevicesLCM = () => {
           setSelectedTag('');
           setSelectedImageOption('custom');
           setInstallUrl('');
-          setInstallUrl('');
+          setPortForwarding([]);
           setInstallUuid(generateUUID());
           // Refresh the list after 1 second
           setTimeout(() => {
@@ -1047,7 +1253,7 @@ export const DevicesLCM = () => {
           setSelectedTag('');
           setSelectedImageOption('custom');
           setInstallUrl('');
-          setInstallUrl('');
+          setPortForwarding([]);
           setInstallUuid(generateUUID());
           // Refresh the list after 1 second
           setTimeout(() => {
@@ -1910,10 +2116,7 @@ export const DevicesLCM = () => {
           setSelectedTag('');
           setSelectedImageOption('custom');
           setInstallUrl('');
-          setSelectedContainer('');
-          setSelectedTag('');
-          setSelectedImageOption('custom');
-          setInstallUrl('');
+          setPortForwarding([]);
         }} 
         maxWidth="md" 
         fullWidth
@@ -1923,14 +2126,11 @@ export const DevicesLCM = () => {
             <Typography variant="h6">Install Software Module</Typography>
             <IconButton onClick={() => {
               setShowInstallDialog(false);
-          setSelectedContainer('');
-          setSelectedTag('');
-          setSelectedImageOption('custom');
-          setInstallUrl('');
               setSelectedContainer('');
               setSelectedTag('');
               setSelectedImageOption('custom');
               setInstallUrl('');
+              setPortForwarding([]);
             }}>
               <SvgIcon>
                 <XMarkIcon />
@@ -2099,26 +2299,153 @@ export const DevicesLCM = () => {
               }
               label="Privileged (default: True)"
             />
+
+            {/* Port Forwarding Section */}
+            <Box>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="subtitle1" fontWeight="medium">
+                  Port Forwarding
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={
+                    <SvgIcon>
+                      <PlusIcon />
+                    </SvgIcon>
+                  }
+                  onClick={addPortForwarding}
+                  disabled={loading || loadingInterfaces}
+                >
+                  Add
+                </Button>
+              </Box>
+
+              {portForwarding.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                  No port forwarding rules configured. Click "Add" to create one.
+                </Typography>
+              ) : (
+                <Stack spacing={2}>
+                  {portForwarding.map((pf, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        p: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        backgroundColor: 'background.paper',
+                      }}
+                    >
+                      <Stack direction="row" spacing={2} alignItems="flex-start">
+                        <FormControl sx={{ minWidth: 200 }} size="small">
+                          <InputLabel>Interface</InputLabel>
+                          <Select
+                            value={pf.Interface || ''}
+                            onChange={(e) => updatePortForwarding(index, 'Interface', e.target.value)}
+                            disabled={loading || loadingInterfaces}
+                            label="Interface"
+                          >
+                            {loadingInterfaces ? (
+                              <MenuItem value="" disabled>
+                                <CircularProgress size={16} sx={{ mr: 1 }} />
+                                Loading interfaces...
+                              </MenuItem>
+                            ) : interfaceOptions.length > 0 ? (
+                              interfaceOptions.map((opt) => (
+                                <MenuItem key={opt.value} value={opt.value}>
+                                  {opt.display} ({opt.value})
+                                </MenuItem>
+                              ))
+                            ) : (
+                              <MenuItem value="" disabled>
+                                No interfaces available
+                              </MenuItem>
+                            )}
+                          </Select>
+                        </FormControl>
+
+                        <TextField
+                          label="External Port"
+                          type="text"
+                          size="small"
+                          value={pf.ExternalPort || ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // Allow empty string or any digits (allow typing intermediate values)
+                            if (value === '' || /^\d+$/.test(value)) {
+                              updatePortForwarding(index, 'ExternalPort', value);
+                            }
+                          }}
+                          disabled={loading}
+                          sx={{ width: 150 }}
+                          helperText="1000-65535"
+                        />
+
+                        <TextField
+                          label="Internal Port"
+                          type="text"
+                          size="small"
+                          value={pf.InternalPort || ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // Allow empty string or any digits (allow typing intermediate values)
+                            if (value === '' || /^\d+$/.test(value)) {
+                              updatePortForwarding(index, 'InternalPort', value);
+                            }
+                          }}
+                          disabled={loading}
+                          sx={{ width: 150 }}
+                          helperText="1-65535"
+                        />
+
+                        <FormControl sx={{ minWidth: 120 }} size="small">
+                          <InputLabel>Protocol</InputLabel>
+                          <Select
+                            value={pf.Protocol || 'TCP'}
+                            onChange={(e) => updatePortForwarding(index, 'Protocol', e.target.value)}
+                            disabled={loading}
+                            label="Protocol"
+                          >
+                            <MenuItem value="TCP">TCP</MenuItem>
+                            <MenuItem value="UDP">UDP</MenuItem>
+                          </Select>
+                        </FormControl>
+
+                        <IconButton
+                          color="error"
+                          onClick={() => removePortForwarding(index)}
+                          disabled={loading}
+                          sx={{ mt: 0.5 }}
+                        >
+                          <SvgIcon>
+                            <MinusIcon />
+                          </SvgIcon>
+                        </IconButton>
+                      </Stack>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => {
             setShowInstallDialog(false);
-          setSelectedContainer('');
-          setSelectedTag('');
-          setSelectedImageOption('custom');
-          setInstallUrl('');
             setSelectedContainer('');
             setSelectedTag('');
             setSelectedImageOption('custom');
             setInstallUrl('');
+            setPortForwarding([]);
           }} disabled={loading}>
             Cancel
           </Button>
           <Button
             onClick={handleInstall}
             variant="contained"
-            disabled={loading || !installUrl.trim()}
+            disabled={loading || !installUrl.trim() || !isPortForwardingValid()}
           >
             {loading ? <CircularProgress size={20} /> : 'Install'}
           </Button>
