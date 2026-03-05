@@ -242,6 +242,21 @@ services:
       usp_network:
         ipv4_address: 172.16.235.18
 
+  firmware-upload:
+    build:
+      context: ../../backend/services/utils/firmware-upload
+      dockerfile: build/Dockerfile
+    container_name: firmware-upload
+    ports:
+      - 8006:8006
+    volumes:
+      - ./firmwares:/app/firmwares
+    env_file:
+      - .env.firmware-upload
+    networks:
+      usp_network:
+        ipv4_address: 172.16.235.21
+
   container-upload:
     build:
       context: ./container-upload-service
