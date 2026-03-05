@@ -79,6 +79,15 @@ func (a *Api) StartApi() {
 	iot.HandleFunc("/{sn}/wifi", a.deviceWifi).Methods("PUT", "GET")
 	iot.HandleFunc("/{sn}/history", a.deviceMessageHistory).Methods("GET")
 	iot.HandleFunc("/{sn}/history", a.deviceClearHistory).Methods("DELETE")
+	iot.HandleFunc("/{sn}/{mtp}/info", a.deviceInfoGet).Methods("GET")
+	iot.HandleFunc("/{sn}/{mtp}/wifi-usp", a.deviceWifiUspGet).Methods("GET")
+	iot.HandleFunc("/{sn}/{mtp}/interfaces", a.deviceInterfacesGet).Methods("GET")
+	iot.HandleFunc("/{sn}/{mtp}/performance", a.devicePerformanceGet).Methods("GET")
+	iot.HandleFunc("/{sn}/metrics", a.deviceMetricsHistory).Methods("GET")
+	iot.HandleFunc("/{sn}/{mtp}/reboot", a.deviceReboot).Methods("PUT")
+	iot.HandleFunc("/{sn}/{mtp}/factory-reset", a.deviceFactoryReset).Methods("PUT")
+	iot.HandleFunc("/{sn}/{mtp}/restart-agent", a.deviceRestartAgent).Methods("PUT")
+	iot.HandleFunc("/{sn}/{mtp}/topology", a.deviceTopology).Methods("GET")
 	dash := r.PathPrefix("/api/info").Subrouter()
 	dash.HandleFunc("/vendors", a.vendorsInfo).Methods("GET")
 	dash.HandleFunc("/status", a.statusInfo).Methods("GET")
@@ -86,6 +95,12 @@ func (a *Api) StartApi() {
 	dash.HandleFunc("/general", a.generalInfo).Methods("GET")
 	users := r.PathPrefix("/api/users").Subrouter()
 	users.HandleFunc("", a.retrieveUsers).Methods("GET")
+
+	firmware := r.PathPrefix("/api/firmware").Subrouter()
+	firmware.HandleFunc("", a.listFirmware).Methods("GET")
+	firmware.HandleFunc("", a.uploadFirmware).Methods("POST")
+	firmware.HandleFunc("/{id}", a.deleteFirmware).Methods("DELETE")
+	firmware.HandleFunc("/{id}/phase", a.updateFirmwarePhase).Methods("PUT")
 
 	/* ----- Middleware for requests which requires user to be authenticated ---- */
 	iot.Use(func(handler http.Handler) http.Handler {
@@ -97,6 +112,10 @@ func (a *Api) StartApi() {
 	})
 
 	users.Use(func(handler http.Handler) http.Handler {
+		return middleware.Middleware(handler)
+	})
+
+	firmware.Use(func(handler http.Handler) http.Handler {
 		return middleware.Middleware(handler)
 	})
 	/* -------------------------------------------------------------------------- */

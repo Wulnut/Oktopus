@@ -16,6 +16,7 @@ type Database struct {
 	firmware       *mongo.Collection
 	messages       *mongo.Collection
 	messagesErrors *mongo.Collection
+	metrics        *mongo.Collection
 	ctx            context.Context
 }
 
@@ -78,6 +79,20 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 	err = createMessageErrorIndexes(ctx, db.messagesErrors)
 	if err != nil {
 		log.Fatalln("Failed to create message error indexes:", err)
+	}
+
+	db.metrics = client.Database("usp").Collection("device_metrics")
+	_, err = db.metrics.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "timestamp", Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(604800), // 7 days
+		},
+		{
+			Keys: bson.D{{Key: "device_serial", Value: 1}, {Key: "timestamp", Value: -1}},
+		},
+	})
+	if err != nil {
+		log.Fatalln("Failed to create metrics indexes:", err)
 	}
 
 	db.ctx = ctx
