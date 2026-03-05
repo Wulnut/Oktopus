@@ -15,6 +15,7 @@ import BuildingOffice2Icon from '@heroicons/react/24/solid/BuildingOffice2Icon';
 import BookOpenIcon from '@heroicons/react/24/solid/BookOpenIcon';
 import CommandLineIcon from '@heroicons/react/24/solid/CommandLineIcon';
 import CubeIcon from '@heroicons/react/24/solid/CubeIcon';
+import CircleStackIcon from '@heroicons/react/24/solid/CircleStackIcon';
 
 export const items = [
   {
@@ -32,6 +33,15 @@ export const items = [
     icon: (
       <SvgIcon fontSize="small">
         <CpuChip />
+      </SvgIcon>
+    )
+  },
+  {
+    title: 'Firmware',
+    path: '/firmware',
+    icon: (
+      <SvgIcon fontSize="small">
+        <CircleStackIcon />
       </SvgIcon>
     )
   },
