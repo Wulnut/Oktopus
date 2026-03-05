@@ -13,6 +13,7 @@ type Database struct {
 	client         *mongo.Client
 	users          *mongo.Collection
 	template       *mongo.Collection
+	firmware       *mongo.Collection
 	messages       *mongo.Collection
 	messagesErrors *mongo.Collection
 	ctx            context.Context
@@ -50,6 +51,15 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 	indexField = bson.M{"name": 1}
 	_, err = db.template.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    indexField,
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	db.firmware = client.Database("general").Collection("firmware")
+	_, err = db.firmware.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "name", Value: 1}},
 		Options: options.Index().SetUnique(true),
 	})
 	if err != nil {
