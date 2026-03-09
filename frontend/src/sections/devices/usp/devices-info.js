@@ -34,7 +34,6 @@ import { useAlertContext } from 'src/contexts/error-context';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import PowerIcon from '@heroicons/react/24/outline/PowerIcon';
 import ExclamationTriangleIcon from '@heroicons/react/24/outline/ExclamationTriangleIcon';
-import ArrowUturnLeftIcon from '@heroicons/react/24/outline/ArrowUturnLeftIcon';
 import ArrowDownTrayIcon from '@heroicons/react/24/outline/ArrowDownTrayIcon';
 
 const ConfirmDialog = ({ open, onClose, onConfirm, title, description, loading }) => (
@@ -315,21 +314,6 @@ export const DevicesInfo = ({ sn, mtp }) => {
             }
           >
             Factory Reset
-          </Button>
-          <Button
-            variant="outlined"
-            color="info"
-            size="small"
-            startIcon={<SvgIcon fontSize="small"><ArrowUturnLeftIcon /></SvgIcon>}
-            onClick={() =>
-              openConfirm(
-                'Restart Agent',
-                'Are you sure you want to restart the USP agent? This cannot be undone.',
-                `/api/device/${sn}/${mtp}/restart-agent`
-              )
-            }
-          >
-            Restart Agent
           </Button>
         </CardActions>
         <Divider />
