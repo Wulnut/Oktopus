@@ -14,6 +14,7 @@ import {
   TableBody,
   TableCell,
   TableContainer,
+  TableHead,
   TableRow,
   Paper,
   Dialog,
@@ -23,14 +24,18 @@ import {
   DialogActions,
   Divider,
   Chip,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  Alert,
 } from '@mui/material';
-import { useRouter } from 'next/router';
 import { useBackendContext } from 'src/contexts/backend-context';
 import { useAlertContext } from 'src/contexts/error-context';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import PowerIcon from '@heroicons/react/24/outline/PowerIcon';
 import ExclamationTriangleIcon from '@heroicons/react/24/outline/ExclamationTriangleIcon';
 import ArrowUturnLeftIcon from '@heroicons/react/24/outline/ArrowUturnLeftIcon';
+import ArrowDownTrayIcon from '@heroicons/react/24/outline/ArrowDownTrayIcon';
 
 const ConfirmDialog = ({ open, onClose, onConfirm, title, description, loading }) => (
   <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -53,6 +58,112 @@ const ConfirmDialog = ({ open, onClose, onConfirm, title, description, loading }
   </Dialog>
 );
 
+const FirmwareUpdateDialog = ({ open, onClose, onConfirm, loading }) => {
+  const { httpRequest } = useBackendContext();
+  const [firmware, setFirmware] = useState([]);
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [selected, setSelected] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setSelected('');
+    setFetchLoading(true);
+    httpRequest('/api/firmware', 'GET').then(({ status, result }) => {
+      if (status === 200 && Array.isArray(result)) setFirmware(result);
+    }).finally(() => setFetchLoading(false));
+  }, [open]);
+
+  const selectedFw = firmware.find(fw => fw.id === selected);
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Firmware Update</DialogTitle>
+      <Divider />
+      <DialogContent sx={{ p: 0 }}>
+        {fetchLoading ? (
+          <Box display="flex" justifyContent="center" py={4}>
+            <CircularProgress />
+          </Box>
+        ) : firmware.length === 0 ? (
+          <Box p={3}>
+            <Alert severity="info">
+              No firmware available. Upload a firmware image in the Firmware Management page first.
+            </Alert>
+          </Box>
+        ) : (
+          <>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell padding="checkbox" />
+                    <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Name</TableCell>
+                    <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Version</TableCell>
+                    <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Phase</TableCell>
+                    <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Size</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {firmware.map((fw) => (
+                    <TableRow
+                      key={fw.id}
+                      hover
+                      selected={selected === fw.id}
+                      onClick={() => setSelected(fw.id)}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <TableCell padding="checkbox">
+                        <Radio
+                          size="small"
+                          checked={selected === fw.id}
+                          onChange={() => setSelected(fw.id)}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{fw.name}</TableCell>
+                      <TableCell sx={{ fontSize: '0.82rem' }}>{fw.build_version || '—'}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={fw.phase === 'release' ? 'Release' : 'Internal Testing'}
+                          size="small"
+                          color={fw.phase === 'release' ? 'success' : 'info'}
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.82rem' }}>
+                        {fw.file_size ? `${(fw.file_size / 1024).toFixed(0)} KB` : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {selectedFw && (
+              <Box px={2} py={1.5} sx={{ bgcolor: 'action.hover' }}>
+                <Typography variant="caption" color="text.secondary">
+                  URL: {selectedFw.download_url || '—'}
+                </Typography>
+              </Box>
+            )}
+          </>
+        )}
+      </DialogContent>
+      <Divider />
+      <DialogActions>
+        <Button onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button
+          onClick={() => onConfirm(selectedFw?.download_url)}
+          variant="contained"
+          color="primary"
+          disabled={loading || !selected || !selectedFw?.download_url}
+          startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SvgIcon fontSize="small"><ArrowDownTrayIcon /></SvgIcon>}
+        >
+          Deploy
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 // Extract all result_params from USP GetResp format into flat key-value pairs
 const parseUspFlat = (data) => {
   if (!data?.req_path_results) return [];
@@ -68,7 +179,6 @@ const parseUspFlat = (data) => {
 };
 
 export const DevicesInfo = ({ sn, mtp }) => {
-  const router = useRouter();
   const { httpRequest } = useBackendContext();
   const { setAlert } = useAlertContext();
 
@@ -82,6 +192,9 @@ export const DevicesInfo = ({ sn, mtp }) => {
     description: '',
     action: null,
   });
+
+  const [fwDialogOpen, setFwDialogOpen] = useState(false);
+  const [fwLoading, setFwLoading] = useState(false);
 
   const fetchInfo = useCallback(async () => {
     if (!sn) return;
@@ -122,6 +235,26 @@ export const DevicesInfo = ({ sn, mtp }) => {
     }
   };
 
+  const handleFwDeploy = async (downloadUrl) => {
+    if (!downloadUrl) return;
+    setFwLoading(true);
+    try {
+      const body = JSON.stringify({ Url: downloadUrl });
+      const headers = new Headers();
+      headers.append('Content-Type', 'application/json');
+      headers.append('Authorization', localStorage.getItem('token'));
+      const { status } = await httpRequest(`/api/device/${sn}/${mtp}/fw_update`, 'PUT', body, headers);
+      if (status === 200 || status === 204) {
+        setAlert({ severity: 'success', message: 'Firmware update initiated. The device will download and install the image.' });
+        setFwDialogOpen(false);
+      } else {
+        setAlert({ severity: 'error', message: 'Firmware update failed. Check the device logs.' });
+      }
+    } finally {
+      setFwLoading(false);
+    }
+  };
+
   const rows = info ? parseUspFlat(info) : [];
 
   return (
@@ -143,6 +276,15 @@ export const DevicesInfo = ({ sn, mtp }) => {
         />
         <Divider />
         <CardActions sx={{ px: 2, py: 1.5, flexWrap: 'wrap', gap: 1 }}>
+          <Button
+            variant="outlined"
+            color="primary"
+            size="small"
+            startIcon={<SvgIcon fontSize="small"><ArrowDownTrayIcon /></SvgIcon>}
+            onClick={() => setFwDialogOpen(true)}
+          >
+            Firmware Update
+          </Button>
           <Button
             variant="outlined"
             color="warning"
@@ -235,6 +377,13 @@ export const DevicesInfo = ({ sn, mtp }) => {
           )}
         </CardContent>
       </Card>
+
+      <FirmwareUpdateDialog
+        open={fwDialogOpen}
+        onClose={() => setFwDialogOpen(false)}
+        onConfirm={handleFwDeploy}
+        loading={fwLoading}
+      />
 
       <ConfirmDialog
         open={confirmDialog.open}
