@@ -18,167 +18,49 @@ import {
   TableRow,
   Paper,
   Chip,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
 } from '@mui/material';
 import { useBackendContext } from 'src/contexts/backend-context';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import WifiIcon from '@heroicons/react/24/outline/WifiIcon';
 import ComputerDesktopIcon from '@heroicons/react/24/solid/ComputerDesktopIcon';
 import ServerStackIcon from '@heroicons/react/24/outline/ServerStackIcon';
-import ChevronDownIcon from '@heroicons/react/24/outline/ChevronDownIcon';
 
-// Attempt to extract a list of objects from a deeply nested USP GET response.
-// USP responses often look like:
-//   { "Device.WiFi.AccessPoint.1.AssociatedDevice.1.": { "MACAddress": "...", ... }, ... }
-// or nested under req_obj_results / req_param_results etc.
-const extractParamObjects = (data, pathFragment) => {
-  if (!data || typeof data !== 'object') return [];
-
-  // Walk the object tree and collect entries whose key matches pathFragment
-  const results = [];
-
-  const walk = (node, prefix) => {
-    if (!node || typeof node !== 'object') return;
-    Object.entries(node).forEach(([key, value]) => {
-      const fullKey = prefix ? `${prefix}.${key}` : key;
-      if (typeof key === 'string' && key.toLowerCase().includes(pathFragment.toLowerCase())) {
-        if (value && typeof value === 'object') {
-          results.push({ path: key, params: value });
-        }
-      }
-      if (value && typeof value === 'object') {
-        walk(value, fullKey);
-      }
-    });
-  };
-
-  walk(data, '');
-  return results;
-};
-
-// Try to find any list of records where each record is an object with fields
-const extractAnyList = (data) => {
-  if (!data || typeof data !== 'object') return null;
-
-  // Look for the first array value, or a dict of dicts
-  const trySub = (node) => {
-    if (!node || typeof node !== 'object') return null;
-    for (const [, value] of Object.entries(node)) {
-      if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-        return value;
-      }
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        // dict of dicts
-        const sub = Object.values(value);
-        if (sub.length > 0 && typeof sub[0] === 'object' && !Array.isArray(sub[0])) {
-          return sub;
-        }
-        const inner = trySub(value);
-        if (inner) return inner;
-      }
+// Extract objects matching a regex pattern against resolved_path in USP GetResp
+const parseUspObjects = (data, pattern) => {
+  if (!data?.req_path_results) return [];
+  const results = {};
+  for (const r of data.req_path_results) {
+    if (!r.resolved_path_results) continue;
+    for (const rr of r.resolved_path_results) {
+      const m = rr.resolved_path.match(pattern);
+      if (m && rr.result_params) results[m[1]] = rr.result_params;
     }
-    return null;
-  };
-  return trySub(data);
+  }
+  return Object.entries(results)
+    .sort(([a], [b]) => parseInt(a) - parseInt(b))
+    .map(([, v]) => v);
 };
 
-const StatusChip = ({ value }) => {
-  if (value === undefined || value === null) return <Typography variant="caption">—</Typography>;
-  const str = String(value);
-  const isTrue = str.toLowerCase() === 'true' || str === '1';
-  const isFalse = str.toLowerCase() === 'false' || str === '0';
-  if (isTrue) return <Chip label="Active" size="small" color="success" variant="outlined" />;
-  if (isFalse) return <Chip label="Inactive" size="small" color="default" variant="outlined" />;
-  return <Typography variant="body2">{str}</Typography>;
-};
-
-const ParamTable = ({ items, columns }) => {
-  if (!items || items.length === 0) return null;
-  return (
-    <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            {columns.map(col => (
-              <TableCell key={col.key} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
-                {col.label}
-              </TableCell>
-            ))}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {items.map((item, idx) => (
-            <TableRow key={idx} hover>
-              {columns.map(col => (
-                <TableCell key={col.key} sx={{ fontSize: '0.82rem' }}>
-                  {col.key === 'Active' || col.key === 'Enable' || col.key === 'Status'
-                    ? <StatusChip value={item[col.key]} />
-                    : (item[col.key] != null ? String(item[col.key]) : '—')}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+const hasPathError = (data, pathFragment) => {
+  if (!data?.req_path_results) return false;
+  return data.req_path_results.some(r =>
+    r.requested_path && r.requested_path.includes(pathFragment) && r.err_code != null
   );
 };
 
-const RawFallback = ({ data }) => (
-  <Accordion disableGutters elevation={0}
-    sx={{ border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}>
-    <AccordionSummary expandIcon={<SvgIcon fontSize="small"><ChevronDownIcon /></SvgIcon>}>
-      <Typography variant="body2" fontWeight={600}>Raw Response</Typography>
-    </AccordionSummary>
-    <AccordionDetails sx={{ p: 0 }}>
-      <Box
-        component="pre"
-        sx={{
-          m: 0, p: 2,
-          fontSize: '0.72rem',
-          overflowX: 'auto',
-          bgcolor: 'background.default',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          borderTop: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        {JSON.stringify(data, null, 2)}
-      </Box>
-    </AccordionDetails>
-  </Accordion>
-);
+const parseHosts = (data) => parseUspObjects(data, /Device\.Hosts\.Host\.(\d+)\.$/);
+const parseEthInterfaces = (data) => parseUspObjects(data, /Device\.Ethernet\.Interface\.(\d+)\.$/);
+const parseWifiClients = (data) => parseUspObjects(data, /Device\.WiFi\.AccessPoint\.\d+\.AssociatedDevice\.(\d+)\.$/);
 
-// Normalize param objects to flat rows: [{MACAddress, IPAddress, ...}]
-const normalizeParamObjects = (paramObjs) =>
-  paramObjs.map(({ params }) => params);
-
-// Given the topology result, try to find WiFi clients
-const parseWifiClients = (data) => {
-  const found = extractParamObjects(data, 'AssociatedDevice');
-  if (found.length > 0) return normalizeParamObjects(found);
-  // Fallback: look for MAC-addressed objects
-  return [];
+const ActiveChip = ({ value }) => {
+  const isActive = value === 'true' || value === true;
+  return <Chip label={isActive ? 'Active' : 'Inactive'} size="small" color={isActive ? 'success' : 'default'} variant="outlined" />;
 };
 
-// Parse Hosts
-const parseHosts = (data) => {
-  const found = extractParamObjects(data, 'Hosts.Host');
-  if (found.length > 0) return normalizeParamObjects(found);
-  // Try searching by "Host." pattern
-  const found2 = extractParamObjects(data, 'Host.');
-  if (found2.length > 0) return normalizeParamObjects(found2);
-  return [];
-};
-
-// Parse Ethernet Interfaces
-const parseEthInterfaces = (data) => {
-  const found = extractParamObjects(data, 'Ethernet.Interface');
-  if (found.length > 0) return normalizeParamObjects(found);
-  return [];
+const StatusChip = ({ value }) => {
+  if (!value) return <Chip label="Unknown" size="small" variant="outlined" />;
+  const color = value === 'Up' ? 'success' : value === 'Down' ? 'error' : 'default';
+  return <Chip label={value} size="small" color={color} variant="outlined" />;
 };
 
 export const DevicesTopology = ({ sn, mtp }) => {
@@ -192,9 +74,7 @@ export const DevicesTopology = ({ sn, mtp }) => {
     setLoading(true);
     try {
       const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/topology`, 'GET', null, null);
-      if (status === 200 && result) {
-        setData(result);
-      }
+      if (status === 200 && result) setData(result);
     } finally {
       setLoading(false);
     }
@@ -207,8 +87,7 @@ export const DevicesTopology = ({ sn, mtp }) => {
   const wifiClients = data ? parseWifiClients(data) : [];
   const hosts = data ? parseHosts(data) : [];
   const ethInterfaces = data ? parseEthInterfaces(data) : [];
-
-  const hasStructuredData = wifiClients.length > 0 || hosts.length > 0 || ethInterfaces.length > 0;
+  const wifiError = data ? hasPathError(data, 'WiFi.AccessPoint') : false;
 
   return (
     <Stack spacing={2}>
@@ -246,34 +125,50 @@ export const DevicesTopology = ({ sn, mtp }) => {
 
       {data && (
         <>
-          {/* WiFi Clients */}
+          {/* WiFi Associated Devices */}
           <Card>
             <CardHeader
               avatar={<SvgIcon><WifiIcon /></SvgIcon>}
               title="WiFi Associated Devices"
-              subheader={`${wifiClients.length} client(s) found`}
+              subheader={wifiError ? 'Not available' : `${wifiClients.length} client(s) found`}
             />
             <Divider />
             <CardContent sx={{ p: wifiClients.length > 0 ? 0 : 2 }}>
-              {wifiClients.length === 0 ? (
+              {wifiError ? (
+                <Typography color="text.secondary" variant="body2" textAlign="center" py={2}>
+                  WiFi information is not available on this device.
+                </Typography>
+              ) : wifiClients.length === 0 ? (
                 <Typography color="text.secondary" variant="body2" textAlign="center" py={2}>
                   No WiFi clients found in response.
                 </Typography>
               ) : (
-                <ParamTable
-                  items={wifiClients}
-                  columns={[
-                    { key: 'MACAddress', label: 'MAC Address' },
-                    { key: 'IPAddress', label: 'IP Address' },
-                    { key: 'SignalStrength', label: 'Signal (dBm)' },
-                    { key: 'Active', label: 'Active' },
-                  ]}
-                />
+                <TableContainer component={Paper} elevation={0}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        {['MAC Address', 'IP Address', 'Signal (dBm)', 'Active'].map(h => (
+                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {wifiClients.map((client, idx) => (
+                        <TableRow key={idx} hover>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{client.MACAddress || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{client.IPAddress || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{client.SignalStrength || '—'}</TableCell>
+                          <TableCell><ActiveChip value={client.Active} /></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )}
             </CardContent>
           </Card>
 
-          {/* All Hosts */}
+          {/* Connected Hosts */}
           <Card>
             <CardHeader
               avatar={<SvgIcon><ComputerDesktopIcon /></SvgIcon>}
@@ -287,16 +182,28 @@ export const DevicesTopology = ({ sn, mtp }) => {
                   No hosts found in response.
                 </Typography>
               ) : (
-                <ParamTable
-                  items={hosts}
-                  columns={[
-                    { key: 'IPAddress', label: 'IP Address' },
-                    { key: 'MACAddress', label: 'MAC Address' },
-                    { key: 'HostName', label: 'Hostname' },
-                    { key: 'InterfaceType', label: 'Interface' },
-                    { key: 'Active', label: 'Active' },
-                  ]}
-                />
+                <TableContainer component={Paper} elevation={0}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        {['Hostname', 'MAC Address', 'IP Address', 'Interface', 'Active'].map(h => (
+                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {hosts.map((host, idx) => (
+                        <TableRow key={idx} hover>
+                          <TableCell sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{host.HostName || '—'}</TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{host.PhysAddress || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{host.IPAddress || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{host.InterfaceType || '—'}</TableCell>
+                          <TableCell><ActiveChip value={host.Active} /></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )}
             </CardContent>
           </Card>
@@ -315,22 +222,38 @@ export const DevicesTopology = ({ sn, mtp }) => {
                   No Ethernet interfaces found in response.
                 </Typography>
               ) : (
-                <ParamTable
-                  items={ethInterfaces}
-                  columns={[
-                    { key: 'Name', label: 'Name' },
-                    { key: 'Enable', label: 'Enabled' },
-                    { key: 'Status', label: 'Status' },
-                    { key: 'MACAddress', label: 'MAC Address' },
-                    { key: 'MaxBitRate', label: 'Max Bitrate' },
-                  ]}
-                />
+                <TableContainer component={Paper} elevation={0}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        {['Name', 'Alias', 'Status', 'MAC Address', 'Duplex', 'Bitrate'].map(h => (
+                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {ethInterfaces.map((iface, idx) => (
+                        <TableRow key={idx} hover>
+                          <TableCell sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{iface.Name || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{iface.Alias || '—'}</TableCell>
+                          <TableCell><StatusChip value={iface.Status} /></TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{iface.MACAddress || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{iface.CurrentDuplexMode || iface.DuplexMode || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>
+                            {iface.CurrentBitRate && iface.CurrentBitRate !== '0'
+                              ? `${iface.CurrentBitRate} Mbps`
+                              : iface.MaxBitRate && iface.MaxBitRate !== '-1'
+                                ? `${iface.MaxBitRate} Mbps max`
+                                : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )}
             </CardContent>
           </Card>
-
-          {/* Raw fallback always shown for debugging */}
-          {!hasStructuredData && <RawFallback data={data} />}
         </>
       )}
     </Stack>

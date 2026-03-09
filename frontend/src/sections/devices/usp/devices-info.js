@@ -53,16 +53,18 @@ const ConfirmDialog = ({ open, onClose, onConfirm, title, description, loading }
   </Dialog>
 );
 
-// Recursively flatten a nested object into key-value pairs for display
-const flattenObject = (obj, prefix = '') => {
-  if (!obj || typeof obj !== 'object') return [];
-  return Object.entries(obj).flatMap(([key, value]) => {
-    const fullKey = prefix ? `${prefix}.${key}` : key;
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      return flattenObject(value, fullKey);
+// Extract all result_params from USP GetResp format into flat key-value pairs
+const parseUspFlat = (data) => {
+  if (!data?.req_path_results) return [];
+  const flat = {};
+  for (const r of data.req_path_results) {
+    if (r.resolved_path_results) {
+      for (const rr of r.resolved_path_results) {
+        if (rr.result_params) Object.assign(flat, rr.result_params);
+      }
     }
-    return [{ key: fullKey, value: Array.isArray(value) ? JSON.stringify(value) : String(value ?? '') }];
-  });
+  }
+  return Object.entries(flat).map(([key, value]) => ({ key, value: String(value ?? '') }));
 };
 
 export const DevicesInfo = ({ sn, mtp }) => {
@@ -120,7 +122,7 @@ export const DevicesInfo = ({ sn, mtp }) => {
     }
   };
 
-  const rows = info ? flattenObject(info) : [];
+  const rows = info ? parseUspFlat(info) : [];
 
   return (
     <>
