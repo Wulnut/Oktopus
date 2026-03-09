@@ -114,6 +114,7 @@ const FirmwareUpdateDialog = ({ open, onClose, onConfirm, loading }) => {
                     >
                       <TableCell padding="checkbox">
                         <Radio
+                          id={`fw-select-${fw.id}`}
                           size="small"
                           checked={selected === fw.id}
                           onChange={() => setSelected(fw.id)}

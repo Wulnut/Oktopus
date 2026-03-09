@@ -153,6 +153,7 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
 
           {/* Basic fields */}
           <TextField
+            id="fw-name"
             label="Name"
             variant="outlined"
             fullWidth
@@ -161,9 +162,11 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
             onChange={(e) => setName(e.target.value)}
             disabled={uploading}
             placeholder="e.g., Router Firmware v2.1"
+            autoComplete="off"
           />
 
           <TextField
+            id="fw-build-version"
             label="Build Version"
             variant="outlined"
             fullWidth
@@ -172,12 +175,14 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
             onChange={(e) => setBuildVersion(e.target.value)}
             disabled={uploading}
             placeholder="e.g., 2.1.0-stable"
+            autoComplete="off"
           />
 
           <FormControl fullWidth>
-            <InputLabel id="phase-select-label">Phase</InputLabel>
+            <InputLabel id="phase-select-label" htmlFor="fw-phase-select">Phase</InputLabel>
             <Select
               labelId="phase-select-label"
+              inputProps={{ id: 'fw-phase-select' }}
               value={phase}
               onChange={(e) => setPhase(e.target.value)}
               label="Phase"
@@ -209,9 +214,11 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
             <Box>
               <input
                 ref={fileInputRef}
+                id="fw-file-input"
                 type="file"
                 hidden
                 onChange={handleFileChange}
+                autoComplete="off"
               />
               <Button
                 variant="outlined"
@@ -239,6 +246,7 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
           {tab === 1 && (
             <Stack spacing={2}>
               <TextField
+                id="fw-download-url"
                 label="Download URL"
                 variant="outlined"
                 fullWidth
@@ -247,8 +255,10 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
                 onChange={(e) => setDownloadUrl(e.target.value)}
                 disabled={uploading}
                 placeholder="https://example.com/firmware.bin"
+                autoComplete="off"
               />
               <TextField
+                id="fw-file-name"
                 label="File Name (optional)"
                 variant="outlined"
                 fullWidth
@@ -256,8 +266,10 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
                 onChange={(e) => setFileName(e.target.value)}
                 disabled={uploading}
                 placeholder="e.g., firmware-v2.1.bin"
+                autoComplete="off"
               />
               <TextField
+                id="fw-fingerprint"
                 label="Fingerprint (optional)"
                 variant="outlined"
                 fullWidth
@@ -265,7 +277,8 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
                 onChange={(e) => setFingerprint(e.target.value)}
                 disabled={uploading}
                 placeholder="e.g., sha256:abc123..."
-                inputProps={{ style: { fontFamily: 'monospace' } }}
+                autoComplete="off"
+                inputProps={{ style: { fontFamily: 'monospace' }, autoComplete: 'off' }}
               />
             </Stack>
           )}
