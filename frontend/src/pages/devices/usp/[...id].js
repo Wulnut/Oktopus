@@ -58,13 +58,13 @@ const Page = () => {
             case "history":
                 return <DevicesHistory/>
             case "info":
-                return <DevicesInfo sn={deviceID} mtp="usp" />
+                return <DevicesInfo sn={deviceID} mtp="any" />
             case "network":
-                return <DevicesNetwork sn={deviceID} mtp="usp" />
+                return <DevicesNetwork sn={deviceID} mtp="any" />
             case "performance":
-                return <DevicesPerformance sn={deviceID} mtp="usp" />
+                return <DevicesPerformance sn={deviceID} mtp="any" />
             case "topology":
-                return <DevicesTopology sn={deviceID} mtp="usp" />
+                return <DevicesTopology sn={deviceID} mtp="any" />
             default:
                 router.replace(`/devices/usp/${deviceID}/discovery`)
         }
