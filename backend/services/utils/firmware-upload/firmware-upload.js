@@ -24,7 +24,7 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.method === 'POST' && req.url === '/upload') {
-        const form = new IncomingForm({ maxFileSize: 500 * 1024 * 1024 }); // 500MB
+        const form = new IncomingForm({ maxFileSize: 500 * 1024 * 1024, uploadDir: FIRMWARE_DIR }); // 500MB
         form.parse(req, (err, fields, files) => {
             if (err) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
