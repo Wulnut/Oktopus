@@ -135,7 +135,7 @@ export const DevicesPerformance = ({ sn, mtp }) => {
     } finally {
       setLoading(false);
     }
-  }, [sn, httpRequest]);
+  }, [sn]);
 
   useEffect(() => {
     fetchAll();

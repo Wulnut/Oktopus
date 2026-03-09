@@ -92,7 +92,7 @@ export const DevicesInfo = ({ sn, mtp }) => {
     } finally {
       setLoading(false);
     }
-  }, [sn, mtp, httpRequest]);
+  }, [sn, mtp]);
 
   useEffect(() => {
     fetchInfo();

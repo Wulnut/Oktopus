@@ -42,7 +42,7 @@ const Page = () => {
     } finally {
       setLoading(false);
     }
-  }, [httpRequest]);
+  }, []);
 
   useEffect(() => {
     fetchFirmware();

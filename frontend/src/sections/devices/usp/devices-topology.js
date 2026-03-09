@@ -198,7 +198,7 @@ export const DevicesTopology = ({ sn, mtp }) => {
     } finally {
       setLoading(false);
     }
-  }, [sn, mtp, httpRequest]);
+  }, [sn, mtp]);
 
   useEffect(() => {
     fetchTopology();
