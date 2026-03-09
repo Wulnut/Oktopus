@@ -220,6 +220,10 @@ func (a *Api) deviceReboot(w http.ResponseWriter, r *http.Request) {
 	msg := usp_utils.NewOperateMsg(usp_msg.Operate{
 		Command:  "Device.Reboot()",
 		SendResp: true,
+		InputArgs: map[string]string{
+			"Cause":  "RemoteReboot",
+			"Reason": "Manual Reboot",
+		},
 	})
 	sendUspMsg(msg, sn, w, a.nc, mtp)
 }
