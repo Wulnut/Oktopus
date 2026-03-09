@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +14,10 @@ import (
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
 	"github.com/leandrofars/oktopus/internal/usp/usp_utils"
 )
+
+func newCommandKey() string {
+	return fmt.Sprintf("USP_%08X", rand.Uint32())
+}
 
 // GET /api/device/{sn}/{mtp}/info
 // Returns DeviceInfo metadata via USP GET
@@ -218,8 +224,9 @@ func (a *Api) deviceReboot(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	msg := usp_utils.NewOperateMsg(usp_msg.Operate{
-		Command:  "Device.Reboot()",
-		SendResp: true,
+		Command:    "Device.Reboot()",
+		CommandKey: newCommandKey(),
+		SendResp:   true,
 		InputArgs: map[string]string{
 			"Cause":  "RemoteReboot",
 			"Reason": "Manual Reboot",
@@ -243,8 +250,9 @@ func (a *Api) deviceFactoryReset(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	msg := usp_utils.NewOperateMsg(usp_msg.Operate{
-		Command:  "Device.FactoryReset()",
-		SendResp: true,
+		Command:    "Device.FactoryReset()",
+		CommandKey: newCommandKey(),
+		SendResp:   true,
 	})
 	sendUspMsg(msg, sn, w, a.nc, mtp)
 }
@@ -264,8 +272,9 @@ func (a *Api) deviceRestartAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	msg := usp_utils.NewOperateMsg(usp_msg.Operate{
-		Command:  "Device.USPAgent.Restart()",
-		SendResp: true,
+		Command:    "Device.USPAgent.Restart()",
+		CommandKey: newCommandKey(),
+		SendResp:   true,
 	})
 	sendUspMsg(msg, sn, w, a.nc, mtp)
 }
