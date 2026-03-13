@@ -119,6 +119,9 @@ export const DevicesPerformance = ({ sn, mtp }) => {
     if (!sn) return;
     setLoading(true);
     try {
+      // Collect a fresh data point from the device (also stores it in DB)
+      await httpRequest(`/api/device/${sn}/${mtp}/performance`, 'GET', null, null);
+
       const [shortRes, longRes] = await Promise.all([
         httpRequest(`/api/device/${sn}/metrics?since=1`, 'GET', null, null),
         httpRequest(`/api/device/${sn}/metrics?since=24`, 'GET', null, null),
@@ -135,7 +138,7 @@ export const DevicesPerformance = ({ sn, mtp }) => {
     } finally {
       setLoading(false);
     }
-  }, [sn]);
+  }, [sn, mtp]);
 
   useEffect(() => {
     fetchAll();

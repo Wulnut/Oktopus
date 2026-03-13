@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -146,8 +147,11 @@ func (a *Api) devicePerformanceGet(w http.ResponseWriter, r *http.Request) {
 	sendUspMsg(msg, sn, rec, a.nc, mtp)
 
 	if rec.statusCode == http.StatusOK {
-		ctx := r.Context()
-		go a.storePerformanceMetrics(ctx, sn, rec.body)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		go func() {
+			defer cancel()
+			a.storePerformanceMetrics(bgCtx, sn, rec.body)
+		}()
 	}
 
 	for k, v := range rec.header {
@@ -160,6 +164,7 @@ func (a *Api) devicePerformanceGet(w http.ResponseWriter, r *http.Request) {
 func (a *Api) storePerformanceMetrics(ctx context.Context, sn string, data []byte) {
 	var resp usp_msg.GetResp
 	if err := json.Unmarshal(data, &resp); err != nil {
+		log.Printf("storePerformanceMetrics: unmarshal error for %s: %v", sn, err)
 		return
 	}
 	m := db.DeviceMetrics{DeviceSerial: sn, Timestamp: time.Now()}
@@ -183,7 +188,9 @@ func (a *Api) storePerformanceMetrics(ctx context.Context, sn string, data []byt
 			}
 		}
 	}
-	a.db.StoreDeviceMetrics(ctx, m)
+	if err := a.db.StoreDeviceMetrics(ctx, m); err != nil {
+		log.Printf("storePerformanceMetrics: store error for %s: %v", sn, err)
+	}
 }
 
 // GET /api/device/{sn}/metrics?since=24  (hours)
