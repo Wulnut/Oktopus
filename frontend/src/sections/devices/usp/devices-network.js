@@ -103,9 +103,9 @@ export const DevicesNetwork = ({ sn, mtp }) => {
     }
   }, [sn, mtp]);
 
-  const handleRefresh = useCallback(() => {
-    fetchWifi();
-    fetchInterfaces();
+  const handleRefresh = useCallback(async () => {
+    await fetchInterfaces();
+    await fetchWifi();
   }, [fetchWifi, fetchInterfaces]);
 
   useEffect(() => {
