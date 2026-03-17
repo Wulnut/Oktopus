@@ -178,7 +178,7 @@ export const OverviewLatestOrders = (props) => {
                         <Button
                           onClick={()=>{
                             if (getDeviceProtocol(order) == "usp"){
-                              router.push("devices/"+ getDeviceProtocol(order) +"/"+order.SN+"/discovery")
+                              router.push("devices/"+ getDeviceProtocol(order) +"/"+order.SN+"/info")
                             }else {
                               router.push("devices/"+ getDeviceProtocol(order) +"/"+order.SN+"/wifi")
                             }

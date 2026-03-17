@@ -66,7 +66,7 @@ const Page = () => {
             case "topology":
                 return <DevicesTopology sn={deviceID} mtp="any" />
             default:
-                router.replace(`/devices/usp/${deviceID}/discovery`)
+                router.replace(`/devices/usp/${deviceID}/info`)
         }
     }
   

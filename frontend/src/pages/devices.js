@@ -671,7 +671,7 @@ const Page = () => {
                                         <Tooltip title="Access the device">
                                           <Button
                                             onClick={() => {
-                                              router.push("devices/" + getDeviceProtocol(order) + "/" + order.SN)
+                                              router.push("devices/" + getDeviceProtocol(order) + "/" + order.SN + "/info")
                                             }}
                                           >
                                             <SvgIcon
