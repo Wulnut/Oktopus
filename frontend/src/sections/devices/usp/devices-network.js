@@ -49,6 +49,96 @@ const BoolChip = ({ value }) => {
   return <Chip label={isTrue ? 'Yes' : 'No'} size="small" color={isTrue ? 'success' : 'default'} variant="outlined" />;
 };
 
+// Extract Device.WiFi.Radio.N. entries
+const parseRadios = (data) => {
+  if (!data?.req_path_results) return [];
+  const radios = {};
+  for (const r of data.req_path_results) {
+    if (!r.resolved_path_results) continue;
+    for (const rr of r.resolved_path_results) {
+      const m = rr.resolved_path.match(/\.WiFi\.Radio\.(\d+)\.$/);
+      if (m && rr.result_params) radios[m[1]] = rr.result_params;
+    }
+  }
+  return Object.entries(radios)
+    .sort(([a], [b]) => parseInt(a) - parseInt(b))
+    .map(([idx, params]) => ({ ...params, _idx: idx }));
+};
+
+// Extract Device.WiFi.SSID.N. and Device.WiFi.AccessPoint.N. + Security entries
+const parseSsidsAndAPs = (data) => {
+  if (!data?.req_path_results) return [];
+  const ssids = {};
+  const aps = {};
+  const apSecurity = {};
+  for (const r of data.req_path_results) {
+    if (!r.resolved_path_results) continue;
+    for (const rr of r.resolved_path_results) {
+      let m = rr.resolved_path.match(/\.WiFi\.SSID\.(\d+)\.$/);
+      if (m && rr.result_params) { ssids[m[1]] = rr.result_params; continue; }
+      m = rr.resolved_path.match(/\.WiFi\.AccessPoint\.(\d+)\.$/);
+      if (m && rr.result_params) { aps[m[1]] = rr.result_params; continue; }
+      m = rr.resolved_path.match(/\.WiFi\.AccessPoint\.(\d+)\.Security\.$/);
+      if (m && rr.result_params) { apSecurity[m[1]] = rr.result_params; continue; }
+    }
+  }
+  // Combine SSID + AP by index (they typically share the same index)
+  return Object.entries(ssids)
+    .sort(([a], [b]) => parseInt(a) - parseInt(b))
+    .map(([idx, params]) => ({
+      ...params,
+      _idx: idx,
+      _ap: aps[idx] || null,
+      _security: apSecurity[idx] || null,
+    }));
+};
+
+// Extract Device.WiFi.EndPoint.N. with Profile and Security sub-objects
+const parseEndPoints = (data) => {
+  if (!data?.req_path_results) return [];
+  const eps = {};
+  const profiles = {};
+  const profileSecurity = {};
+  const epStats = {};
+  for (const r of data.req_path_results) {
+    if (!r.resolved_path_results) continue;
+    for (const rr of r.resolved_path_results) {
+      let m = rr.resolved_path.match(/\.WiFi\.EndPoint\.(\d+)\.$/);
+      if (m && rr.result_params) { eps[m[1]] = rr.result_params; continue; }
+      m = rr.resolved_path.match(/\.WiFi\.EndPoint\.(\d+)\.Stats\.$/);
+      if (m && rr.result_params) { epStats[m[1]] = rr.result_params; continue; }
+      m = rr.resolved_path.match(/\.WiFi\.EndPoint\.(\d+)\.Profile\.(\d+)\.$/);
+      if (m && rr.result_params) {
+        if (!profiles[m[1]]) profiles[m[1]] = {};
+        profiles[m[1]][m[2]] = rr.result_params;
+        continue;
+      }
+      m = rr.resolved_path.match(/\.WiFi\.EndPoint\.(\d+)\.Profile\.(\d+)\.Security\.$/);
+      if (m && rr.result_params) {
+        if (!profileSecurity[m[1]]) profileSecurity[m[1]] = {};
+        profileSecurity[m[1]][m[2]] = rr.result_params;
+        continue;
+      }
+    }
+  }
+  return Object.entries(eps)
+    .sort(([a], [b]) => parseInt(a) - parseInt(b))
+    .map(([idx, params]) => ({
+      ...params,
+      _idx: idx,
+      _stats: epStats[idx] || null,
+      _profiles: profiles[idx]
+        ? Object.entries(profiles[idx])
+            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+            .map(([pIdx, pParams]) => ({
+              ...pParams,
+              _idx: pIdx,
+              _security: profileSecurity[idx]?.[pIdx] || null,
+            }))
+        : [],
+    }));
+};
+
 // Extract Device.IP.Interface.N. and Device.IP.Interface.N.Stats. entries
 const parseIpInterfaces = (data) => {
   if (!data?.req_path_results) return [];
@@ -115,6 +205,9 @@ export const DevicesNetwork = ({ sn, mtp }) => {
   const interfaces = ifaceData ? parseIpInterfaces(ifaceData) : [];
   const wifiUnavailable = wifiData ? isAllErrors(wifiData) : false;
   const ifacesWithStats = interfaces.filter(i => i._stats);
+  const radios = wifiData ? parseRadios(wifiData) : [];
+  const ssids = wifiData ? parseSsidsAndAPs(wifiData) : [];
+  const endPoints = wifiData ? parseEndPoints(wifiData) : [];
 
   return (
     <Stack spacing={2}>
@@ -226,30 +319,181 @@ export const DevicesNetwork = ({ sn, mtp }) => {
       </Card>
 
       {/* WiFi */}
-      <Card>
-        <CardHeader
-          avatar={<SvgIcon><WifiIcon /></SvgIcon>}
-          title="WiFi"
-        />
-        <Divider />
-        <CardContent>
-          {wifiLoading ? (
+      {wifiLoading ? (
+        <Card>
+          <CardHeader avatar={<SvgIcon><WifiIcon /></SvgIcon>} title="WiFi" />
+          <Divider />
+          <CardContent>
             <Box display="flex" justifyContent="center" py={4}><CircularProgress /></Box>
-          ) : !wifiData ? (
+          </CardContent>
+        </Card>
+      ) : !wifiData ? (
+        <Card>
+          <CardHeader avatar={<SvgIcon><WifiIcon /></SvgIcon>} title="WiFi" />
+          <Divider />
+          <CardContent>
             <Typography color="text.secondary" variant="body2" textAlign="center" py={2}>
               No WiFi data. Click Refresh to fetch.
             </Typography>
-          ) : wifiUnavailable ? (
+          </CardContent>
+        </Card>
+      ) : wifiUnavailable ? (
+        <Card>
+          <CardHeader avatar={<SvgIcon><WifiIcon /></SvgIcon>} title="WiFi" />
+          <Divider />
+          <CardContent>
             <Typography color="text.secondary" variant="body2" textAlign="center" py={2}>
               WiFi information is not available on this device.
             </Typography>
-          ) : (
-            <Typography color="text.secondary" variant="body2" textAlign="center" py={2}>
-              WiFi data received.
-            </Typography>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Radios */}
+          {radios.length > 0 && (
+            <Card>
+              <CardHeader
+                avatar={<SvgIcon><WifiIcon /></SvgIcon>}
+                title="WiFi Radios"
+                subheader={`${radios.length} radio(s) found`}
+              />
+              <Divider />
+              <CardContent sx={{ p: 0 }}>
+                <TableContainer component={Paper} elevation={0}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        {['Radio', 'Status', 'Band', 'Channel', 'Bandwidth', 'Standard', 'Tx Power'].map(h => (
+                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {radios.map((radio) => (
+                        <TableRow key={radio._idx} hover>
+                          <TableCell sx={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                            {radio.Alias || radio.Name || `Radio ${radio._idx}`}
+                          </TableCell>
+                          <TableCell><StatusChip value={radio.Status} /></TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{radio.OperatingFrequencyBand || radio.SupportedFrequencyBands || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{radio.Channel || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{radio.OperatingChannelBandwidth || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{radio.OperatingStandards || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{radio.TransmitPower != null ? `${radio.TransmitPower}%` : '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+
+          {/* SSIDs & Access Points */}
+          {ssids.length > 0 && (
+            <Card>
+              <CardHeader
+                avatar={<SvgIcon><WifiIcon /></SvgIcon>}
+                title="SSIDs & Access Points"
+                subheader={`${ssids.length} network(s) found`}
+              />
+              <Divider />
+              <CardContent sx={{ p: 0 }}>
+                <TableContainer component={Paper} elevation={0}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        {['SSID', 'BSSID', 'Status', 'Security', 'Enabled', 'Clients'].map(h => (
+                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {ssids.map((ssid) => (
+                        <TableRow key={ssid._idx} hover>
+                          <TableCell sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{ssid.SSID || '—'}</TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>{ssid.BSSID || '—'}</TableCell>
+                          <TableCell><StatusChip value={ssid.Status} /></TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>
+                            {ssid._security?.ModeEnabled || '—'}
+                          </TableCell>
+                          <TableCell><BoolChip value={ssid.Enable} /></TableCell>
+                          <TableCell sx={{ fontSize: '0.82rem' }}>
+                            {ssid._ap?.AssociatedDeviceNumberOfEntries ?? '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* EndPoints (Station/Client mode) */}
+          {endPoints.length > 0 && (
+            <Card>
+              <CardHeader
+                avatar={<SvgIcon><WifiIcon /></SvgIcon>}
+                title="WiFi EndPoints (Client Mode)"
+                subheader={`${endPoints.length} endpoint(s) found`}
+              />
+              <Divider />
+              <CardContent sx={{ p: 0 }}>
+                <TableContainer component={Paper} elevation={0}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        {['EndPoint', 'Status', 'SSID', 'Security', 'Signal', 'Noise'].map(h => (
+                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {endPoints.map((ep) => {
+                        const firstProfile = ep._profiles?.[0];
+                        return (
+                          <TableRow key={ep._idx} hover>
+                            <TableCell sx={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                              {ep.Alias || `EndPoint ${ep._idx}`}
+                            </TableCell>
+                            <TableCell><StatusChip value={ep.Status} /></TableCell>
+                            <TableCell sx={{ fontSize: '0.82rem' }}>
+                              {firstProfile?.SSID || ep.SSIDReference || '—'}
+                            </TableCell>
+                            <TableCell sx={{ fontSize: '0.82rem' }}>
+                              {firstProfile?._security?.ModeEnabled || '—'}
+                            </TableCell>
+                            <TableCell sx={{ fontSize: '0.82rem' }}>
+                              {ep._stats?.SignalStrength != null ? `${ep._stats.SignalStrength} dBm` : '—'}
+                            </TableCell>
+                            <TableCell sx={{ fontSize: '0.82rem' }}>
+                              {ep._stats?.Noise != null ? `${ep._stats.Noise} dBm` : '—'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Fallback if no WiFi objects found */}
+          {radios.length === 0 && ssids.length === 0 && endPoints.length === 0 && (
+            <Card>
+              <CardHeader avatar={<SvgIcon><WifiIcon /></SvgIcon>} title="WiFi" />
+              <Divider />
+              <CardContent>
+                <Typography color="text.secondary" variant="body2" textAlign="center" py={2}>
+                  No WiFi configuration found in device response.
+                </Typography>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </Stack>
   );
 };

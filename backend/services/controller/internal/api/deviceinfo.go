@@ -70,8 +70,9 @@ func (a *Api) deviceWifiUspGet(w http.ResponseWriter, r *http.Request) {
 			"Device.WiFi.Radio.",
 			"Device.WiFi.SSID.",
 			"Device.WiFi.AccessPoint.",
+			"Device.WiFi.EndPoint.",
 		},
-		MaxDepth: 3,
+		MaxDepth: 4,
 	})
 	sendUspMsg(msg, sn, w, a.nc, mtp)
 }
