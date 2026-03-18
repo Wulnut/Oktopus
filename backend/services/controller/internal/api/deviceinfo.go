@@ -78,7 +78,7 @@ func (a *Api) deviceWifiUspGet(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/device/{sn}/{mtp}/interfaces
-// Returns IP interface data (Ethernet IPv4/IPv6)
+// Returns IP and Ethernet interface data
 func (a *Api) deviceInterfacesGet(w http.ResponseWriter, r *http.Request) {
 	sn := getSerialNumberFromRequest(r)
 	mtp, err := getMtpFromRequest(r, w)
@@ -94,6 +94,7 @@ func (a *Api) deviceInterfacesGet(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := usp_utils.NewGetMsg(usp_msg.Get{
 		ParamPaths: []string{
+			"Device.Ethernet.Interface.",
 			"Device.IP.Interface.",
 		},
 		MaxDepth: 3,

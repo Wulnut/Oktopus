@@ -23,7 +23,6 @@ import { useBackendContext } from 'src/contexts/backend-context';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import WifiIcon from '@heroicons/react/24/outline/WifiIcon';
 import ComputerDesktopIcon from '@heroicons/react/24/solid/ComputerDesktopIcon';
-import ServerStackIcon from '@heroicons/react/24/outline/ServerStackIcon';
 
 // Extract objects matching a regex pattern against resolved_path in USP GetResp
 const parseUspObjects = (data, pattern) => {
@@ -49,7 +48,6 @@ const hasPathError = (data, pathFragment) => {
 };
 
 const parseHosts = (data) => parseUspObjects(data, /Device\.Hosts\.Host\.(\d+)\.$/);
-const parseEthInterfaces = (data) => parseUspObjects(data, /Device\.Ethernet\.Interface\.(\d+)\.$/);
 const parseWifiClients = (data) => parseUspObjects(data, /Device\.WiFi\.AccessPoint\.\d+\.AssociatedDevice\.(\d+)\.$/);
 
 const ActiveChip = ({ value }) => {
@@ -86,7 +84,6 @@ export const DevicesTopology = ({ sn, mtp }) => {
 
   const wifiClients = data ? parseWifiClients(data) : [];
   const hosts = data ? parseHosts(data) : [];
-  const ethInterfaces = data ? parseEthInterfaces(data) : [];
   const wifiError = data ? hasPathError(data, 'WiFi.AccessPoint') : false;
 
   return (
@@ -208,52 +205,6 @@ export const DevicesTopology = ({ sn, mtp }) => {
             </CardContent>
           </Card>
 
-          {/* Ethernet Interfaces */}
-          <Card>
-            <CardHeader
-              avatar={<SvgIcon><ServerStackIcon /></SvgIcon>}
-              title="Ethernet Interfaces"
-              subheader={`${ethInterfaces.length} interface(s) found`}
-            />
-            <Divider />
-            <CardContent sx={{ p: ethInterfaces.length > 0 ? 0 : 2 }}>
-              {ethInterfaces.length === 0 ? (
-                <Typography color="text.secondary" variant="body2" textAlign="center" py={2}>
-                  No Ethernet interfaces found in response.
-                </Typography>
-              ) : (
-                <TableContainer component={Paper} elevation={0}>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        {['Name', 'Alias', 'Status', 'MAC Address', 'Duplex', 'Bitrate'].map(h => (
-                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: '0.8rem' }}>{h}</TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {ethInterfaces.map((iface, idx) => (
-                        <TableRow key={idx} hover>
-                          <TableCell sx={{ fontWeight: 600, fontSize: '0.82rem' }}>{iface.Name || '—'}</TableCell>
-                          <TableCell sx={{ fontSize: '0.82rem' }}>{iface.Alias || '—'}</TableCell>
-                          <TableCell><StatusChip value={iface.Status} /></TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{iface.MACAddress || '—'}</TableCell>
-                          <TableCell sx={{ fontSize: '0.82rem' }}>{iface.CurrentDuplexMode || iface.DuplexMode || '—'}</TableCell>
-                          <TableCell sx={{ fontSize: '0.82rem' }}>
-                            {iface.CurrentBitRate && iface.CurrentBitRate !== '0'
-                              ? `${iface.CurrentBitRate} Mbps`
-                              : iface.MaxBitRate && iface.MaxBitRate !== '-1'
-                                ? `${iface.MaxBitRate} Mbps max`
-                                : '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </CardContent>
-          </Card>
         </>
       )}
     </Stack>

@@ -8,7 +8,7 @@ import (
 )
 
 // GET /api/device/{sn}/{mtp}/topology
-// Returns associated WiFi clients, all hosts, and Ethernet interface status
+// Returns associated WiFi clients and all hosts
 func (a *Api) deviceTopology(w http.ResponseWriter, r *http.Request) {
 	sn := getSerialNumberFromRequest(r)
 	mtp, err := getMtpFromRequest(r, w)
@@ -26,7 +26,6 @@ func (a *Api) deviceTopology(w http.ResponseWriter, r *http.Request) {
 		ParamPaths: []string{
 			"Device.WiFi.AccessPoint.",
 			"Device.Hosts.Host.",
-			"Device.Ethernet.Interface.",
 		},
 		MaxDepth: 3,
 	})
