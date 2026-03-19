@@ -170,10 +170,10 @@ export const items = [
   },
   {
     title: 'Scripts',
-    disabled: true,
+    path: '/scripts',
     icon: (
       <SvgIcon fontSize="small">
-        <CommandLineIcon color='gray'/>
+        <CommandLineIcon />
       </SvgIcon>
     )
   },

@@ -16,8 +16,10 @@ type Database struct {
 	firmware       *mongo.Collection
 	messages       *mongo.Collection
 	messagesErrors *mongo.Collection
-	metrics        *mongo.Collection
-	ctx            context.Context
+	metrics          *mongo.Collection
+	scripts          *mongo.Collection
+	scriptExecutions *mongo.Collection
+	ctx              context.Context
 }
 
 func NewDatabase(ctx context.Context, mongoUri string) Database {
@@ -93,6 +95,32 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 	})
 	if err != nil {
 		log.Fatalln("Failed to create metrics indexes:", err)
+	}
+
+	db.scripts = client.Database("general").Collection("scripts")
+	_, err = db.scripts.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "name", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	db.scriptExecutions = client.Database("general").Collection("script_executions")
+	_, err = db.scriptExecutions.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "created_at", Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(2592000), // 30 days
+		},
+		{
+			Keys: bson.D{{Key: "script_id", Value: 1}, {Key: "created_at", Value: -1}},
+		},
+		{
+			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "created_at", Value: -1}},
+		},
+	})
+	if err != nil {
+		log.Fatalln(err)
 	}
 
 	db.ctx = ctx

@@ -102,6 +102,16 @@ func (a *Api) StartApi() {
 	firmware.HandleFunc("/{id}", a.deleteFirmware).Methods("DELETE")
 	firmware.HandleFunc("/{id}/phase", a.updateFirmwarePhase).Methods("PUT")
 
+	scripts := r.PathPrefix("/api/scripts").Subrouter()
+	scripts.HandleFunc("", a.listScripts).Methods("GET")
+	scripts.HandleFunc("", a.createScript).Methods("POST")
+	scripts.HandleFunc("/{id}", a.getScript).Methods("GET")
+	scripts.HandleFunc("/{id}", a.updateScript).Methods("PUT")
+	scripts.HandleFunc("/{id}", a.deleteScript).Methods("DELETE")
+	scripts.HandleFunc("/{id}/execute/{sn}/{mtp}", a.executeScriptHandler).Methods("POST")
+	scripts.HandleFunc("/{id}/executions", a.listScriptExecutions).Methods("GET")
+	scripts.HandleFunc("/{id}/executions/{execId}", a.getExecution).Methods("GET")
+
 	/* ----- Middleware for requests which requires user to be authenticated ---- */
 	iot.Use(func(handler http.Handler) http.Handler {
 		return middleware.Middleware(handler)
@@ -116,6 +126,10 @@ func (a *Api) StartApi() {
 	})
 
 	firmware.Use(func(handler http.Handler) http.Handler {
+		return middleware.Middleware(handler)
+	})
+
+	scripts.Use(func(handler http.Handler) http.Handler {
 		return middleware.Middleware(handler)
 	})
 	/* -------------------------------------------------------------------------- */
