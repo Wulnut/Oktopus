@@ -18,6 +18,7 @@ import { DevicesLCM } from 'src/sections/devices/usp/devices-lcm';
 import { DevicesHistory } from 'src/sections/devices/usp/devices-history';
 import { DevicesInfo } from 'src/sections/devices/usp/devices-info';
 import { DevicesNetwork } from 'src/sections/devices/usp/devices-network';
+import { DevicesBridging } from 'src/sections/devices/usp/devices-bridging';
 import { DevicesPerformance } from 'src/sections/devices/usp/devices-performance';
 import { DevicesTopology } from 'src/sections/devices/usp/devices-topology';
 import EnvelopeIcon from '@heroicons/react/24/outline/EnvelopeIcon';
@@ -36,6 +37,7 @@ import ClockIcon from '@heroicons/react/24/outline/ClockIcon';
 import InformationCircleIcon from '@heroicons/react/24/outline/InformationCircleIcon';
 import GlobeAltIcon from '@heroicons/react/24/outline/GlobeAltIcon';
 import ChartBarIcon from '@heroicons/react/24/outline/ChartBarIcon';
+import LinkIcon from '@heroicons/react/24/outline/LinkIcon';
 import MapIcon from '@heroicons/react/24/outline/MapIcon';
 
 const Page = () => {
@@ -61,6 +63,8 @@ const Page = () => {
                 return <DevicesInfo sn={deviceID} mtp="any" />
             case "network":
                 return <DevicesNetwork sn={deviceID} mtp="any" />
+            case "bridging":
+                return <DevicesBridging sn={deviceID} mtp="any" />
             case "performance":
                 return <DevicesPerformance sn={deviceID} mtp="any" />
             case "topology":
@@ -118,6 +122,12 @@ const Page = () => {
                         icon={<SvgIcon><GlobeAltIcon/></SvgIcon>}
                         iconPosition={"end"}
                         label="Network" />
+                        <Tab
+                        value={"bridging"}
+                        onClick={()=>{router.push(`/devices/usp/${deviceID}/bridging`)}}
+                        icon={<SvgIcon><LinkIcon/></SvgIcon>}
+                        iconPosition={"end"}
+                        label="Bridging" />
                         <Tab
                         value={"performance"}
                         onClick={()=>{router.push(`/devices/usp/${deviceID}/performance`)}}
