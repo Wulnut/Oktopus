@@ -61,9 +61,9 @@ export const Layout = withAuthGuard((props) => {
           {children}
         </LayoutContainer>
       </LayoutRoot>
-      {alert && <Snackbar 
-      open={true} 
-      autoHideDuration={4000} 
+      {alert && <Snackbar
+      open={true}
+      autoHideDuration={4000}
       anchorOrigin={{vertical:'bottom', horizontal: 'right'}}
       onClose={() => setAlert(null)}
       >

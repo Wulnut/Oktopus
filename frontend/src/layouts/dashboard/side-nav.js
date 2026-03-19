@@ -18,7 +18,7 @@ import {
 } from '@mui/material';
 import { Logo } from 'src/components/logo';
 import { Scrollbar } from 'src/components/scrollbar';
-import { items } from './config';
+import { items, getDeviceSubItems } from './config';
 import { SideNavItem } from './side-nav-item';
 import { useTheme } from '@mui/material';
 
@@ -40,6 +40,12 @@ export const SideNav = (props) => {
 
     return false;
   }
+
+  // Extract device info from pathname for sub-tabs
+  const deviceMatch = pathname?.match(/^\/devices\/(usp|cwmp)\/([^/]+)/);
+  const deviceProtocol = deviceMatch?.[1];
+  const deviceID = deviceMatch?.[2];
+  const deviceSubItems = deviceProtocol && deviceID ? getDeviceSubItems(deviceProtocol, deviceID) : [];
 
   const content = (
     <Scrollbar
@@ -75,7 +81,7 @@ export const SideNav = (props) => {
           >
             <Link href={typeof window !== 'undefined' ? `${window.location.origin}/devices` : '/devices'}>
               <div style={{display:'flex',justifyContent:'center'}}>
-                <img src={`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/images/logo.png`} 
+                <img src={`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/images/logo.png`}
                 width={'30%'}
                 />
               </div>
@@ -102,6 +108,14 @@ export const SideNav = (props) => {
           >
             {items.map((item) => {
               const active = isItemActive(pathname, item.path);
+              // Inject device sub-items as children of the Devices item
+              const itemChildren = item.path === '/devices' && deviceSubItems.length > 0
+                ? deviceSubItems.map((sub) => ({
+                    title: sub.title,
+                    path: sub.path,
+                    icon: sub.icon,
+                  }))
+                : item?.children;
 
               return (
                 <SideNavItem
@@ -112,13 +126,13 @@ export const SideNav = (props) => {
                   key={item.title}
                   path={item.path}
                   title={item.title}
-                  children={item?.children}
+                  children={itemChildren}
                   padleft={2}
                   tooltip={item.tooltip}
                 />
               );
             })}
-            <Collapse in={open} timeout="auto" unmountOnExit> 
+            <Collapse in={open} timeout="auto" unmountOnExit>
               <Box
                 component="span"
                 sx={{
@@ -167,8 +181,8 @@ export const SideNav = (props) => {
               Powered by
             </Typography>
             <a href='https://oktopus.app.br' target='_blank' rel="noopener noreferrer">
-              <img 
-                src="/assets/logo.png" 
+              <img
+                src="/assets/logo.png"
                 alt="Oktopus logo image"
                 width={80}
               />
@@ -219,5 +233,5 @@ export const SideNav = (props) => {
 
 SideNav.propTypes = {
   onClose: PropTypes.func,
-  open: PropTypes.bool
+  open: PropTypes.bool,
 };

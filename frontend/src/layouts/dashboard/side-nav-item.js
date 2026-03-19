@@ -144,7 +144,7 @@ export const SideNavItem = (props) => {
             }}
           >
           {
-            open ? 
+            open ?
           <SvgIcon fontSize='8px'>
             <ChevronDownIcon/>
           </SvgIcon>:

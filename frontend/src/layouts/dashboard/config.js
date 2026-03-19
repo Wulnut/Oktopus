@@ -16,6 +16,63 @@ import BookOpenIcon from '@heroicons/react/24/solid/BookOpenIcon';
 import CommandLineIcon from '@heroicons/react/24/solid/CommandLineIcon';
 import CubeIcon from '@heroicons/react/24/solid/CubeIcon';
 import CircleStackIcon from '@heroicons/react/24/solid/CircleStackIcon';
+import InformationCircleIcon from '@heroicons/react/24/outline/InformationCircleIcon';
+import GlobeAltIcon from '@heroicons/react/24/outline/GlobeAltIcon';
+import LinkIcon from '@heroicons/react/24/outline/LinkIcon';
+import ChartBarIconOutline from '@heroicons/react/24/outline/ChartBarIcon';
+import MapIcon from '@heroicons/react/24/outline/MapIcon';
+import MagnifyingGlassIcon from '@heroicons/react/24/solid/MagnifyingGlassIcon';
+import CubeTransparentIcon from '@heroicons/react/24/outline/CubeTransparentIcon';
+import EnvelopeIconOutline from '@heroicons/react/24/outline/EnvelopeIcon';
+import ClockIcon from '@heroicons/react/24/outline/ClockIcon';
+
+export const getDeviceSubItems = (protocol, deviceID) => [
+  {
+    title: 'Info',
+    path: `/devices/${protocol}/${deviceID}/info`,
+    icon: <SvgIcon fontSize="small"><InformationCircleIcon /></SvgIcon>,
+  },
+  {
+    title: 'Network',
+    path: `/devices/${protocol}/${deviceID}/network`,
+    icon: <SvgIcon fontSize="small"><GlobeAltIcon /></SvgIcon>,
+  },
+  {
+    title: 'Bridging',
+    path: `/devices/${protocol}/${deviceID}/bridging`,
+    icon: <SvgIcon fontSize="small"><LinkIcon /></SvgIcon>,
+  },
+  {
+    title: 'Performance',
+    path: `/devices/${protocol}/${deviceID}/performance`,
+    icon: <SvgIcon fontSize="small"><ChartBarIconOutline /></SvgIcon>,
+  },
+  {
+    title: 'Topology',
+    path: `/devices/${protocol}/${deviceID}/topology`,
+    icon: <SvgIcon fontSize="small"><MapIcon /></SvgIcon>,
+  },
+  {
+    title: 'Parameters',
+    path: `/devices/${protocol}/${deviceID}/discovery`,
+    icon: <SvgIcon fontSize="small"><MagnifyingGlassIcon /></SvgIcon>,
+  },
+  {
+    title: 'LCM',
+    path: `/devices/${protocol}/${deviceID}/lcm`,
+    icon: <SvgIcon fontSize="small"><CubeTransparentIcon /></SvgIcon>,
+  },
+  {
+    title: 'Messages',
+    path: `/devices/${protocol}/${deviceID}/msg`,
+    icon: <SvgIcon fontSize="small"><EnvelopeIconOutline /></SvgIcon>,
+  },
+  {
+    title: 'History',
+    path: `/devices/${protocol}/${deviceID}/history`,
+    icon: <SvgIcon fontSize="small"><ClockIcon /></SvgIcon>,
+  },
+];
 
 export const items = [
   {
