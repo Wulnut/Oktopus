@@ -15,6 +15,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import PencilIcon from '@heroicons/react/24/outline/PencilIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import ArrowUpCircleIcon from '@heroicons/react/24/outline/ArrowUpCircleIcon';
 import ArrowDownCircleIcon from '@heroicons/react/24/outline/ArrowDownCircleIcon';
@@ -46,7 +47,7 @@ const formatDate = (dateStr) => {
   }
 };
 
-export const FirmwareTable = ({ firmware = [], loading = false, onDelete, onPhaseChange }) => {
+export const FirmwareTable = ({ firmware = [], loading = false, onDelete, onPhaseChange, onEdit }) => {
   const skeletonRows = Array.from({ length: 4 });
 
   return (
@@ -57,6 +58,8 @@ export const FirmwareTable = ({ firmware = [], loading = false, onDelete, onPhas
             <TableHead>
               <TableRow>
                 <TableCell>Name</TableCell>
+                <TableCell>Vendor</TableCell>
+                <TableCell>Model</TableCell>
                 <TableCell>Build Version</TableCell>
                 <TableCell>File Size</TableCell>
                 <TableCell>Fingerprint</TableCell>
@@ -70,7 +73,7 @@ export const FirmwareTable = ({ firmware = [], loading = false, onDelete, onPhas
               {loading
                 ? skeletonRows.map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 8 }).map((__, j) => (
+                      {Array.from({ length: 10 }).map((__, j) => (
                         <TableCell key={j}>
                           <Skeleton variant="text" width="80%" />
                         </TableCell>
@@ -80,7 +83,7 @@ export const FirmwareTable = ({ firmware = [], loading = false, onDelete, onPhas
                 : firmware.length === 0
                 ? (
                     <TableRow>
-                      <TableCell colSpan={8} align="center">
+                      <TableCell colSpan={10} align="center">
                         <Typography color="text.secondary" sx={{ py: 3 }}>
                           No firmware found. Upload your first firmware image.
                         </Typography>
@@ -98,6 +101,8 @@ export const FirmwareTable = ({ firmware = [], loading = false, onDelete, onPhas
                             {fw.name || '—'}
                           </Typography>
                         </TableCell>
+                        <TableCell>{fw.vendor || '—'}</TableCell>
+                        <TableCell>{fw.model || '—'}</TableCell>
                         <TableCell>{fw.build_version || '—'}</TableCell>
                         <TableCell>{formatFileSize(fw.file_size)}</TableCell>
                         <TableCell>
@@ -149,6 +154,20 @@ export const FirmwareTable = ({ firmware = [], loading = false, onDelete, onPhas
                         </TableCell>
                         <TableCell align="right">
                           <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                            <Tooltip title="Edit" placement="top">
+                              <IconButton
+                                size="small"
+                                onClick={() => onEdit && onEdit(fw)}
+                                sx={{
+                                  color: 'warning.main',
+                                  '&:hover': { backgroundColor: 'warning.light' },
+                                }}
+                              >
+                                <SvgIcon fontSize="small">
+                                  <PencilIcon />
+                                </SvgIcon>
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip
                               title={isRelease ? 'Demote to Internal Testing' : 'Promote to Release'}
                               placement="top"
@@ -205,5 +224,6 @@ FirmwareTable.propTypes = {
   firmware: PropTypes.array,
   loading: PropTypes.bool,
   onDelete: PropTypes.func,
+  onEdit: PropTypes.func,
   onPhaseChange: PropTypes.func,
 };

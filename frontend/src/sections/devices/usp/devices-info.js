@@ -57,7 +57,7 @@ const ConfirmDialog = ({ open, onClose, onConfirm, title, description, loading }
   </Dialog>
 );
 
-const FirmwareUpdateDialog = ({ open, onClose, onConfirm, loading }) => {
+const FirmwareUpdateDialog = ({ open, onClose, onConfirm, loading, deviceVendor, deviceModel }) => {
   const { httpRequest } = useBackendContext();
   const [firmware, setFirmware] = useState([]);
   const [fetchLoading, setFetchLoading] = useState(false);
@@ -72,7 +72,14 @@ const FirmwareUpdateDialog = ({ open, onClose, onConfirm, loading }) => {
     }).finally(() => setFetchLoading(false));
   }, [open]);
 
-  const selectedFw = firmware.find(fw => fw.id === selected);
+  // Filter firmware by device vendor/model when available
+  const filtered = firmware.filter((fw) => {
+    if (fw.vendor && deviceVendor && fw.vendor.toLowerCase() !== deviceVendor.toLowerCase()) return false;
+    if (fw.model && deviceModel && fw.model.toLowerCase() !== deviceModel.toLowerCase()) return false;
+    return true;
+  });
+
+  const selectedFw = filtered.find(fw => fw.id === selected);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -83,10 +90,12 @@ const FirmwareUpdateDialog = ({ open, onClose, onConfirm, loading }) => {
           <Box display="flex" justifyContent="center" py={4}>
             <CircularProgress />
           </Box>
-        ) : firmware.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <Box p={3}>
             <Alert severity="info">
-              No firmware available. Upload a firmware image in the Firmware Management page first.
+              {firmware.length > 0
+                ? `No firmware matching this device (${deviceVendor || '?'} / ${deviceModel || '?'}). Check vendor and model fields on your firmware images.`
+                : 'No firmware available. Upload a firmware image in the Firmware Management page first.'}
             </Alert>
           </Box>
         ) : (
@@ -103,7 +112,7 @@ const FirmwareUpdateDialog = ({ open, onClose, onConfirm, loading }) => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {firmware.map((fw) => (
+                  {filtered.map((fw) => (
                     <TableRow
                       key={fw.id}
                       hover
@@ -256,6 +265,8 @@ export const DevicesInfo = ({ sn, mtp }) => {
   };
 
   const rows = info ? parseUspFlat(info) : [];
+  const deviceVendor = rows.find(r => r.key === 'Manufacturer')?.value || '';
+  const deviceModel = rows.find(r => r.key === 'ModelName')?.value || '';
 
   return (
     <>
@@ -368,6 +379,8 @@ export const DevicesInfo = ({ sn, mtp }) => {
         onClose={() => setFwDialogOpen(false)}
         onConfirm={handleFwDeploy}
         loading={fwLoading}
+        deviceVendor={deviceVendor}
+        deviceModel={deviceModel}
       />
 
       <ConfirmDialog

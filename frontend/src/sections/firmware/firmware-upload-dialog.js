@@ -36,6 +36,8 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
 
   const [tab, setTab] = useState(0); // 0 = Upload File, 1 = External URL
   const [name, setName] = useState('');
+  const [vendor, setVendor] = useState('');
+  const [model, setModel] = useState('');
   const [buildVersion, setBuildVersion] = useState('');
   const [phase, setPhase] = useState('internal_testing');
   const [file, setFile] = useState(null);
@@ -48,6 +50,8 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
   const resetForm = () => {
     setTab(0);
     setName('');
+    setVendor('');
+    setModel('');
     setBuildVersion('');
     setPhase('internal_testing');
     setFile(null);
@@ -97,6 +101,8 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
     try {
       const formData = new FormData();
       formData.append('name', name.trim());
+      if (vendor.trim()) formData.append('vendor', vendor.trim());
+      if (model.trim()) formData.append('model', model.trim());
       formData.append('build_version', buildVersion.trim());
       formData.append('phase', phase);
 
@@ -165,6 +171,31 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
             autoComplete="off"
           />
 
+          <Stack direction="row" spacing={2}>
+            <TextField
+              id="fw-vendor"
+              label="Vendor"
+              variant="outlined"
+              fullWidth
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+              disabled={uploading}
+              placeholder="e.g., TP-Link"
+              autoComplete="off"
+            />
+            <TextField
+              id="fw-model"
+              label="Model"
+              variant="outlined"
+              fullWidth
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={uploading}
+              placeholder="e.g., Archer AX50"
+              autoComplete="off"
+            />
+          </Stack>
+
           <TextField
             id="fw-build-version"
             label="Build Version"
@@ -220,20 +251,42 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
                 onChange={handleFileChange}
                 autoComplete="off"
               />
-              <Button
-                variant="outlined"
-                fullWidth
-                disabled={uploading}
-                onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                startIcon={
-                  <SvgIcon fontSize="small">
-                    <CloudArrowUpIcon />
-                  </SvgIcon>
-                }
-                sx={{ py: 2 }}
+              <Box
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (uploading) return;
+                  const droppedFile = e.dataTransfer.files?.[0];
+                  if (droppedFile) {
+                    setFile(droppedFile);
+                    setError(null);
+                  }
+                }}
+                sx={{
+                  border: '2px dashed',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  textAlign: 'center',
+                  cursor: uploading ? 'default' : 'pointer',
+                  '&:hover': uploading ? {} : { borderColor: 'primary.main' },
+                }}
+                onClick={() => !uploading && fileInputRef.current && fileInputRef.current.click()}
               >
-                {file ? file.name : 'Browse or drag a firmware file'}
-              </Button>
+                <Button
+                  component="span"
+                  fullWidth
+                  disabled={uploading}
+                  startIcon={
+                    <SvgIcon fontSize="small">
+                      <CloudArrowUpIcon />
+                    </SvgIcon>
+                  }
+                  sx={{ py: 3 }}
+                >
+                  {file ? file.name : 'Browse or drag a firmware file'}
+                </Button>
+              </Box>
               {file && (
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                   Selected: {file.name} ({(file.size / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB)

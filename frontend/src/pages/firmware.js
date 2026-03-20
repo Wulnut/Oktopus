@@ -16,6 +16,7 @@ import PlusIcon from '@heroicons/react/24/solid/PlusIcon';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { FirmwareTable } from 'src/sections/firmware/firmware-table';
 import { FirmwareUploadDialog } from 'src/sections/firmware/firmware-upload-dialog';
+import { FirmwareEditDialog } from 'src/sections/firmware/firmware-edit-dialog';
 import { useBackendContext } from 'src/contexts/backend-context';
 import { useAlertContext } from 'src/contexts/error-context';
 
@@ -26,6 +27,10 @@ const Page = () => {
   const [firmware, setFirmware] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+
+  // Edit dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingFirmware, setEditingFirmware] = useState(null);
 
   // Delete confirmation dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -87,6 +92,21 @@ const Page = () => {
     }
   };
 
+  const handleEdit = (fw) => {
+    setEditingFirmware(fw);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSave = async (id, data) => {
+    const { status } = await httpRequest(`/api/firmware/${id}`, 'PUT', JSON.stringify(data));
+    if (status === 204 || status === 200) {
+      setEditDialogOpen(false);
+      setEditingFirmware(null);
+      setAlert({ severity: 'success', message: 'Firmware updated.' });
+      fetchFirmware();
+    }
+  };
+
   const handleUploadSuccess = () => {
     setUploadDialogOpen(false);
     setAlert({ severity: 'success', message: 'Firmware uploaded successfully.' });
@@ -119,12 +139,20 @@ const Page = () => {
             <FirmwareTable
               firmware={firmware}
               loading={loading}
+              onEdit={handleEdit}
               onDelete={handleDeleteRequest}
               onPhaseChange={handlePhaseChange}
             />
           </Stack>
         </Container>
       </Box>
+
+      <FirmwareEditDialog
+        open={editDialogOpen}
+        onClose={() => { setEditDialogOpen(false); setEditingFirmware(null); }}
+        onSave={handleEditSave}
+        firmware={editingFirmware}
+      />
 
       <FirmwareUploadDialog
         open={uploadDialogOpen}

@@ -19,6 +19,8 @@ const (
 type Firmware struct {
 	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	Name         string             `bson:"name"          json:"name"`
+	Vendor       string             `bson:"vendor"        json:"vendor"`
+	Model        string             `bson:"model"         json:"model"`
 	BuildVersion string             `bson:"build_version" json:"build_version"`
 	FileSize     int64              `bson:"file_size"     json:"file_size"`
 	Fingerprint  string             `bson:"fingerprint"   json:"fingerprint"`
@@ -64,5 +66,18 @@ func (d *Database) UpdateFirmwarePhase(ctx context.Context, id primitive.ObjectI
 	_, err := d.firmware.UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{"phase": phase, "updated_at": time.Now()}})
+	return err
+}
+
+func (d *Database) UpdateFirmware(ctx context.Context, id primitive.ObjectID, fw Firmware) error {
+	_, err := d.firmware.UpdateOne(ctx,
+		bson.M{"_id": id},
+		bson.M{"$set": bson.M{
+			"name":          fw.Name,
+			"vendor":        fw.Vendor,
+			"model":         fw.Model,
+			"build_version": fw.BuildVersion,
+			"updated_at":    time.Now(),
+		}})
 	return err
 }

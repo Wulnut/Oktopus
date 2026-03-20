@@ -52,6 +52,8 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	buildVersion := r.FormValue("build_version")
+	vendor := r.FormValue("vendor")
+	model := r.FormValue("model")
 	if name == "" || buildVersion == "" {
 		http.Error(w, "name and build_version are required", http.StatusBadRequest)
 		return
@@ -112,6 +114,8 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 
 	fw := db.Firmware{
 		Name:         name,
+		Vendor:       vendor,
+		Model:        model,
 		BuildVersion: buildVersion,
 		FileSize:     fileSize,
 		Fingerprint:  fingerprint,
@@ -148,6 +152,41 @@ func (a *Api) deleteFirmware(w http.ResponseWriter, r *http.Request) {
 		deleteFileFromUploadService(fw.FileName, r.Header.Get("Authorization"))
 	}
 	if err := a.db.DeleteFirmware(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// PUT /api/firmware/{id}
+func (a *Api) updateFirmware(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := primitive.ObjectIDFromHex(vars["id"])
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Name         string `json:"name"`
+		Vendor       string `json:"vendor"`
+		Model        string `json:"model"`
+		BuildVersion string `json:"build_version"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if body.Name == "" || body.BuildVersion == "" {
+		http.Error(w, "name and build_version are required", http.StatusBadRequest)
+		return
+	}
+	fw := db.Firmware{
+		Name:         body.Name,
+		Vendor:       body.Vendor,
+		Model:        body.Model,
+		BuildVersion: body.BuildVersion,
+	}
+	if err := a.db.UpdateFirmware(r.Context(), id, fw); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

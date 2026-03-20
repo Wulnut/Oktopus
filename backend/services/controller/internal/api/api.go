@@ -99,6 +99,7 @@ func (a *Api) StartApi() {
 	firmware := r.PathPrefix("/api/firmware").Subrouter()
 	firmware.HandleFunc("", a.listFirmware).Methods("GET")
 	firmware.HandleFunc("", a.uploadFirmware).Methods("POST")
+	firmware.HandleFunc("/{id}", a.updateFirmware).Methods("PUT")
 	firmware.HandleFunc("/{id}", a.deleteFirmware).Methods("DELETE")
 	firmware.HandleFunc("/{id}/phase", a.updateFirmwarePhase).Methods("PUT")
 
