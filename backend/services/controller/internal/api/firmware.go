@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -234,22 +233,30 @@ func (a *Api) updateFirmwarePhase(w http.ResponseWriter, r *http.Request) {
 }
 
 func forwardFileToUploadService(tmpPath, fileName, authHeader string) error {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", fileName)
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(tmpPath)
-	if err != nil {
-		return err
-	}
-	if _, err := part.Write(data); err != nil {
-		return err
-	}
-	writer.Close()
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
 
-	req, err := http.NewRequest(http.MethodPost, firmwareUploadServiceURL+"/upload", body)
+	go func() {
+		part, err := writer.CreateFormFile("file", fileName)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		defer f.Close()
+		if _, err := io.Copy(part, f); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		writer.Close()
+		pw.Close()
+	}()
+
+	req, err := http.NewRequest(http.MethodPost, firmwareUploadServiceURL+"/upload", pr)
 	if err != nil {
 		return err
 	}

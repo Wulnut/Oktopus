@@ -528,8 +528,21 @@ func (a *Api) executeScriptForDevice(script db.Script, sn, mtp string, variables
 	savedResults := make(map[string]interface{})
 	stepIndex := 0
 	visitCounts := make(map[int]int)
+	const maxTotalIterations = 500
+	totalIterations := 0
 
 	for stepIndex < len(script.Steps) {
+		totalIterations++
+		if totalIterations > maxTotalIterations {
+			execution.Status = "failed"
+			execution.StepResults = append(execution.StepResults, db.StepResult{
+				StepID:   script.Steps[stepIndex].ID,
+				StepName: script.Steps[stepIndex].Name,
+				Status:   "failed",
+				Error:    fmt.Sprintf("exceeded maximum total iterations (%d)", maxTotalIterations),
+			})
+			break
+		}
 		visitCounts[stepIndex]++
 		if visitCounts[stepIndex] > len(script.Steps) {
 			execution.Status = "failed"
@@ -642,7 +655,9 @@ func (a *Api) executeScriptForDevice(script db.Script, sn, mtp string, variables
 
 done:
 	execution.FinishedAt = time.Now()
-	a.db.UpdateExecution(context.Background(), execution.ID, execution)
+	if err := a.db.UpdateExecution(context.Background(), execution.ID, execution); err != nil {
+		log.Printf("executeScriptForDevice: failed to update execution %s: %v", execution.ID.Hex(), err)
+	}
 	return execution, nil
 }
 

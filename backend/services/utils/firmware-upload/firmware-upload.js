@@ -43,7 +43,11 @@ const server = http.createServer((req, res) => {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: 'No file provided' })); return;
             }
-            const origName = file.originalFilename || file.newFilename;
+            const origName = path.basename(file.originalFilename || file.newFilename);
+            if (!origName || origName === '.' || origName === '..') {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid filename' })); return;
+            }
             const destPath = path.join(FIRMWARE_DIR, origName);
             fs.rename(file.filepath, destPath, (renameErr) => {
                 if (renameErr) {
