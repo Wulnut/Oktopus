@@ -13,6 +13,7 @@ export const FirmwareEditDialog = ({ open, onClose, onSave, firmware }) => {
   const [name, setName] = useState('');
   const [vendor, setVendor] = useState('');
   const [model, setModel] = useState('');
+  const [hwVersion, setHwVersion] = useState('');
   const [buildVersion, setBuildVersion] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -21,6 +22,7 @@ export const FirmwareEditDialog = ({ open, onClose, onSave, firmware }) => {
       setName(firmware.name || '');
       setVendor(firmware.vendor || '');
       setModel(firmware.model || '');
+      setHwVersion(firmware.hw_version || '');
       setBuildVersion(firmware.build_version || '');
     }
   }, [open, firmware]);
@@ -32,6 +34,7 @@ export const FirmwareEditDialog = ({ open, onClose, onSave, firmware }) => {
         name: name.trim(),
         vendor: vendor.trim(),
         model: model.trim(),
+        hw_version: hwVersion.trim(),
         build_version: buildVersion.trim(),
       });
     } finally {
@@ -71,6 +74,14 @@ export const FirmwareEditDialog = ({ open, onClose, onSave, firmware }) => {
               autoComplete="off"
             />
           </Stack>
+          <TextField
+            label="HW Version"
+            value={hwVersion}
+            onChange={(e) => setHwVersion(e.target.value)}
+            fullWidth
+            id="fw-edit-hw-version"
+            autoComplete="off"
+          />
           <TextField
             label="Build Version"
             value={buildVersion}

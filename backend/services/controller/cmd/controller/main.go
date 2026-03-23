@@ -32,6 +32,7 @@ func main() {
 
 	api := api.NewApi(c, js, nc, bridge, db, kv)
 	api.StartApi()
+	api.StartCampaignEngine()
 
 	<-done
 

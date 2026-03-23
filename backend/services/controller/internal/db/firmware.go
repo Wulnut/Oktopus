@@ -21,6 +21,7 @@ type Firmware struct {
 	Name         string             `bson:"name"          json:"name"`
 	Vendor       string             `bson:"vendor"        json:"vendor"`
 	Model        string             `bson:"model"         json:"model"`
+	HWVersion    string             `bson:"hw_version"    json:"hw_version"`
 	BuildVersion string             `bson:"build_version" json:"build_version"`
 	FileSize     int64              `bson:"file_size"     json:"file_size"`
 	Fingerprint  string             `bson:"fingerprint"   json:"fingerprint"`
@@ -76,6 +77,7 @@ func (d *Database) UpdateFirmware(ctx context.Context, id primitive.ObjectID, fw
 			"name":          fw.Name,
 			"vendor":        fw.Vendor,
 			"model":         fw.Model,
+			"hw_version":    fw.HWVersion,
 			"build_version": fw.BuildVersion,
 			"updated_at":    time.Now(),
 		}})

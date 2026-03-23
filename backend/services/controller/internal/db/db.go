@@ -21,6 +21,9 @@ type Database struct {
 	scriptExecutions *mongo.Collection
 	massActions      *mongo.Collection
 	deviceInfo       *mongo.Collection
+	campaigns        *mongo.Collection
+	fwPolicies       *mongo.Collection
+	upgradeLogs      *mongo.Collection
 	ctx              context.Context
 }
 
@@ -143,6 +146,48 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 	_, err = db.deviceInfo.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "device_sn", Value: 1}},
 		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	db.campaigns = client.Database("general").Collection("campaigns")
+	_, err = db.campaigns.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "vendor", Value: 1}, {Key: "model", Value: 1}, {Key: "hw_version", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	db.fwPolicies = client.Database("general").Collection("fw_policies")
+	_, err = db.fwPolicies.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "device_sn", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	db.upgradeLogs = client.Database("general").Collection("upgrade_logs")
+	_, err = db.upgradeLogs.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "campaign_id", Value: 1}, {Key: "triggered_at", Value: -1}},
+		},
+		{
+			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "triggered_at", Value: -1}},
+		},
+		{
+			Keys:    bson.D{{Key: "device_sn", Value: 1}, {Key: "firmware_id", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "status", Value: 1}},
+		},
+		{
+			Keys:    bson.D{{Key: "triggered_at", Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(7776000), // 90 days
+		},
 	})
 	if err != nil {
 		log.Fatalln(err)

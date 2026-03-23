@@ -38,6 +38,7 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
   const [name, setName] = useState('');
   const [vendor, setVendor] = useState('');
   const [model, setModel] = useState('');
+  const [hwVersion, setHwVersion] = useState('');
   const [buildVersion, setBuildVersion] = useState('');
   const [phase, setPhase] = useState('internal_testing');
   const [file, setFile] = useState(null);
@@ -52,6 +53,7 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
     setName('');
     setVendor('');
     setModel('');
+    setHwVersion('');
     setBuildVersion('');
     setPhase('internal_testing');
     setFile(null);
@@ -103,6 +105,7 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
       formData.append('name', name.trim());
       if (vendor.trim()) formData.append('vendor', vendor.trim());
       if (model.trim()) formData.append('model', model.trim());
+      if (hwVersion.trim()) formData.append('hw_version', hwVersion.trim());
       formData.append('build_version', buildVersion.trim());
       formData.append('phase', phase);
 
@@ -195,6 +198,18 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
               autoComplete="off"
             />
           </Stack>
+
+          <TextField
+            id="fw-hw-version"
+            label="HW Version"
+            variant="outlined"
+            fullWidth
+            value={hwVersion}
+            onChange={(e) => setHwVersion(e.target.value)}
+            disabled={uploading}
+            placeholder="e.g., v3.0"
+            autoComplete="off"
+          />
 
           <TextField
             id="fw-build-version"

@@ -28,6 +28,11 @@ import {
   RadioGroup,
   FormControlLabel,
   Alert,
+  MenuItem,
+  ListSubheader,
+  Select,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import { useBackendContext } from 'src/contexts/backend-context';
 import { useAlertContext } from 'src/contexts/error-context';
@@ -207,6 +212,13 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
   const [fwDialogOpen, setFwDialogOpen] = useState(false);
   const [fwLoading, setFwLoading] = useState(false);
 
+  // Firmware policy dropdown
+  const [fwPolicy, setFwPolicy] = useState('campaign');
+  const [fwPolicyFwId, setFwPolicyFwId] = useState('');
+  const [fwPolicyLoading, setFwPolicyLoading] = useState(false);
+  const [availableFirmware, setAvailableFirmware] = useState([]);
+  const [noCampaignAlert, setNoCampaignAlert] = useState(false);
+
   const fetchCachedInfo = useCallback(async () => {
     if (!sn) return;
     setLoading(true);
@@ -252,6 +264,109 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
       fetchLiveInfo();
     }
   }, [sn]);
+
+  // Fetch firmware policy and available firmware on mount
+  useEffect(() => {
+    if (!sn) return;
+    const fetchPolicy = async () => {
+      try {
+        const { status, result } = await httpRequest(`/api/device/${sn}/fw-policy`, 'GET');
+        if (status === 200 && result) {
+          if (result.policy === 'manual' && result.manual_firmware_id) {
+            setFwPolicy(result.manual_firmware_id);
+            setFwPolicyFwId(result.manual_firmware_id);
+          } else {
+            setFwPolicy(result.policy || 'campaign');
+          }
+        }
+      } catch {
+        // ignore — default to campaign
+      }
+    };
+    const fetchFwList = async () => {
+      try {
+        const { status, result } = await httpRequest('/api/firmware', 'GET');
+        if (status === 200 && Array.isArray(result)) {
+          setAvailableFirmware(result);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    fetchPolicy();
+    fetchFwList();
+  }, [sn]);
+
+  // Check if campaign exists for this device's hardware when policy is "campaign"
+  useEffect(() => {
+    if (fwPolicy !== 'campaign' || !sn || !info) {
+      setNoCampaignAlert(false);
+      return;
+    }
+    const checkCampaign = async () => {
+      try {
+        // Extract vendor/model from device info
+        const flat = {};
+        if (info?.req_path_results) {
+          for (const r of info.req_path_results) {
+            if (r.resolved_path_results) {
+              for (const rr of r.resolved_path_results) {
+                if (rr.result_params) Object.assign(flat, rr.result_params);
+              }
+            }
+          }
+        }
+        const vendor = (flat.Manufacturer || '').toLowerCase();
+        const model = (flat.ModelName || '').toLowerCase();
+        const hwVersion = (flat.HardwareVersion || '').toLowerCase();
+
+        const { status, result } = await httpRequest('/api/campaigns', 'GET');
+        if (status === 200 && Array.isArray(result)) {
+          const match = result.some(
+            (c) =>
+              c.enabled !== false &&
+              (c.vendor || '').toLowerCase() === vendor &&
+              (c.model || '').toLowerCase() === model &&
+              (c.hw_version || '').toLowerCase() === hwVersion
+          );
+          setNoCampaignAlert(!match && Boolean(vendor || model));
+        }
+      } catch {
+        // ignore
+      }
+    };
+    checkCampaign();
+  }, [fwPolicy, info]);
+
+  const handleFwPolicyChange = async (e) => {
+    const value = e.target.value;
+    if (!value) return;
+    setFwPolicyLoading(true);
+    try {
+      let policy, firmwareId;
+      if (value === 'campaign') {
+        policy = 'campaign';
+        firmwareId = '';
+      } else if (value === 'skip') {
+        policy = 'skip';
+        firmwareId = '';
+      } else {
+        policy = 'manual';
+        firmwareId = value;
+      }
+      const body = JSON.stringify({ policy, manual_firmware_id: firmwareId });
+      const { status } = await httpRequest(`/api/device/${sn}/fw-policy`, 'PUT', body);
+      if (status === 200 || status === 204) {
+        setFwPolicy(value);
+        if (policy === 'manual') setFwPolicyFwId(firmwareId);
+        setAlert({ severity: 'success', message: 'Firmware policy updated.' });
+      }
+    } catch {
+      setAlert({ severity: 'error', message: 'Failed to update firmware policy.' });
+    } finally {
+      setFwPolicyLoading(false);
+    }
+  };
 
   const openConfirm = (title, description, action) => {
     setConfirmDialog({ open: true, title, description, action });
@@ -373,6 +488,45 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
             Factory Reset
           </Button>
         </CardActions>
+        <Divider />
+        {/* Firmware Policy Dropdown */}
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <FormControl size="small" sx={{ minWidth: 280 }}>
+              <InputLabel id="fw-policy-label">Firmware Policy</InputLabel>
+              <Select
+                labelId="fw-policy-label"
+                id="fw-policy-select"
+                value={fwPolicy}
+                label="Firmware Policy"
+                onChange={handleFwPolicyChange}
+                disabled={fwPolicyLoading}
+              >
+                <MenuItem value="campaign">Use campaign firmware</MenuItem>
+                <MenuItem value="skip">Do not enforce FW</MenuItem>
+                <Divider />
+                <ListSubheader>Manual firmware</ListSubheader>
+                {availableFirmware
+                  .filter((fw) => {
+                    if (deviceVendor && fw.vendor && fw.vendor.toLowerCase() !== deviceVendor.toLowerCase()) return false;
+                    if (deviceModel && fw.model && fw.model.toLowerCase() !== deviceModel.toLowerCase()) return false;
+                    return true;
+                  })
+                  .map((fw) => (
+                    <MenuItem key={fw.id} value={fw.id}>
+                      FW {fw.name} v{fw.build_version || '?'}{fw.created_at ? ` (${new Date(fw.created_at).toLocaleDateString()})` : ''}
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+            {fwPolicyLoading && <CircularProgress size={20} />}
+          </Stack>
+          {noCampaignAlert && (
+            <Alert severity="info" sx={{ mt: 1 }}>
+              No active campaign for this hardware
+            </Alert>
+          )}
+        </Box>
         <Divider />
         <CardContent sx={{ p: 0 }}>
           {loading ? (

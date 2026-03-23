@@ -34,6 +34,7 @@ type Device struct {
 	Vendor       string
 	Version      string
 	ProductClass string
+	HWVersion    string
 	Alias        string
 	Status       Status
 	Mqtt         Status

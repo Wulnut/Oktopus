@@ -23,6 +23,9 @@ func (h *Handler) HandleDeviceInfo(device, subject string, data []byte, mtp stri
 	if err != nil {
 		log.Printf("Failed to create device: %v", err)
 	}
+	// Publish online event for every connect (used by controller for campaign checks)
+	onlineData, _ := json.Marshal(deviceInfo)
+	h.nc.Publish("device.v1.online", onlineData)
 }
 
 func getMtp(mtp string) db.MTP {
@@ -122,6 +125,7 @@ func parseDeviceInfoMsg(sn, subject string, data []byte, mtp db.MTP) db.Device {
 	device.Model = msg.ReqPathResults[1].ResolvedPathResults[0].ResultParams["ModelName"]
 	device.Version = msg.ReqPathResults[2].ResolvedPathResults[0].ResultParams["SoftwareVersion"]
 	device.ProductClass = msg.ReqPathResults[4].ResolvedPathResults[0].ResultParams["ProductClass"]
+	device.HWVersion = msg.ReqPathResults[5].ResolvedPathResults[0].ResultParams["HardwareVersion"]
 	device.SN = sn
 	switch db.MTP(mtp) {
 	case db.MQTT:

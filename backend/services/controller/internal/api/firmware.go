@@ -54,6 +54,7 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 	buildVersion := r.FormValue("build_version")
 	vendor := r.FormValue("vendor")
 	model := r.FormValue("model")
+	hwVersion := r.FormValue("hw_version")
 	if name == "" || buildVersion == "" {
 		http.Error(w, "name and build_version are required", http.StatusBadRequest)
 		return
@@ -124,6 +125,7 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 		Name:         name,
 		Vendor:       vendor,
 		Model:        model,
+		HWVersion:    hwVersion,
 		BuildVersion: buildVersion,
 		FileSize:     fileSize,
 		Fingerprint:  fingerprint,
@@ -178,6 +180,7 @@ func (a *Api) updateFirmware(w http.ResponseWriter, r *http.Request) {
 		Name         string `json:"name"`
 		Vendor       string `json:"vendor"`
 		Model        string `json:"model"`
+		HWVersion    string `json:"hw_version"`
 		BuildVersion string `json:"build_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -192,6 +195,7 @@ func (a *Api) updateFirmware(w http.ResponseWriter, r *http.Request) {
 		Name:         body.Name,
 		Vendor:       body.Vendor,
 		Model:        body.Model,
+		HWVersion:    body.HWVersion,
 		BuildVersion: body.BuildVersion,
 	}
 	matched, err := a.db.UpdateFirmware(r.Context(), id, fw)

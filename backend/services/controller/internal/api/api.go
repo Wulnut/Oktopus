@@ -89,6 +89,9 @@ func (a *Api) StartApi() {
 	iot.HandleFunc("/{sn}/{mtp}/restart-agent", a.deviceRestartAgent).Methods("PUT") // API-only, no UI button
 	iot.HandleFunc("/{sn}/{mtp}/topology", a.deviceTopology).Methods("GET")
 	iot.HandleFunc("/{sn}/cached-info", a.deviceCachedInfoGet).Methods("GET")
+	iot.HandleFunc("/{sn}/fw-policy", a.getDeviceFWPolicy).Methods("GET")
+	iot.HandleFunc("/{sn}/fw-policy", a.setDeviceFWPolicy).Methods("PUT")
+	iot.HandleFunc("/{sn}/upgrade-logs", a.deviceUpgradeLogs).Methods("GET")
 	dash := r.PathPrefix("/api/info").Subrouter()
 	dash.HandleFunc("/vendors", a.vendorsInfo).Methods("GET")
 	dash.HandleFunc("/status", a.statusInfo).Methods("GET")
@@ -114,9 +117,15 @@ func (a *Api) StartApi() {
 	scripts.HandleFunc("/{id}/executions", a.listScriptExecutions).Methods("GET")
 	scripts.HandleFunc("/{id}/executions/{execId}", a.getExecution).Methods("GET")
 
+	campaigns := r.PathPrefix("/api/campaigns").Subrouter()
+	campaigns.HandleFunc("", a.listCampaigns).Methods("GET")
+	campaigns.HandleFunc("", a.createCampaign).Methods("POST")
+	campaigns.HandleFunc("/{id}", a.updateCampaign).Methods("PUT")
+	campaigns.HandleFunc("/{id}", a.deleteCampaign).Methods("DELETE")
+	campaigns.HandleFunc("/{id}/logs", a.campaignUpgradeLogs).Methods("GET")
+
 	mass := r.PathPrefix("/api/mass-actions").Subrouter()
 	mass.HandleFunc("", a.listMassActions).Methods("GET")
-	mass.HandleFunc("/firmware", a.massFirmwareUpdate).Methods("POST")
 	mass.HandleFunc("/script", a.massScriptExecution).Methods("POST")
 	mass.HandleFunc("/{id}", a.getMassAction).Methods("GET")
 	mass.HandleFunc("/{id}/cancel", a.cancelMassAction).Methods("POST")
@@ -139,6 +148,10 @@ func (a *Api) StartApi() {
 	})
 
 	scripts.Use(func(handler http.Handler) http.Handler {
+		return middleware.Middleware(handler)
+	})
+
+	campaigns.Use(func(handler http.Handler) http.Handler {
 		return middleware.Middleware(handler)
 	})
 

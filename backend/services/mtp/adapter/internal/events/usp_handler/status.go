@@ -38,6 +38,7 @@ func (h *Handler) deviceOnline(device, mtp string) {
 			"Device.DeviceInfo.SoftwareVersion",
 			"Device.DeviceInfo.SerialNumber",
 			"Device.DeviceInfo.ProductClass",
+			"Device.DeviceInfo.HardwareVersion",
 		},
 		MaxDepth: 1,
 	})
