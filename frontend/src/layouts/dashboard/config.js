@@ -141,30 +141,30 @@ export const items = [
   },
   {
     title: 'Mass Actions',
+    path: '/mass-actions',
     icon: (
       <SvgIcon fontSize="small">
-        <RectangleGroupIcon color='gray'/>
+        <RectangleGroupIcon />
       </SvgIcon>
     ),
-    disabled: true,
     children: [
       {
         title: 'Firmware Update',
+        path: '/mass-actions/firmware',
         icon: (
           <SvgIcon fontSize="small">
-            <ArrowDownOnSquareStackIcon color='gray'/>
+            <ArrowDownOnSquareStackIcon />
           </SvgIcon>
         ),
-        disabled: true
       },
       {
-        title: 'Message',
-        disabled: true,
+        title: 'Scripts',
+        path: '/mass-actions/scripts',
         icon: (
           <SvgIcon fontSize="small">
-           <EnvelopeIcon color='gray'/>
+            <CommandLineIcon />
           </SvgIcon>
-        )
+        ),
       },
     ]
   },

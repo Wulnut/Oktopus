@@ -19,6 +19,7 @@ type Database struct {
 	metrics          *mongo.Collection
 	scripts          *mongo.Collection
 	scriptExecutions *mongo.Collection
+	massActions      *mongo.Collection
 	ctx              context.Context
 }
 
@@ -117,6 +118,20 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 		},
 		{
 			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "created_at", Value: -1}},
+		},
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	db.massActions = client.Database("general").Collection("mass_actions")
+	_, err = db.massActions.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "created_at", Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(7776000), // 90 days
+		},
+		{
+			Keys: bson.D{{Key: "status", Value: 1}, {Key: "created_at", Value: -1}},
 		},
 	})
 	if err != nil {

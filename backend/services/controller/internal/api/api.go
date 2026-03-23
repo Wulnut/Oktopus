@@ -113,6 +113,13 @@ func (a *Api) StartApi() {
 	scripts.HandleFunc("/{id}/executions", a.listScriptExecutions).Methods("GET")
 	scripts.HandleFunc("/{id}/executions/{execId}", a.getExecution).Methods("GET")
 
+	mass := r.PathPrefix("/api/mass-actions").Subrouter()
+	mass.HandleFunc("", a.listMassActions).Methods("GET")
+	mass.HandleFunc("/firmware", a.massFirmwareUpdate).Methods("POST")
+	mass.HandleFunc("/script", a.massScriptExecution).Methods("POST")
+	mass.HandleFunc("/{id}", a.getMassAction).Methods("GET")
+	mass.HandleFunc("/{id}/cancel", a.cancelMassAction).Methods("POST")
+
 	/* ----- Middleware for requests which requires user to be authenticated ---- */
 	iot.Use(func(handler http.Handler) http.Handler {
 		return middleware.Middleware(handler)
@@ -131,6 +138,10 @@ func (a *Api) StartApi() {
 	})
 
 	scripts.Use(func(handler http.Handler) http.Handler {
+		return middleware.Middleware(handler)
+	})
+
+	mass.Use(func(handler http.Handler) http.Handler {
 		return middleware.Middleware(handler)
 	})
 	/* -------------------------------------------------------------------------- */
