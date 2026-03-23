@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "firmware-upload.js",
   "dependencies": {
-    "formidable": "^3.5.1"
+    "formidable": "^3.5.1",
+    "jsonwebtoken": "^9.0.2"
   }
 }

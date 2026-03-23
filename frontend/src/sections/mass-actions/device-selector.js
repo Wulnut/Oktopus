@@ -24,7 +24,7 @@ export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
   const fetchDevices = useCallback(async () => {
     setLoading(true);
     try {
-      const { status, result } = await httpRequest('/api/device?page_size=50', 'GET');
+      const { status, result } = await httpRequest('/api/device?page_size=500', 'GET');
       if (status === 200 && result) {
         const list = result.devices || [];
         setDevices(list);

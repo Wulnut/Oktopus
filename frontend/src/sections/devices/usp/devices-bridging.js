@@ -36,6 +36,7 @@ import {
   TextField,
 } from '@mui/material';
 import { useBackendContext } from 'src/contexts/backend-context';
+import { useAlertContext } from 'src/contexts/error-context';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import LinkIcon from '@heroicons/react/24/outline/LinkIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
@@ -148,6 +149,7 @@ const collectUsedInterfaces = (bridges) => {
 
 export const DevicesBridging = ({ sn, mtp }) => {
   const { httpRequest } = useBackendContext();
+  const { setAlert } = useAlertContext();
 
   const [bridgeData, setBridgeData] = useState(null);
   const [ifaceData, setIfaceData] = useState(null);
@@ -158,18 +160,12 @@ export const DevicesBridging = ({ sn, mtp }) => {
   const [selectedInterfaces, setSelectedInterfaces] = useState([]);
   const [editingMAC, setEditingMAC] = useState(null); // bridgeIdx string
   const [macValue, setMacValue] = useState('');
+  const [confirmAction, setConfirmAction] = useState(null); // { title, description, onConfirm }
 
   const uspGet = useCallback(async (paramPaths, maxDepth = 3) => {
     const body = JSON.stringify({ param_paths: paramPaths, max_depth: maxDepth });
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${sn}/${mtp}/get`,
-      { method: 'PUT', headers: myHeaders, body }
-    );
-    if (res.status === 200) return res.json();
-    return null;
+    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/get`, 'PUT', body);
+    return status === 200 ? result : null;
   }, [sn, mtp]);
 
   const uspSet = useCallback(async (objPath, paramSettings) => {
@@ -177,14 +173,8 @@ export const DevicesBridging = ({ sn, mtp }) => {
       allow_partial: true,
       update_objs: [{ obj_path: objPath, param_settings: paramSettings }],
     });
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${sn}/${mtp}/set`,
-      { method: 'PUT', headers: myHeaders, body }
-    );
-    return res.status === 200 ? res.json() : null;
+    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/set`, 'PUT', body);
+    return status === 200 ? result : null;
   }, [sn, mtp]);
 
   const uspAdd = useCallback(async (objPath, paramSettings) => {
@@ -192,14 +182,8 @@ export const DevicesBridging = ({ sn, mtp }) => {
       allow_partial: true,
       create_objs: [{ obj_path: objPath, param_settings: paramSettings || [] }],
     });
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${sn}/${mtp}/add`,
-      { method: 'PUT', headers: myHeaders, body }
-    );
-    return res.status === 200 ? res.json() : null;
+    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/add`, 'PUT', body);
+    return status === 200 ? result : null;
   }, [sn, mtp]);
 
   const uspDel = useCallback(async (objPaths) => {
@@ -207,14 +191,8 @@ export const DevicesBridging = ({ sn, mtp }) => {
       allow_partial: true,
       obj_paths: objPaths,
     });
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${sn}/${mtp}/del`,
-      { method: 'PUT', headers: myHeaders, body }
-    );
-    return res.status === 200 ? res.json() : null;
+    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/del`, 'PUT', body);
+    return status === 200 ? result : null;
   }, [sn, mtp]);
 
   const fetchAll = useCallback(async () => {
@@ -255,6 +233,11 @@ export const DevicesBridging = ({ sn, mtp }) => {
   };
 
   const handleSaveMAC = async (linkIdx) => {
+    const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+    if (!macRegex.test(macValue)) {
+      setAlert({ severity: 'error', message: 'Invalid MAC address format. Use XX:XX:XX:XX:XX:XX.' });
+      return;
+    }
     const key = `mac_${linkIdx}`;
     setActionLoading(key);
     setEditingMAC(null);
@@ -283,37 +266,55 @@ export const DevicesBridging = ({ sn, mtp }) => {
     }
   };
 
-  const handleDeletePort = async (bridgeIdx, portIdx) => {
-    const key = `del_${bridgeIdx}_${portIdx}`;
-    setActionLoading(key);
-    try {
-      await uspDel([`Device.Bridging.Bridge.${bridgeIdx}.Port.${portIdx}.`]);
-      await fetchAll();
-    } finally {
-      setActionLoading(null);
-    }
+  const handleDeletePort = (bridgeIdx, portIdx) => {
+    setConfirmAction({
+      title: 'Delete Port',
+      description: `Are you sure you want to delete Port ${portIdx} from Bridge ${bridgeIdx}? This may disrupt network connectivity.`,
+      onConfirm: async () => {
+        const key = `del_${bridgeIdx}_${portIdx}`;
+        setActionLoading(key);
+        try {
+          await uspDel([`Device.Bridging.Bridge.${bridgeIdx}.Port.${portIdx}.`]);
+          await fetchAll();
+        } finally {
+          setActionLoading(null);
+        }
+      },
+    });
   };
 
-  const handleMovePort = async (fromBridgeIdx, port, toBridgeIdx) => {
-    const key = `move_${fromBridgeIdx}_${port._idx}`;
-    setActionLoading(key);
-    try {
-      const lowerLayers = port.LowerLayers || '';
-      const enabled = port.Enable === 'true' || port.Enable === true ? 'true' : 'false';
-      const name = port.Name || '';
-      const alias = port.Alias || '';
-      await uspDel([`Device.Bridging.Bridge.${fromBridgeIdx}.Port.${port._idx}.`]);
-      const params = [
-        { param: 'LowerLayers', value: lowerLayers, required: true },
-        { param: 'Enable', value: enabled, required: true },
-      ];
-      if (name) params.push({ param: 'Name', value: name, required: false });
-      if (alias) params.push({ param: 'Alias', value: alias, required: false });
-      await uspAdd(`Device.Bridging.Bridge.${toBridgeIdx}.Port.`, params);
-      await fetchAll();
-    } finally {
-      setActionLoading(null);
-    }
+  const handleMovePort = (fromBridgeIdx, port, toBridgeIdx) => {
+    if (fromBridgeIdx === toBridgeIdx) return;
+    setConfirmAction({
+      title: 'Move Port',
+      description: `Move port "${port.Name || port.Alias || port._idx}" from Bridge ${fromBridgeIdx} to Bridge ${toBridgeIdx}?`,
+      onConfirm: async () => {
+        const key = `move_${fromBridgeIdx}_${port._idx}`;
+        setActionLoading(key);
+        try {
+          const lowerLayers = port.LowerLayers || '';
+          const enabled = port.Enable === 'true' || port.Enable === true ? 'true' : 'false';
+          const name = port.Name || '';
+          const alias = port.Alias || '';
+          const params = [
+            { param: 'LowerLayers', value: lowerLayers, required: true },
+            { param: 'Enable', value: enabled, required: true },
+          ];
+          if (name) params.push({ param: 'Name', value: name, required: false });
+          if (alias) params.push({ param: 'Alias', value: alias, required: false });
+          // Add to target bridge first, then delete from source (safer order)
+          const addResult = await uspAdd(`Device.Bridging.Bridge.${toBridgeIdx}.Port.`, params);
+          if (!addResult) {
+            setAlert({ severity: 'error', message: 'Failed to add port to target bridge. No changes made.' });
+            return;
+          }
+          await uspDel([`Device.Bridging.Bridge.${fromBridgeIdx}.Port.${port._idx}.`]);
+          await fetchAll();
+        } finally {
+          setActionLoading(null);
+        }
+      },
+    });
   };
 
   const handleOpenAddPort = (bridgeIdx) => {
@@ -595,6 +596,32 @@ export const DevicesBridging = ({ sn, mtp }) => {
           </Card>
         );
       })}
+
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{confirmAction?.title}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">{confirmAction?.description}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmAction(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => {
+              confirmAction?.onConfirm();
+              setConfirmAction(null);
+            }}
+          >
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Add Port Dialog */}
       <Dialog

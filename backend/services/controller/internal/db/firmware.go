@@ -69,8 +69,8 @@ func (d *Database) UpdateFirmwarePhase(ctx context.Context, id primitive.ObjectI
 	return err
 }
 
-func (d *Database) UpdateFirmware(ctx context.Context, id primitive.ObjectID, fw Firmware) error {
-	_, err := d.firmware.UpdateOne(ctx,
+func (d *Database) UpdateFirmware(ctx context.Context, id primitive.ObjectID, fw Firmware) (int64, error) {
+	result, err := d.firmware.UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
 			"name":          fw.Name,
@@ -79,5 +79,8 @@ func (d *Database) UpdateFirmware(ctx context.Context, id primitive.ObjectID, fw
 			"build_version": fw.BuildVersion,
 			"updated_at":    time.Now(),
 		}})
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.MatchedCount, nil
 }

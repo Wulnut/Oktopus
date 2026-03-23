@@ -280,16 +280,15 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
     setFwLoading(true);
     try {
       const body = JSON.stringify({ Url: downloadUrl });
-      const headers = new Headers();
-      headers.append('Content-Type', 'application/json');
-      headers.append('Authorization', localStorage.getItem('token'));
-      const { status } = await httpRequest(`/api/device/${sn}/${mtp}/fw_update`, 'PUT', body, headers);
+      const { status } = await httpRequest(`/api/device/${sn}/${mtp}/fw_update`, 'PUT', body);
       if (status === 200 || status === 204) {
         setAlert({ severity: 'success', message: 'Firmware update initiated. The device will download and install the image.' });
         setFwDialogOpen(false);
       } else {
         setAlert({ severity: 'error', message: 'Firmware update failed. Check the device logs.' });
       }
+    } catch {
+      setAlert({ severity: 'error', message: 'Firmware update failed. Network error.' });
     } finally {
       setFwLoading(false);
     }

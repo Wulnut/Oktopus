@@ -2,16 +2,17 @@ package api
 
 import (
 	"bytes"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -80,24 +81,32 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 	if err == nil && file != nil {
 		defer file.Close()
 
-		h := md5.New()
-		data, readErr := io.ReadAll(io.TeeReader(file, h))
-		if readErr != nil {
-			http.Error(w, readErr.Error(), http.StatusInternalServerError)
+		// Sanitize filename to prevent path traversal
+		fileName = filepath.Base(header.Filename)
+		if fileName == "." || fileName == ".." || strings.ContainsAny(fileName, `/\`) {
+			http.Error(w, "Invalid filename", http.StatusBadRequest)
+			return
+		}
+
+		// Stream firmware to temp file instead of buffering in memory
+		h := sha256.New()
+		tmpFile, tmpErr := os.CreateTemp(os.TempDir(), "firmware-*")
+		if tmpErr != nil {
+			http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
+			return
+		}
+		defer os.Remove(tmpFile.Name())
+		defer tmpFile.Close()
+
+		written, copyErr := io.Copy(tmpFile, io.TeeReader(file, h))
+		if copyErr != nil {
+			http.Error(w, "Failed to write firmware: "+copyErr.Error(), http.StatusInternalServerError)
 			return
 		}
 		fingerprint = hex.EncodeToString(h.Sum(nil))
-		fileSize = int64(len(data))
-		fileName = header.Filename
+		fileSize = written
 
-		tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("fw-%d-%s", time.Now().UnixNano(), fileName))
-		if writeErr := os.WriteFile(tmpPath, data, 0644); writeErr != nil {
-			http.Error(w, writeErr.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer os.Remove(tmpPath)
-
-		if fwdErr := forwardFileToUploadService(tmpPath, fileName, r.Header.Get("Authorization")); fwdErr != nil {
+		if fwdErr := forwardFileToUploadService(tmpFile.Name(), fileName, r.Header.Get("Authorization")); fwdErr != nil {
 			http.Error(w, "upload to file server failed: "+fwdErr.Error(), http.StatusBadGateway)
 			return
 		}
@@ -186,8 +195,13 @@ func (a *Api) updateFirmware(w http.ResponseWriter, r *http.Request) {
 		Model:        body.Model,
 		BuildVersion: body.BuildVersion,
 	}
-	if err := a.db.UpdateFirmware(r.Context(), id, fw); err != nil {
+	matched, err := a.db.UpdateFirmware(r.Context(), id, fw)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if matched == 0 {
+		http.Error(w, "firmware not found", http.StatusNotFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -255,7 +269,7 @@ func forwardFileToUploadService(tmpPath, fileName, authHeader string) error {
 
 func deleteFileFromUploadService(fileName, authHeader string) {
 	req, err := http.NewRequest(http.MethodDelete,
-		fmt.Sprintf("%s/delete?name=%s", firmwareUploadServiceURL, fileName), nil)
+		fmt.Sprintf("%s/delete?name=%s", firmwareUploadServiceURL, url.QueryEscape(fileName)), nil)
 	if err != nil {
 		return
 	}

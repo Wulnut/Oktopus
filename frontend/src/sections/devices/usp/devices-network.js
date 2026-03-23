@@ -195,7 +195,7 @@ const parseEthInterfaces = (data) => {
 
 const isAllErrors = (data) => {
   if (!data?.req_path_results?.length) return false;
-  return data.req_path_results.every(r => r.err_code != null);
+  return data.req_path_results.every(r => r.err_code != null && r.err_code !== 0);
 };
 
 export const DevicesNetwork = ({ sn, mtp }) => {

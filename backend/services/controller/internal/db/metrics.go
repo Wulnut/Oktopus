@@ -43,7 +43,9 @@ func (d *Database) GetDeviceMetricsHistory(ctx context.Context, serial string, s
 		return nil, err
 	}
 	var results []DeviceMetrics
-	cursor.All(ctx, &results)
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
 	return results, nil
 }
 

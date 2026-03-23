@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { IncomingForm } = require('formidable');
+const jwt = require('jsonwebtoken');
 
 const PORT = process.env.SERVER_PORT || 8006;
 const FIRMWARE_DIR = process.env.FIRMWARE_DIR || '/app/firmwares';
@@ -18,9 +19,16 @@ const server = http.createServer((req, res) => {
         res.writeHead(204); res.end(); return;
     }
 
-    if (!req.headers['authorization']) {
+    const token = req.headers['authorization'];
+    if (!token) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Unauthorized' })); return;
+    }
+    try {
+        jwt.verify(token.replace('Bearer ', ''), process.env.JWT_SECRET || 'default_secret');
+    } catch (e) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid token' })); return;
     }
 
     if (req.method === 'POST' && req.url === '/upload') {

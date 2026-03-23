@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -95,6 +96,27 @@ func (d *Database) ListMassActions(ctx context.Context) ([]MassAction, error) {
 		return nil, err
 	}
 	return results, nil
+}
+
+// UpdateMassActionDevice atomically updates a single device result by index
+func (d *Database) UpdateMassActionDevice(ctx context.Context, id primitive.ObjectID, idx int, result DeviceResult) error {
+	field := fmt.Sprintf("device_results.%d", idx)
+	_, err := d.massActions.UpdateByID(ctx, id, bson.M{
+		"$set": bson.M{field: result},
+	})
+	return err
+}
+
+// IncrementMassActionProgress atomically increments progress counters
+func (d *Database) IncrementMassActionProgress(ctx context.Context, id primitive.ObjectID, success bool) error {
+	inc := bson.M{"progress": 1}
+	if success {
+		inc["success_count"] = 1
+	} else {
+		inc["failure_count"] = 1
+	}
+	_, err := d.massActions.UpdateByID(ctx, id, bson.M{"$inc": inc})
+	return err
 }
 
 func (d *Database) CancelMassAction(ctx context.Context, id primitive.ObjectID) error {

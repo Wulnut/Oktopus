@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/leandrofars/oktopus/internal/db"
 	local "github.com/leandrofars/oktopus/internal/nats"
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
+	"github.com/leandrofars/oktopus/internal/usp/usp_record"
 	"github.com/leandrofars/oktopus/internal/usp/usp_utils"
 	"github.com/nats-io/nats.go"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -28,6 +30,8 @@ type massFirmwareRequest struct {
 	Concurrency int      `json:"concurrency"`
 }
 
+const maxDevices = 500
+
 func (a *Api) massFirmwareUpdate(w http.ResponseWriter, r *http.Request) {
 	var req massFirmwareRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -36,6 +40,10 @@ func (a *Api) massFirmwareUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.DeviceSNs) == 0 {
 		http.Error(w, "device_sns is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.DeviceSNs) > maxDevices {
+		http.Error(w, fmt.Sprintf("Too many devices: %d (max %d)", len(req.DeviceSNs), maxDevices), http.StatusBadRequest)
 		return
 	}
 
@@ -99,20 +107,19 @@ func (a *Api) massFirmwareUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) runMassFirmwareUpdate(ma db.MassAction, fw db.Firmware) {
 	sem := make(chan struct{}, ma.Concurrency)
-	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	for i, dr := range ma.DeviceResults {
 		// Check if cancelled
 		current, err := a.db.GetMassAction(context.Background(), ma.ID)
 		if err == nil && current.Status == "cancelled" {
-			mu.Lock()
 			for j := i; j < len(ma.DeviceResults); j++ {
 				if ma.DeviceResults[j].Status == "pending" {
-					ma.DeviceResults[j].Status = "skipped"
+					result := ma.DeviceResults[j]
+					result.Status = "skipped"
+					a.db.UpdateMassActionDevice(context.Background(), ma.ID, j, result)
 				}
 			}
-			mu.Unlock()
 			break
 		}
 
@@ -123,57 +130,61 @@ func (a *Api) runMassFirmwareUpdate(ma db.MassAction, fw db.Firmware) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			mu.Lock()
-			ma.DeviceResults[idx].Status = "running"
-			ma.DeviceResults[idx].StartedAt = time.Now()
-			mu.Unlock()
+			result := db.DeviceResult{
+				DeviceSN:  sn,
+				Status:    "running",
+				StartedAt: time.Now(),
+			}
+			a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
 
 			mtp, online := deviceStateOKNoWrite(a.nc, sn)
 			if !online {
-				mu.Lock()
-				ma.DeviceResults[idx].Status = "skipped"
-				ma.DeviceResults[idx].Error = "device offline"
-				ma.DeviceResults[idx].FinishedAt = time.Now()
-				ma.Progress++
-				mu.Unlock()
-				a.db.UpdateMassAction(context.Background(), ma.ID, ma)
+				result.Status = "skipped"
+				result.Error = "device offline"
+				result.FinishedAt = time.Now()
+				a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
+				a.db.IncrementMassActionProgress(context.Background(), ma.ID, false)
 				return
 			}
 
-			ma.DeviceResults[idx].MTP = mtp
-			err := performFirmwareUpdate(sn, mtp, fw, a.nc)
+			result.MTP = mtp
+			fwErr := performFirmwareUpdate(sn, mtp, fw, a.nc)
 
-			mu.Lock()
-			if err != nil {
-				ma.DeviceResults[idx].Status = "failed"
-				ma.DeviceResults[idx].Error = err.Error()
-				ma.FailureCount++
+			success := fwErr == nil
+			if fwErr != nil {
+				result.Status = "failed"
+				result.Error = fwErr.Error()
 			} else {
-				ma.DeviceResults[idx].Status = "success"
-				ma.SuccessCount++
+				result.Status = "success"
 			}
-			ma.DeviceResults[idx].FinishedAt = time.Now()
-			ma.Progress++
-			mu.Unlock()
-
-			a.db.UpdateMassAction(context.Background(), ma.ID, ma)
+			result.FinishedAt = time.Now()
+			a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
+			a.db.IncrementMassActionProgress(context.Background(), ma.ID, success)
 		}(i, dr.DeviceSN)
 	}
 
 	wg.Wait()
 
-	if ma.FailureCount > 0 && ma.SuccessCount == 0 {
-		ma.Status = "failed"
-	} else {
-		ma.Status = "completed"
-	}
-	// Re-check for cancellation
+	// Final status update — no concurrency at this point
 	current, err := a.db.GetMassAction(context.Background(), ma.ID)
-	if err == nil && current.Status == "cancelled" {
-		ma.Status = "cancelled"
+	if err != nil {
+		log.Printf("runMassFirmwareUpdate: failed to read final state for %s: %v", ma.ID.Hex(), err)
+		return
 	}
-	ma.FinishedAt = time.Now()
-	a.db.UpdateMassAction(context.Background(), ma.ID, ma)
+
+	if current.Status == "cancelled" {
+		// Already cancelled, just set finished_at
+		a.db.UpdateMassAction(context.Background(), ma.ID, current)
+		return
+	}
+
+	if current.FailureCount > 0 && current.SuccessCount == 0 {
+		current.Status = "failed"
+	} else {
+		current.Status = "completed"
+	}
+	current.FinishedAt = time.Now()
+	a.db.UpdateMassAction(context.Background(), ma.ID, current)
 }
 
 // performFirmwareUpdate executes firmware update on a single device without http.ResponseWriter.
@@ -221,7 +232,7 @@ func performFirmwareUpdate(sn, mtp string, fw db.Firmware, nc *nats.Conn) error 
 	}
 
 	dummyW := &discardResponseWriter{}
-	_, err = bridge.NatsUspInteraction(
+	respData, err := bridge.NatsUspInteraction(
 		local.DEVICE_SUBJECT_PREFIX+sn+".api",
 		mtp+"-adapter.usp.v1."+sn+".api",
 		protoRecord,
@@ -230,6 +241,19 @@ func performFirmwareUpdate(sn, mtp string, fw db.Firmware, nc *nats.Conn) error 
 	)
 	if err != nil {
 		return fmt.Errorf("firmware download command failed: %w", err)
+	}
+
+	// Check USP-level error in response
+	var receivedRecord usp_record.Record
+	if err := proto.Unmarshal(respData, &receivedRecord); err != nil {
+		return fmt.Errorf("failed to unmarshal firmware response record: %w", err)
+	}
+	var receivedMsg usp_msg.Msg
+	if err := proto.Unmarshal(receivedRecord.GetNoSessionContext().Payload, &receivedMsg); err != nil {
+		return fmt.Errorf("failed to unmarshal firmware response message: %w", err)
+	}
+	if errBody := receivedMsg.Body.GetError(); errBody != nil {
+		return fmt.Errorf("device rejected firmware command: code=%d, message=%s", errBody.ErrCode, errBody.ErrMsg)
 	}
 
 	return nil
@@ -293,8 +317,10 @@ func findAvailablePartition(data interface{}) string {
 				if resolvedPath == "" {
 					resolvedPath, _ = rrMap["resolvedPath"].(string)
 				}
-				if len(resolvedPath) >= 2 {
-					return resolvedPath[len(resolvedPath)-2:]
+				// resolvedPath is like "Device.DeviceInfo.FirmwareImage.1." — split by "." and take last non-empty segment
+				parts := strings.Split(strings.TrimSuffix(resolvedPath, "."), ".")
+				if len(parts) > 0 {
+					return parts[len(parts)-1]
 				}
 			}
 		}
@@ -319,6 +345,10 @@ func (a *Api) massScriptExecution(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.DeviceSNs) == 0 {
 		http.Error(w, "device_sns is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.DeviceSNs) > maxDevices {
+		http.Error(w, fmt.Sprintf("Too many devices: %d (max %d)", len(req.DeviceSNs), maxDevices), http.StatusBadRequest)
 		return
 	}
 
@@ -393,19 +423,18 @@ func (a *Api) massScriptExecution(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) runMassScriptExecution(ma db.MassAction, script db.Script, variables map[string]string) {
 	sem := make(chan struct{}, ma.Concurrency)
-	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	for i, dr := range ma.DeviceResults {
 		current, err := a.db.GetMassAction(context.Background(), ma.ID)
 		if err == nil && current.Status == "cancelled" {
-			mu.Lock()
 			for j := i; j < len(ma.DeviceResults); j++ {
 				if ma.DeviceResults[j].Status == "pending" {
-					ma.DeviceResults[j].Status = "skipped"
+					result := ma.DeviceResults[j]
+					result.Status = "skipped"
+					a.db.UpdateMassActionDevice(context.Background(), ma.ID, j, result)
 				}
 			}
-			mu.Unlock()
 			break
 		}
 
@@ -416,61 +445,67 @@ func (a *Api) runMassScriptExecution(ma db.MassAction, script db.Script, variabl
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			mu.Lock()
-			ma.DeviceResults[idx].Status = "running"
-			ma.DeviceResults[idx].StartedAt = time.Now()
-			mu.Unlock()
+			result := db.DeviceResult{
+				DeviceSN:  sn,
+				Status:    "running",
+				StartedAt: time.Now(),
+			}
+			a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
 
 			mtp, online := deviceStateOKNoWrite(a.nc, sn)
 			if !online {
-				mu.Lock()
-				ma.DeviceResults[idx].Status = "skipped"
-				ma.DeviceResults[idx].Error = "device offline"
-				ma.DeviceResults[idx].FinishedAt = time.Now()
-				ma.Progress++
-				mu.Unlock()
-				a.db.UpdateMassAction(context.Background(), ma.ID, ma)
+				result.Status = "skipped"
+				result.Error = "device offline"
+				result.FinishedAt = time.Now()
+				a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
+				a.db.IncrementMassActionProgress(context.Background(), ma.ID, false)
 				return
 			}
 
-			ma.DeviceResults[idx].MTP = mtp
+			result.MTP = mtp
 			execution, execErr := a.executeScriptForDevice(script, sn, mtp, variables)
 
-			mu.Lock()
+			success := true
 			if execErr != nil || execution.Status == "failed" {
-				ma.DeviceResults[idx].Status = "failed"
+				result.Status = "failed"
 				if execErr != nil {
-					ma.DeviceResults[idx].Error = execErr.Error()
+					result.Error = execErr.Error()
 				} else {
-					ma.DeviceResults[idx].Error = "script execution failed"
+					result.Error = "script execution failed"
 				}
-				ma.FailureCount++
+				success = false
 			} else {
-				ma.DeviceResults[idx].Status = "success"
-				ma.SuccessCount++
+				result.Status = "success"
 			}
-			ma.DeviceResults[idx].ExecutionID = execution.ID
-			ma.DeviceResults[idx].FinishedAt = time.Now()
-			ma.Progress++
-			mu.Unlock()
-
-			a.db.UpdateMassAction(context.Background(), ma.ID, ma)
+			result.ExecutionID = execution.ID
+			result.FinishedAt = time.Now()
+			a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
+			a.db.IncrementMassActionProgress(context.Background(), ma.ID, success)
 		}(i, dr.DeviceSN)
 	}
 
 	wg.Wait()
 
-	if ma.FailureCount > 0 && ma.SuccessCount == 0 {
-		ma.Status = "failed"
-	} else {
-		ma.Status = "completed"
-	}
+	// Final status update — no concurrency at this point
 	current, err := a.db.GetMassAction(context.Background(), ma.ID)
-	if err == nil && current.Status == "cancelled" {
-		ma.Status = "cancelled"
+	if err != nil {
+		log.Printf("runMassScriptExecution: failed to read final state for %s: %v", ma.ID.Hex(), err)
+		return
 	}
-	ma.FinishedAt = time.Now()
-	a.db.UpdateMassAction(context.Background(), ma.ID, ma)
+
+	if current.Status == "cancelled" {
+		current.FinishedAt = time.Now()
+		a.db.UpdateMassAction(context.Background(), ma.ID, current)
+		return
+	}
+
+	if current.FailureCount > 0 && current.SuccessCount == 0 {
+		current.Status = "failed"
+	} else {
+		current.Status = "completed"
+	}
+	current.FinishedAt = time.Now()
+	a.db.UpdateMassAction(context.Background(), ma.ID, current)
 }
 
 // executeScriptForDevice runs a script on a single device and returns the execution record.

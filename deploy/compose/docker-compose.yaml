@@ -217,8 +217,6 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx_logs:/var/log/nginx
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       usp_network:
         ipv4_address: 172.16.235.17
@@ -245,8 +243,8 @@ services:
       context: ../../backend/services/utils/firmware-upload
       dockerfile: build/Dockerfile
     container_name: firmware-upload
-    ports:
-      - 8006:8006
+    expose:
+      - "8006"
     volumes:
       - ./firmwares:/app/firmwares
     env_file:

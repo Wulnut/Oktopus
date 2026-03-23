@@ -86,7 +86,7 @@ func (a *Api) StartApi() {
 	iot.HandleFunc("/{sn}/metrics", a.deviceMetricsHistory).Methods("GET")
 	iot.HandleFunc("/{sn}/{mtp}/reboot", a.deviceReboot).Methods("PUT")
 	iot.HandleFunc("/{sn}/{mtp}/factory-reset", a.deviceFactoryReset).Methods("PUT")
-	iot.HandleFunc("/{sn}/{mtp}/restart-agent", a.deviceRestartAgent).Methods("PUT")
+	iot.HandleFunc("/{sn}/{mtp}/restart-agent", a.deviceRestartAgent).Methods("PUT") // API-only, no UI button
 	iot.HandleFunc("/{sn}/{mtp}/topology", a.deviceTopology).Methods("GET")
 	iot.HandleFunc("/{sn}/cached-info", a.deviceCachedInfoGet).Methods("GET")
 	dash := r.PathPrefix("/api/info").Subrouter()

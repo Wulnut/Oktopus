@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -681,8 +682,23 @@ func (a *Api) executeScriptHandler(w http.ResponseWriter, r *http.Request) {
 	savedResults := make(map[string]interface{})
 	stepIndex := 0
 	visitCounts := make(map[int]int)
+	const maxTotalIterations = 500
+	totalIterations := 0
 
 	for stepIndex < len(script.Steps) {
+		// Hard cap on total iterations
+		totalIterations++
+		if totalIterations > maxTotalIterations {
+			execution.Status = "failed"
+			execution.StepResults = append(execution.StepResults, db.StepResult{
+				StepID:   script.Steps[stepIndex].ID,
+				StepName: script.Steps[stepIndex].Name,
+				Status:   "failed",
+				Error:    fmt.Sprintf("exceeded maximum total iterations (%d)", maxTotalIterations),
+			})
+			break
+		}
+
 		// Loop detection
 		visitCounts[stepIndex]++
 		if visitCounts[stepIndex] > len(script.Steps) {
@@ -796,7 +812,9 @@ func (a *Api) executeScriptHandler(w http.ResponseWriter, r *http.Request) {
 
 done:
 	execution.FinishedAt = time.Now()
-	a.db.UpdateExecution(r.Context(), execution.ID, execution)
+	if err := a.db.UpdateExecution(r.Context(), execution.ID, execution); err != nil {
+		log.Printf("failed to update execution %s: %v", execution.ID.Hex(), err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(execution)

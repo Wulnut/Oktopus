@@ -43,7 +43,7 @@ const parseUspObjects = (data, pattern) => {
 const hasPathError = (data, pathFragment) => {
   if (!data?.req_path_results) return false;
   return data.req_path_results.some(r =>
-    r.requested_path && r.requested_path.includes(pathFragment) && r.err_code != null
+    r.requested_path && r.requested_path.includes(pathFragment) && r.err_code != null && r.err_code !== 0
   );
 };
 

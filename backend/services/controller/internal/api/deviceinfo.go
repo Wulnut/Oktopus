@@ -16,6 +16,9 @@ import (
 	"github.com/leandrofars/oktopus/internal/usp/usp_utils"
 )
 
+// Limits concurrent background goroutines for storing performance metrics
+var perfStoreSem = make(chan struct{}, 10)
+
 func newCommandKey() string {
 	return fmt.Sprintf("USP_%08X", rand.Uint32())
 }
@@ -185,11 +188,17 @@ func (a *Api) devicePerformanceGet(w http.ResponseWriter, r *http.Request) {
 	sendUspMsg(msg, sn, rec, a.nc, mtp)
 
 	if rec.statusCode == http.StatusOK {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		go func() {
-			defer cancel()
-			a.storePerformanceMetrics(bgCtx, sn, rec.body)
-		}()
+		select {
+		case perfStoreSem <- struct{}{}:
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			go func() {
+				defer func() { <-perfStoreSem }()
+				defer cancel()
+				a.storePerformanceMetrics(bgCtx, sn, rec.body)
+			}()
+		default:
+			log.Printf("devicePerformanceGet: metrics store queue full, skipping for %s", sn)
+		}
 	}
 
 	for k, v := range rec.header {
