@@ -88,6 +88,7 @@ func (a *Api) StartApi() {
 	iot.HandleFunc("/{sn}/{mtp}/factory-reset", a.deviceFactoryReset).Methods("PUT")
 	iot.HandleFunc("/{sn}/{mtp}/restart-agent", a.deviceRestartAgent).Methods("PUT")
 	iot.HandleFunc("/{sn}/{mtp}/topology", a.deviceTopology).Methods("GET")
+	iot.HandleFunc("/{sn}/cached-info", a.deviceCachedInfoGet).Methods("GET")
 	dash := r.PathPrefix("/api/info").Subrouter()
 	dash.HandleFunc("/vendors", a.vendorsInfo).Methods("GET")
 	dash.HandleFunc("/status", a.statusInfo).Methods("GET")

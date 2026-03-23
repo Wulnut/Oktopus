@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Box, Stack, Container, Breadcrumbs, Link } from '@mui/material';
+import { Alert, Box, Stack, Container, Breadcrumbs, Link } from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useRouter } from 'next/router';
+import { useBackendContext } from 'src/contexts/backend-context';
 import { DevicesRPC } from 'src/sections/devices/usp/devices-rpc';
 import { DevicesDiscovery } from 'src/sections/devices/usp/devices-discovery';
 import { DevicesLCM } from 'src/sections/devices/usp/devices-lcm';
@@ -13,10 +15,34 @@ import { DevicesPerformance } from 'src/sections/devices/usp/devices-performance
 import { DevicesTopology } from 'src/sections/devices/usp/devices-topology';
 
 const Page = () => {
-    const router = useRouter()
+    const router = useRouter();
+    const { httpRequest } = useBackendContext();
 
-    const deviceID = router.query.id[0]
-    const section = router.query.id[1]
+    const deviceID = router.query.id[0];
+    const section = router.query.id[1];
+
+    const [deviceOnline, setDeviceOnline] = useState(null); // null = loading, true/false
+
+    useEffect(() => {
+        const fetchStatus = async () => {
+            try {
+                const { status, result } = await httpRequest(
+                    `/api/device?id=${encodeURIComponent(deviceID)}`,
+                    'GET'
+                );
+                if (status === 200 && result) {
+                    setDeviceOnline(result.Status === 2);
+                } else {
+                    setDeviceOnline(false);
+                }
+            } catch {
+                setDeviceOnline(false);
+            }
+        };
+        fetchStatus();
+    }, [deviceID]);
+
+    const showOfflineBanner = deviceOnline === false && section !== 'info';
 
     const sectionHandler = () => {
         switch(section){
@@ -29,7 +55,7 @@ const Page = () => {
             case "history":
                 return <DevicesHistory/>
             case "info":
-                return <DevicesInfo sn={deviceID} mtp="any" />
+                return <DevicesInfo sn={deviceID} mtp="any" deviceOnline={deviceOnline} onOnlineChange={setDeviceOnline} />
             case "network":
                 return <DevicesNetwork sn={deviceID} mtp="any" />
             case "bridging":
@@ -72,6 +98,11 @@ const Page = () => {
                     {deviceID}
                     </Link>]}
                     </Breadcrumbs>
+                    {showOfflineBanner && (
+                        <Alert severity="error" variant="filled" sx={{ fontWeight: 600 }}>
+                            Device is Offline — live data is not available.
+                        </Alert>
+                    )}
                 {
                    sectionHandler()
                 }

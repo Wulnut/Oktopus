@@ -21,7 +21,7 @@ func newCommandKey() string {
 }
 
 // GET /api/device/{sn}/{mtp}/info
-// Returns DeviceInfo metadata via USP GET
+// Returns DeviceInfo metadata via USP GET and caches the result
 func (a *Api) deviceInfoGet(w http.ResponseWriter, r *http.Request) {
 	sn := getSerialNumberFromRequest(r)
 	mtp, err := getMtpFromRequest(r, w)
@@ -47,7 +47,43 @@ func (a *Api) deviceInfoGet(w http.ResponseWriter, r *http.Request) {
 		},
 		MaxDepth: 1,
 	})
-	sendUspMsg(msg, sn, w, a.nc, mtp)
+
+	rec := &responseRecorder{header: make(http.Header), statusCode: http.StatusOK}
+	sendUspMsg(msg, sn, rec, a.nc, mtp)
+
+	// Cache the raw JSON response in the background
+	if rec.statusCode == http.StatusOK && len(rec.body) > 0 {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := a.db.UpsertDeviceInfo(bgCtx, sn, rec.body); err != nil {
+				log.Printf("deviceInfoGet: cache error for %s: %v", sn, err)
+			}
+		}()
+	}
+
+	// Forward the response to the client
+	for k, v := range rec.header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(rec.statusCode)
+	w.Write(rec.body)
+}
+
+// GET /api/device/{sn}/cached-info
+// Returns cached DeviceInfo from MongoDB (works even when device is offline)
+func (a *Api) deviceCachedInfoGet(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sn := vars["sn"]
+	cached, err := a.db.GetCachedDeviceInfo(r.Context(), sn)
+	if err != nil {
+		http.Error(w, "No cached info available for this device", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	// Build the response manually to embed the raw JSON info without re-encoding
+	updatedAt, _ := json.Marshal(cached.UpdatedAt)
+	fmt.Fprintf(w, `{"device_sn":%q,"info":%s,"updated_at":%s}`, cached.DeviceSN, cached.InfoRaw, updatedAt)
 }
 
 // GET /api/device/{sn}/{mtp}/wifi-usp

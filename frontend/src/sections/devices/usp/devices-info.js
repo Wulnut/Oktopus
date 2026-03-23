@@ -187,13 +187,15 @@ const parseUspFlat = (data) => {
   return Object.entries(flat).map(([key, value]) => ({ key, value: String(value ?? '') }));
 };
 
-export const DevicesInfo = ({ sn, mtp }) => {
+export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
   const { httpRequest } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isCached, setIsCached] = useState(false);
+  const [cachedAt, setCachedAt] = useState(null);
 
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
@@ -205,22 +207,51 @@ export const DevicesInfo = ({ sn, mtp }) => {
   const [fwDialogOpen, setFwDialogOpen] = useState(false);
   const [fwLoading, setFwLoading] = useState(false);
 
-  const fetchInfo = useCallback(async () => {
+  const fetchCachedInfo = useCallback(async () => {
     if (!sn) return;
     setLoading(true);
+    try {
+      const { status, result } = await httpRequest(`/api/device/${sn}/cached-info`, 'GET');
+      if (status === 200 && result && result.info) {
+        setInfo(result.info);
+        setIsCached(true);
+        setCachedAt(result.updated_at);
+      }
+    } catch {
+      // ignore
+    }
+    setLoading(false);
+  }, [sn]);
+
+  const fetchLiveInfo = useCallback(async () => {
+    if (!sn) return;
+    setLoading(true);
+    setIsCached(false);
     try {
       const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/info`, 'GET', null, null);
       if (status === 200 && result) {
         setInfo(result);
+        setIsCached(false);
+        setCachedAt(null);
+        setLoading(false);
+        if (onOnlineChange) onOnlineChange(true);
+        return;
       }
-    } finally {
-      setLoading(false);
+    } catch {
+      // ignore
     }
-  }, [sn, mtp]);
+    // Fallback to cached if live fetch failed
+    await fetchCachedInfo();
+    if (onOnlineChange) onOnlineChange(false);
+  }, [sn, mtp, fetchCachedInfo]);
 
   useEffect(() => {
-    fetchInfo();
-  }, [fetchInfo]);
+    if (deviceOnline === false) {
+      fetchCachedInfo();
+    } else {
+      fetchLiveInfo();
+    }
+  }, [sn]);
 
   const openConfirm = (title, description, action) => {
     setConfirmDialog({ open: true, title, description, action });
@@ -268,8 +299,21 @@ export const DevicesInfo = ({ sn, mtp }) => {
   const deviceVendor = rows.find(r => r.key === 'Manufacturer')?.value || '';
   const deviceModel = rows.find(r => r.key === 'ModelName')?.value || '';
 
+  const isOffline = deviceOnline === false;
+
   return (
     <>
+      {isOffline && (
+        <Alert severity="error" variant="filled" sx={{ fontWeight: 600 }}>
+          Device is Offline
+        </Alert>
+      )}
+      {isCached && cachedAt && (
+        <Alert severity="info">
+          Showing cached data from {new Date(cachedAt).toLocaleString()}.
+          {!isOffline && ' Click Refresh to fetch live data.'}
+        </Alert>
+      )}
       <Card>
         <CardHeader
           title="Device Information"
@@ -278,7 +322,7 @@ export const DevicesInfo = ({ sn, mtp }) => {
             <Button
               size="small"
               startIcon={<SvgIcon fontSize="small"><ArrowPathIcon /></SvgIcon>}
-              onClick={fetchInfo}
+              onClick={isOffline ? fetchCachedInfo : fetchLiveInfo}
               disabled={loading}
             >
               Refresh
@@ -291,6 +335,7 @@ export const DevicesInfo = ({ sn, mtp }) => {
             variant="outlined"
             color="primary"
             size="small"
+            disabled={isOffline}
             startIcon={<SvgIcon fontSize="small"><ArrowDownTrayIcon /></SvgIcon>}
             onClick={() => setFwDialogOpen(true)}
           >
@@ -300,6 +345,7 @@ export const DevicesInfo = ({ sn, mtp }) => {
             variant="outlined"
             color="warning"
             size="small"
+            disabled={isOffline}
             startIcon={<SvgIcon fontSize="small"><PowerIcon /></SvgIcon>}
             onClick={() =>
               openConfirm(
@@ -315,6 +361,7 @@ export const DevicesInfo = ({ sn, mtp }) => {
             variant="outlined"
             color="error"
             size="small"
+            disabled={isOffline}
             startIcon={<SvgIcon fontSize="small"><ExclamationTriangleIcon /></SvgIcon>}
             onClick={() =>
               openConfirm(

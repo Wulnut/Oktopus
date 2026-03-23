@@ -667,7 +667,6 @@ const Page = () => {
                                       <Chip label={status(order.Status)} color={statusMap[order.Status]} />
                                     </TableCell>}
                                     {columns["actions"] && <TableCell align="center">
-                                      {order.Status == 2 &&
                                         <Tooltip title="Access the device">
                                           <Button
                                             onClick={() => {
@@ -681,7 +680,7 @@ const Page = () => {
                                               <ArrowTopRightOnSquareIcon />
                                             </SvgIcon>
                                           </Button>
-                                        </Tooltip>}
+                                        </Tooltip>
                                       <Tooltip title="Edit the device alias">
                                     <Button
                                       onClick={()=>{

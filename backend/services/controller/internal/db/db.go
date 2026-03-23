@@ -20,6 +20,7 @@ type Database struct {
 	scripts          *mongo.Collection
 	scriptExecutions *mongo.Collection
 	massActions      *mongo.Collection
+	deviceInfo       *mongo.Collection
 	ctx              context.Context
 }
 
@@ -133,6 +134,15 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 		{
 			Keys: bson.D{{Key: "status", Value: 1}, {Key: "created_at", Value: -1}},
 		},
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	db.deviceInfo = client.Database("general").Collection("device_info")
+	_, err = db.deviceInfo.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "device_sn", Value: 1}},
+		Options: options.Index().SetUnique(true),
 	})
 	if err != nil {
 		log.Fatalln(err)

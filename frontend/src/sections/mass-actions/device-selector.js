@@ -24,11 +24,9 @@ export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
   const fetchDevices = useCallback(async () => {
     setLoading(true);
     try {
-      const filter = { page: 0, limit: 1000 };
-      const body = JSON.stringify(filter);
-      const { status, result } = await httpRequest('/api/device', 'GET');
+      const { status, result } = await httpRequest('/api/device?page_size=50', 'GET');
       if (status === 200 && result) {
-        const list = Array.isArray(result) ? result : result.devices || [];
+        const list = result.devices || [];
         setDevices(list);
       }
     } finally {
@@ -42,13 +40,13 @@ export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
 
   // Filter by vendor/model when provided
   const filtered = devices.filter((d) => {
-    if (vendor && d.vendor && d.vendor.toLowerCase() !== vendor.toLowerCase()) return false;
-    if (model && d.model && d.model.toLowerCase() !== model.toLowerCase()) return false;
+    if (vendor && d.Vendor && d.Vendor.toLowerCase() !== vendor.toLowerCase()) return false;
+    if (model && d.Model && d.Model.toLowerCase() !== model.toLowerCase()) return false;
     return true;
   });
 
-  const onlineDevices = filtered.filter((d) => d.status === 1);
-  const allSelected = onlineDevices.length > 0 && onlineDevices.every((d) => selectedSNs.includes(d.sn));
+  const onlineDevices = filtered.filter((d) => d.Status === 2);
+  const allSelected = onlineDevices.length > 0 && onlineDevices.every((d) => selectedSNs.includes(d.SN));
 
   const handleToggle = (sn) => {
     if (selectedSNs.includes(sn)) {
@@ -62,7 +60,7 @@ export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
     if (allSelected) {
       onChange([]);
     } else {
-      onChange(onlineDevices.map((d) => d.sn));
+      onChange(onlineDevices.map((d) => d.SN));
     }
   };
 
@@ -115,14 +113,14 @@ export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
               </TableHead>
               <TableBody>
                 {filtered.map((d) => {
-                  const isOnline = d.status === 1;
-                  const isSelected = selectedSNs.includes(d.sn);
+                  const isOnline = d.Status === 2;
+                  const isSelected = selectedSNs.includes(d.SN);
                   return (
                     <TableRow
-                      key={d.sn}
+                      key={d.SN}
                       hover={isOnline}
                       selected={isSelected}
-                      onClick={() => isOnline && handleToggle(d.sn)}
+                      onClick={() => isOnline && handleToggle(d.SN)}
                       sx={{
                         cursor: isOnline ? 'pointer' : 'default',
                         opacity: isOnline ? 1 : 0.5,
@@ -133,14 +131,14 @@ export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
                           size="small"
                           checked={isSelected}
                           disabled={!isOnline}
-                          onChange={() => handleToggle(d.sn)}
+                          onChange={() => handleToggle(d.SN)}
                         />
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                        {d.alias || d.sn}
+                        {d.Alias || d.SN}
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.85rem' }}>{d.vendor || '—'}</TableCell>
-                      <TableCell sx={{ fontSize: '0.85rem' }}>{d.model || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: '0.85rem' }}>{d.Vendor || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: '0.85rem' }}>{d.Model || '—'}</TableCell>
                       <TableCell>
                         <Chip
                           label={isOnline ? 'Online' : 'Offline'}
