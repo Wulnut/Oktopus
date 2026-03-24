@@ -47,7 +47,7 @@ export const getDeviceSubItems = (protocol, deviceID) => [
     icon: <SvgIcon fontSize="small"><MapIcon /></SvgIcon>,
   },
   {
-    title: 'Parameters',
+    title: 'Data Model',
     path: `/devices/${protocol}/${deviceID}/discovery`,
     icon: <SvgIcon fontSize="small"><MagnifyingGlassIcon /></SvgIcon>,
   },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Card,
   CardContent,
@@ -17,1314 +17,887 @@ import {
   Button,
   Backdrop,
   Alert,
+  Typography,
+  Fab,
+  Tooltip,
 } from '@mui/material';
 import ArrowRightIcon from '@heroicons/react/24/solid/ArrowRightIcon';
 import CircularProgress from '@mui/material/CircularProgress';
-import PlayCircle from '@heroicons/react/24/outline/PlayCircleIcon'
+import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import PlusCircleIcon from '@heroicons/react/24/outline/PlusCircleIcon';
-import Pencil from "@heroicons/react/24/outline/PencilIcon"
-import ArrowUturnLeftIcon from '@heroicons/react/24/outline/ArrowUturnLeftIcon'
+import Pencil from "@heroicons/react/24/outline/PencilIcon";
+import ArrowUturnLeftIcon from '@heroicons/react/24/outline/ArrowUturnLeftIcon';
 import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
-
-import { useRouter } from 'next/router';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import PlayCircleIcon from '@heroicons/react/24/outline/PlayCircleIcon';
-
-/*
-    OBJ_READ_ONLY (0)
-    OBJ_ADD_DELETE (1)
-    OBJ_ADD_ONLY (2)
-    OBJ_DELETE_ONLY (3)
-
-*/
+import { useRouter } from 'next/router';
 
 const ObjAccessType = {
-    ReadOnly: 0,
-    AddDelete: 1,
-    AddOnly: 2,
-    DeleteOnly:3,
-}
-
+  ReadOnly: 0,
+  AddDelete: 1,
+  AddOnly: 2,
+  DeleteOnly: 3,
+};
 
 const ParamAccessType = {
-    ReadOnly: 0,
-    ReadWrite: 1,
-    WriteOnly: 2,
-}
+  ReadOnly: 0,
+  ReadWrite: 1,
+  WriteOnly: 2,
+};
 
-const ParamValueType = {
-    Unknown: 0,
-    Base64: 1,
-    Boolean: 2,
-    DateTime: 3,
-    Decimal: 4, 
-    HexBinary: 5,
-    Int: 6,
-    Long: 7,
-    String: 8,
-    UnisgnedInt: 9,
-    UnsignedLong: 10,
-}
-//TODO: refact all of this mess
-const addDeviceObj = async(obj, setShowLoading, router, updateDeviceParameters) => {
-    console.log("AddDeviceObj => obj = ", obj)
-    let raw = JSON.stringify(
-        {
-            "allow_partial": true,
-            "create_objs": [
-                {
-                    "obj_path": obj,
-                    //TODO: create queue and create new obj with parameters
-                    // "param_settings": [
-                    //     {
-                    //         "param": "Alias",
-                    //         "value": "test",
-                    //         "required": true
-                    //     }
-                    // ]
-                }
-            ]
-        }
-    )
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
+// Convert TR-181 dot path to URL segments: "Device.WiFi.Radio.1." -> "Device/WiFi/Radio/1"
+const pathToUrl = (tr181Path) => tr181Path.replace(/\.$/, '').replaceAll('.', '/');
 
-    var requestOptions = {
-        method: 'PUT',
-        headers: myHeaders,
-        redirect: 'follow',
-        body: raw
-    };
-    setShowLoading(true)
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/add`, requestOptions))
-    if (result.status != 200) {
-        if (result.status === 401){
-            router.push("/auth/login")
-        }
-        setShowLoading(false)
-        throw new Error('Please check your email and password');
-    }else{
-        setShowLoading(false)
-        console.log(result.json())
-        updateDeviceParameters(obj+"*.")
-    }
-}
+// Convert URL segments back to TR-181 dot path: ["Device","WiFi","Radio","1"] -> "Device.WiFi.Radio.1."
+const segmentsToPath = (segments) => segments.length > 0 ? segments.join('.') + '.' : 'Device.';
 
-const deleteDeviceObj = async(obj, setShowLoading, router, updateDeviceParameters) => {
-    console.log("deleteDeviceObj => obj = ", obj)
-    let raw = JSON.stringify(
-        {
-            "allow_partial": true,
-            "obj_paths": [
-                obj
-            ]
-        }
-    )
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
+// Sort instance keys by their numeric segments (1,2,10 not 1,10,2)
+const sortInstanceKeys = (a, b) => {
+  const numsA = a.match(/\d+/g)?.map(Number) || [];
+  const numsB = b.match(/\d+/g)?.map(Number) || [];
+  for (let i = 0; i < Math.min(numsA.length, numsB.length); i++) {
+    if (numsA[i] !== numsB[i]) return numsA[i] - numsB[i];
+  }
+  return numsA.length - numsB.length;
+};
 
-    var requestOptions = {
-        method: 'PUT',
-        headers: myHeaders,
-        redirect: 'follow',
-        body: raw
-    };
-    setShowLoading(true)
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/del`, requestOptions))
-    if (result.status != 200) {
-        if (result.status === 401){
-            router.push("/auth/login")
-        }
-        setShowLoading(false)
-        throw new Error('Please check your email and password');
-    }else{
-        setShowLoading(false)
-        console.log(result.json())
+// Extract the last meaningful name from a supported_obj_path
+// "Device.Bridging.Bridge.{i}." -> "Bridge"
+const getObjName = (path) => {
+  const parts = path.replace(/\.$/, '').split('.');
+  // Walk backward to find a non-{i} segment
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i] !== '{i}') return parts[i];
+  }
+  return parts[parts.length - 1];
+};
 
-        let paths = obj.split(".")
-        console.log("paths:",paths)
+// Get relative child path from parent template
+// parent: "Device.Bridging.Bridge.{i}."  child: "Device.Bridging.Bridge.{i}.Port.{i}." -> "Port.{i}."
+const getRelativeChildPath = (childPath, parentPath) => {
+  if (childPath.startsWith(parentPath)) {
+    return childPath.substring(parentPath.length);
+  }
+  return childPath;
+};
 
-        let pathsToJump = 2
-        if (paths[paths.length -2] == "*"){
-            pathsToJump = 3
-        }
-        
-        paths.splice(paths.length - pathsToJump, pathsToJump)
-        let pathToFetch = paths.join(".")
-        
-        updateDeviceParameters(pathToFetch)
-    }
-}
+// Check if child is a direct child (one object level deeper) of parent
+const isDirectChild = (childPath, parentPath) => {
+  const rel = getRelativeChildPath(childPath, parentPath);
+  if (!rel) return false;
+  // Direct child: "Port.{i}." or "Stats." — at most one non-{i} name segment
+  const parts = rel.replace(/\.$/, '').split('.');
+  const nameSegments = parts.filter(p => p !== '{i}');
+  return nameSegments.length === 1;
+};
 
-function ShowPath({x,updateDeviceParameters,setShowLoading, router}) {
-    // console.log(x)
-    // console.log("x.supported_obj_path:", x.supported_obj_path)
-    // console.log("x.access:", x.access)
-    if(x.supported_obj_path != "Device."){
-        if (x.access === ObjAccessType.ReadOnly || x.access === undefined){
-            return (
-                <IconButton onClick={()=>{
-                    console.log("x.supported_obj_path:",x.supported_obj_path)
-                    let supported_obj_path = x.supported_obj_path.replaceAll("{i}.","*.")
-                    updateDeviceParameters(supported_obj_path)
-                }}>
-            <SvgIcon>
-                <ArrowRightIcon></ArrowRightIcon>
-            </SvgIcon>
-            </IconButton>)
-        }else if (x.access === ObjAccessType.AddDelete){
-            console.log("addDelete")
-            return (
-                <div style={{justifyContent:"center", display:'flex'}}>
-                    <IconButton>
-                    <SvgIcon onClick={()=>addDeviceObj(
-                        x.supported_obj_path.replace("{i}.",""),
-                        setShowLoading, router, updateDeviceParameters)}>
-                    <PlusCircleIcon></PlusCircleIcon>
-                    </SvgIcon>
-                    </IconButton>
-                    <IconButton onClick={()=>{
-                    console.log("x.supported_obj_path:",x.supported_obj_path)
-                    let supported_obj_path = x.supported_obj_path.replaceAll("{i}.","*.")
-                    updateDeviceParameters(supported_obj_path)
-                }}>
-            <SvgIcon>
-                <ArrowRightIcon></ArrowRightIcon>
-            </SvgIcon>
-            </IconButton>
-                </div>
-            )
-        }else if (x.access === ObjAccessType.AddOnly){
-            return <IconButton>
-                <SvgIcon 
-                onClick={()=>addDeviceObj(x.supported_obj_path.replace("{i}.",""),
-                setShowLoading, router, updateDeviceParameters)}>
-                <PlusCircleIcon></PlusCircleIcon>
-                </SvgIcon>
-                </IconButton>
-        }
-    }
-    return <></>
-}
+// Get display name for a child object relative to parent
+// "Port.{i}." -> "Port"
+const getChildDisplayName = (relativePath) => {
+  const parts = relativePath.replace(/\.$/, '').split('.');
+  return parts.find(p => p !== '{i}') || parts[0];
+};
 
-function ShowParamsWithValues({
-    x, deviceParametersValue, 
-    setOpen, setParameter, 
-    setParameterValue, deviceParameters, 
-    setShowLoading, router,
-    updateDeviceParameters, deviceCommands,
-    openCommandDialog,
-    setDeviceCommandToExecute
-}) {
-    console.log("HEY jow:", deviceParametersValue)
-    let paths = x.supported_obj_path.split(".")
-    const showDialog = (param, paramvalue) => {
-        setParameter(param);
-        if (paramvalue == "\"\"") {
-            setParameterValue("")
-        }else{
-            setParameterValue(paramvalue);
-        }
-        setOpen(true);
-    }
+// Check if a relative child path contains {i} (multi-instance)
+const isMultiInstance = (relativePath) => relativePath.includes('{i}');
 
-    if(paths[paths.length -2] == "{i}"){
-        // Build a regex to match instance keys for this object, supporting multiple {i}
-        const instancePattern = new RegExp(
-          '^' +
-          x.supported_obj_path
-            .replace(/\{i\}/g, '\\d+')
-            .replace(/\./g, '\\.') +
-          '$'
-        );
-        return (
-          <>
-            {Object.keys(deviceParametersValue)
-              .filter(paramKey => instancePattern.test(paramKey))
-              .map((paramKey, h)=>{
-                console.log('Instance:', paramKey, deviceParametersValue[paramKey]);
-                let obj = deviceParameters?.req_obj_results?.[0]?.supported_objs?.[0]
-                let access = obj?.access
-                return (
-                  <List dense={true} key={h}>
-                    <ListItem
-                        divider={true}
-                        sx={{
-                            boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                            pl: 4,
-                        }}
-                        secondaryAction={
-                            access > ObjAccessType.ReadOnly &&
-                            <IconButton onClick={()=>{
-                                deleteDeviceObj(
-                                    paramKey,
-                                    setShowLoading,
-                                    router,
-                                    updateDeviceParameters
-                                )
-                            }}>
-                            <SvgIcon>
-                                <TrashIcon></TrashIcon>
-                            </SvgIcon>
-                            </IconButton>
-                        }
-                    >
-                    <ListItemText
-                    primary={<b>{paramKey}</b>}
-                    sx={{fontWeight:'bold'}}
-                    />
-                    </ListItem>
-                  {/* Only render parameters for this instance */}
-                  {deviceParametersValue[paramKey].length > 0 ?
-                  deviceParametersValue[paramKey].map((param, i) => {
-                      console.log('Param object:', param);
-                      const paramName = Object.keys(param)[0];
-                      const paramData = param[paramName];
-                      return (
-                      <List 
-                      component="div" 
-                      disablePadding 
-                      dense={true}
-                      key={paramName}
-                      >
-                          <ListItem
-                              key={paramName}
-                              divider={true}
-                              sx={{
-                                  boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                                  pl: 4 
-                              }}
-                              secondaryAction={
-                                  <div>
-                                      {paramData.value}
-                                      {paramData.access > ParamAccessType.ReadOnly && <IconButton>
-                                      <SvgIcon sx={{width:'20px'}}
-                                      onClick={()=>{
-                                          showDialog(
-                                              paramKey+paramName,
-                                              paramData.value)
-                                      }
-                                      }>
-                                      
-                                          <Pencil></Pencil>
-                                      
-                                      </SvgIcon>
-                                      </IconButton>}
-                                  </div>
-                              }
-                          >
-                              <ListItemText
-                                  primary={paramName}
-                              />
-                          </ListItem>
-                      </List>
-                      )
-                  }):<></>}
-                  {/* Render commands for each instance */}
-                  {x.supported_commands && x.supported_commands.length > 0 &&
-                    x.supported_commands.map((y) => (
-                      <List 
-                        component="div" 
-                        disablePadding 
-                        dense={true}
-                        key={y.command_name + '__' + paramKey}
-                      >
-                        <ListItem
-                            key={y.command_name + '__' + paramKey}
-                            divider={true}
-                            sx={{
-                                boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                                pl: 4 
-                            }}
-                            secondaryAction={
-                                <IconButton onClick={() => {
-                                    setDeviceCommandToExecute({
-                                        [paramKey + y.command_name]: {
-                                            input_arg_names: y.input_arg_names
-                                        }
-                                    });
-                                    openCommandDialog(true);
-                                }}>
-                                    <SvgIcon>
-                                        <PlayCircleIcon />
-                                    </SvgIcon>
-                                </IconButton>
-                            }
-                        >
-                            <ListItemText
-                                primary={y.command_name}
-                            />
-                        </ListItem>
-                      </List>
-                    ))
-                  }
-                  </List>
-                )
-            })}
-          </>
-        )
-    }else{
-        return (
-            <>
-            {(x.supported_params && x.supported_params.length > 0) ? x.supported_params.map((y, index)=>{
-                return (
-                    <List 
-                        component="div" 
-                        disablePadding 
-                        dense={true}
-                        key={y.param_name}
-                        >
-                        <ListItem
-                            key={index}
-                            divider={true}
-                            sx={{
-                                boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                                pl: 4 
-                            }}
-                            secondaryAction={
-                                <div>
-                                    {deviceParametersValue[y.param_name].value}
-                                    {deviceParametersValue[y.param_name].access > ParamAccessType.ReadOnly && <IconButton>
-                                    <SvgIcon sx={{width:'20px'}}
-                                    onClick={()=>{
-                                        showDialog(
-                                            x.supported_obj_path + y.param_name,
-                                            deviceParametersValue[y.param_name].value)
-                                    }
-                                    }>
-                                    
-                                        <Pencil></Pencil>
-                                    
-                                    </SvgIcon>
-                                    </IconButton>}
-                                </div>
-                            }
-                        >
-                            <ListItemText
-                                primary={y.param_name}
-                            />
-                        </ListItem>
-                    </List>
-                )
-            }) : null}
-            {x.supported_commands && x.supported_commands.length > 0 &&
-              x.supported_commands.map((y) => {
-                return <List 
-                  component="div" 
-                  disablePadding 
-                  dense={true}
-                  key={y.command_name}
-                >
-                  <ListItem
-                      key={y.command_name}
-                      divider={true}
-                      sx={{
-                          boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-                          pl: 4 
-                      }}
-                      secondaryAction={
-                          <IconButton onClick={() => {
-                              setDeviceCommandToExecute({
-                                  [x.supported_obj_path + y.command_name]: {
-                                      input_arg_names: y.input_arg_names
-                                  }
-                              });
-                              openCommandDialog(true);
-                          }}>
-                              <SvgIcon>
-                                  <PlayCircleIcon />
-                              </SvgIcon>
-                          </IconButton>
-                      }
-                  >
-                      <ListItemText
-                          primary={y.command_name}
-                      />
-                  </ListItem>
-                </List>
-              })
-            }
-            </>
-        )
-    }
-}
+// Extract command name from path: "Device.X.Reset()" -> "Reset"
+const extractCommandName = (commandPath) => {
+  if (!commandPath) return '';
+  const parts = commandPath.split('.');
+  return parts[parts.length - 1].replace(/\(\)$/, '');
+};
+
+// Generate unique command_key: "Reset_20250105_143022_a3f2"
+const generateUniqueCommandKey = (commandPath) => {
+  const commandName = extractCommandName(commandPath);
+  if (!commandName) return '';
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const randomHex = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return `${commandName}_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${randomHex}`;
+};
+
+// Build auth headers
+const getAuthHeaders = () => {
+  const headers = new Headers();
+  headers.append("Content-Type", "application/json");
+  headers.append("Authorization", localStorage.getItem("token"));
+  return headers;
+};
 
 export const DevicesDiscovery = () => {
+  const router = useRouter();
 
-const router = useRouter()
+  // Derive device ID and current TR-181 path from URL
+  const deviceID = router.query.id?.[0];
+  const pathSegments = router.query.id?.slice(2) || [];
+  const pathKey = pathSegments.join('/');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const currentPath = useMemo(() => segmentsToPath(pathSegments), [pathKey]);
 
-const [deviceCommands, setDeviceCommands] = useState({})
-const [deviceParameters, setDeviceParameters] = useState(null)
-const [parameter, setParameter] = useState(null)
-const [parameterValue, setParameterValue] = useState(null)
-const [parameterValueChange, setParameterValueChange] = useState(null)
-const [deviceParametersValue, setDeviceParametersValue] = useState({})
-const [open, setOpen] = useState(false)
-const [errorModal, setErrorModal] = useState(false)
-const [errorModalText, setErrorModalText] = useState("")
-const [deviceOfflineError, setDeviceOfflineError] = useState(false)
-const [deviceOfflineErrorText, setDeviceOfflineErrorText] = useState("")
-const [showLoading, setShowLoading] = useState(false)
-const [openCommandDialog, setOpenCommandDialog] = useState(false)
-const [deviceCommandToExecute, setDeviceCommandToExecute] = useState(null)
-const [inputArgsValue, setInputArgsValue] = useState({})
+  // State
+  const [deviceParameters, setDeviceParameters] = useState(null);
+  const [deviceParametersValue, setDeviceParametersValue] = useState({});
+  const [childObjects, setChildObjects] = useState([]);
+  const [showLoading, setShowLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [parameter, setParameter] = useState(null);
+  const [parameterValue, setParameterValue] = useState(null);
+  const [parameterValueChange, setParameterValueChange] = useState(null);
+  const [errorModal, setErrorModal] = useState(false);
+  const [errorModalText, setErrorModalText] = useState("");
+  const [deviceOfflineError, setDeviceOfflineError] = useState(false);
+  const [deviceOfflineErrorText, setDeviceOfflineErrorText] = useState("");
+  const [openCommandDialog, setOpenCommandDialog] = useState(false);
+  const [deviceCommandToExecute, setDeviceCommandToExecute] = useState(null);
+  const [inputArgsValue, setInputArgsValue] = useState({});
 
-
-// const initDeviceCommands = (content) => {
-//     let supportedCommands = content?.req_obj_results[0].supported_objs[0].supported_commands
-    
-//     if (supportedCommands === undefined){
-//         return paramsToFetch
-//     }
-
-//     let commands = {}
-
-//     for(let i =0; i < supportedCommands.length; i++){
-//         let command = supportedCommands[i]
-//         commands[command.command_name] = {
-//             "type":command["command_type"]
-//         }
-//     }
-
-//     console.log("commands:", commands)
-//     setDeviceCommands(commands)
-// }   
-
-const initialize = async (raw) => {
-    // let content = await getDeviceParameters(raw)
-    // console.log("get device parameters content:", content)
-
-    // let parametersToFetch = () => {
-    //     let paramsToFetch = []
-    //     for (let i =0; i < supportedParams.length ;i++){
-            
-    //         let supported_obj_path = content.req_obj_results[0].supported_objs[0].supported_obj_path.replaceAll("{i}","*")
-    //         let param = supportedParams[i]
-            
-    //         paramsToFetch.push(supported_obj_path+param.param_name)
-
-    //         paramsInfo[param.param_name] = {
-    //             "value_change":param["value_change"],
-    //             "value_type":param["value_type"],
-    //             "access": param["access"],
-    //             "value": "-",
-    //         }
-    //     }
-
-    //     if (supportedCommands === undefined){
-    //         return paramsToFetch
-    //     }
-
-    //     for(let i =0; i < supportedCommands.length; i++){
-    //         let command = supportedCommands[i]
-    //         commandsInfo[command.command_name] = {
-    //             "type":command["command_type"]
-    //         }
-    //     }
-
-    //     return paramsToFetch
-    // }
-
-    // const fetchparameters = parametersToFetch()
-    // console.log("parameters to fetch: ", fetchparameters)
-
-    // raw = JSON.stringify({
-    //     "param_paths": fetchparameters,
-    //     "max_depth": 1
-    // })
-
-    // let values = await getDeviceParametersValue(raw),
-    updateDeviceParameters("Device.")
-    // setDeviceParametersValue(values)
-
-    // setDeviceParameters(content)
-    //initDeviceCommands(content)
-}
-
-const getDeviceParameters = async (raw) =>{
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    var requestOptions = {
-        method: 'PUT',
-        headers: myHeaders,
-        redirect: 'follow',
-        body: raw
-    };
-
-    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/parameters`, requestOptions)
-    if (result.status !== 200) {
-        if (result.status === 401){
-            router.push("/auth/login")
-            return null
-        }
-        // Get error message from response
-        let errorText = await result.text()
-        try {
-            const errorJson = JSON.parse(errorText)
-            errorText = typeof errorJson === 'string' ? errorJson : JSON.stringify(errorJson, null, 2)
-        } catch (e) {
-            // If not JSON, use text as is
-        }
-        // Remove surrounding quotes if present
-        errorText = errorText.trim().replace(/^["']|["']$/g, '')
-        throw new Error(errorText || `Request failed with status ${result.status}`)
-    }
-    return result.json()
-}
-
-/*
-const getDeviceParameterInstances = async (raw) =>{
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    var requestOptions = {
-        method: 'PUT',
-        headers: myHeaders,
-        redirect: 'follow',
-        body: raw
-    };
-
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/instances`, requestOptions))
-    if (result.status != 200) {
-        throw new Error('Please check your email and password');
-    }else if (result.status === 401){
-    router.push("/auth/login")
-}else{
-        return result.json()
-    }
-}*/
-
-  useEffect(()=> {
-
-    initialize(
-    JSON.stringify({
-        "obj_paths": ["Device."],
-        "first_level_only" : true,
-        "return_commands" : true,
-        "return_events" : true,
-        "return_params" : true 
-        })
+  // Navigate to a TR-181 path by updating the URL
+  const navigateTo = useCallback((tr181Path) => {
+    const urlPath = pathToUrl(tr181Path);
+    router.push(
+      `/devices/usp/${deviceID}/discovery/${urlPath}`,
+      undefined,
+      { shallow: true }
     );
-  },[])
+  }, [deviceID, router]);
 
-//Together with showParameters, this function renders all the device parameters the device supports
-//but you must set req with first_level_only property to false
-//   const showPathParameters = (pathParamsList) => {
-//     return pathParamsList.map((x,i)=>{
-//         return(
-//         <List component="div" disablePadding dense={true}>
-//             <ListItem
-//             key={i}
-//             divider={true}
-//                 sx={{
-//                     boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;',
-//                     pl: 4 
-//                 }}
-//             >
-//             <ListItemText
-//                 primary={x.param_name}
-//             />
-//             </ListItem>
-//     </List>
-//         )
-//     })
-//   }
-  // Multi instance not used, found better way to get values
-//   const updateDeviceParametersMultiInstance = async (param) =>{
-//     console.log("UpdateDeviceParametersMultiInstance => param = ", param)
+  // Navigate up one level
+  const navigateBack = useCallback(() => {
+    const parts = currentPath.replace(/\.$/, '').split('.');
+    if (parts.length <= 1) return; // Already at Device.
 
-//     let raw = JSON.stringify({
-//         "obj_paths": [param],
-//         "first_level_only" : true,
-//         "return_commands" : true,
-//         "return_events" : true,
-//         "return_params" : true 
-//     })
+    // Remove last segment(s): skip trailing numbers/wildcards to go up to parent object level
+    let pathsToRemove = 1;
+    if (/^\d+$/.test(parts[parts.length - 1]) || parts[parts.length - 1] === '*') {
+      pathsToRemove = 2;
+    }
+    parts.splice(parts.length - pathsToRemove, pathsToRemove);
 
-//     let response = await getDeviceParameterInstances(raw)
-//     console.log("response:", response)
+    // If the resulting path ends with a concrete instance number, replace it with *
+    // so we go back to the multi-instance view (e.g., Bridge.1. -> Bridge.*.)
+    if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) {
+      parts[parts.length - 1] = '*';
+    }
 
-//     let instancesToGet = []
-//     if (response.req_path_results[0].curr_insts) {
-//         let supportedParams = response.req_path_results[0].curr_insts
-//         let instances = () => {
-//             for (let i =0; i < supportedParams.length ;i++){
-//                 instancesToGet.push(supportedParams[i].instantiated_obj_path)
-//             }
-//         }
-//         instances()
-//     }else{
-//         instancesToGet.push(response.req_path_results[0].requested_path)
-//     }
+    const parentPath = parts.join('.') + '.';
+    navigateTo(parentPath);
+  }, [currentPath, navigateTo]);
 
-//     let rawInP = JSON.stringify({
-//         "obj_paths": instancesToGet,
-//         "first_level_only" : true,
-//         "return_commands" : true,
-//         "return_events" : true,
-//         "return_params" : true 
-//     })
+  // API helpers
+  const fetchWithAuth = useCallback(async (endpoint, body) => {
+    const result = await fetch(
+      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${deviceID}/any/${endpoint}`,
+      { method: 'PUT', headers: getAuthHeaders(), redirect: 'follow', body: JSON.stringify(body) }
+    );
+    if (result.status === 401) {
+      router.push("/auth/login");
+      return null;
+    }
+    if (result.status !== 200) {
+      let errorText = await result.text();
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorText = typeof errorJson === 'string' ? errorJson : JSON.stringify(errorJson, null, 2);
+      } catch (e) { /* use raw text */ }
+      errorText = errorText.trim().replace(/^["']|["']$/g, '');
+      throw new Error(errorText || `Request failed with status ${result.status}`);
+    }
+    return result.json();
+  }, [deviceID, router]);
 
-//     let resultParams = await getDeviceParameters(rawInP)
-//     console.log("result params:", resultParams)
-//     setDeviceParameters(resultParams)
+  // Convert all instance numbers AND wildcards to {i} for template matching
+  const toTemplatePath = (path) => {
+    return path.split('.').map(seg => /^\d+$/.test(seg) || seg === '*' ? '{i}' : seg).join('.');
+  };
 
+  // Main data fetching function
+  const updateDeviceParameters = useCallback(async (path, { preserveState = false } = {}) => {
+    setShowLoading(true);
+    if (!preserveState) {
+      setDeviceParameters(null);
+      setDeviceParametersValue({});
+      setChildObjects([]);
+    }
 
-//     let paramsToFetch = []
-
-    // console.log("parameters to fetch: ", paramsToFetch)
-
-    //     let rawV = JSON.stringify({
-    //         "param_paths": paramsToFetch,
-    //         "max_depth": 1
-    //     })
-
-    //     let resultValues = await getDeviceParametersValue(rawV)
-    //     console.log("result values:", resultValues)
-
-
-    //     let rawP = JSON.stringify({
-    //         "obj_paths": paramsToFetch,
-    //         "first_level_only" : true,
-    //         "return_commands" : true,
-    //         "return_events" : true,
-    //         "return_params" : true 
-    //     })
-
-    //     let resultParams = await getDeviceParameters(rawP)
-    //     console.log("result params:", resultParams)
-
-    //     let values = {}
-    //     let setvalues = () => {resultValues.req_path_results.map((x)=>{
-    //         // let path = x.requested_path.split(".")
-    //         // let param = path[path.length -1]
-    //         if (!x.resolved_path_results){
-    //             return
-    //         }
-    //         x.resolved_path_results.map((y)=> {
-                
-    //         })
-    //         // Object.keys(x.resolved_path_results[0].result_params).forEach((key, index) =>{
-    //         //     values[key] = x.resolved_path_results[0].result_params[key]
-    //         // })
-    //         return values
-    //     })}
-    //     setvalues()
-    //     console.log("values:",values)
-
-    //     setDeviceParameters(resultParams)
-    //     setDeviceParametersValue(values)
-//  }
-
-
-  const updateDeviceParameters = async (param) => {
-    console.log("UpdateDeviceParameters => param = ", param)
-    setShowLoading(true)
-    
     try {
-        let raw = JSON.stringify({
-                "obj_paths": [param],
-                "first_level_only" : true,
-                "return_commands" : true,
-                "return_events" : true,
-                "return_params" : true 
-        })
+      // Use path directly for USP queries — it already has * where needed
+      // GetSupportedDM accepts both concrete (Bridge.2.) and wildcard (Bridge.*.) paths
+      const content = await fetchWithAuth('parameters', {
+        obj_paths: [path],
+        first_level_only: true,
+        return_commands: true,
+        return_events: true,
+        return_params: true,
+      });
 
-        let content = await getDeviceParameters(raw)
+      if (!content?.req_obj_results?.[0]?.supported_objs?.length) {
+        setErrorModalText("Invalid response structure from device.");
+        setErrorModal(true);
+        return;
+      }
 
-        console.log("content:",content)
+      const supportedObjs = content.req_obj_results[0].supported_objs;
 
-        // Check if content is valid and has required structure
-        if (!content || !content.req_obj_results || content.req_obj_results.length === 0 || 
-            !content.req_obj_results[0].supported_objs || content.req_obj_results[0].supported_objs.length === 0) {
-            console.error("Invalid content structure:", content)
-            setErrorModalText("Invalid response structure from device.")
-            setErrorModal(true)
-            return
-        }
+      // The first supported_obj is the queried object itself (has params/commands)
+      // Remaining are child objects (sub-objects to drill into)
+      const mainObj = supportedObjs[0];
+      const children = supportedObjs.slice(1).filter(
+        child => isDirectChild(child.supported_obj_path, mainObj.supported_obj_path)
+      );
 
-        let paramsInfo = {}
-        let commandsInfo = {}
+      // Sort children alphabetically by name
+      children.sort((a, b) => getObjName(a.supported_obj_path).localeCompare(getObjName(b.supported_obj_path)));
+      setChildObjects(children);
 
-        let supportedParams = content.req_obj_results[0].supported_objs[0].supported_params //TODO: fixme when more then one supported_objs
-        let supportedCommands = content.req_obj_results[0].supported_objs[0].supported_commands
+      // 2. Fetch parameter values if the main object has params
+      const supportedParams = mainObj.supported_params;
+      if (supportedParams?.length) {
+        // Reconstruct the concrete query path: map {i} in template back to
+        // the actual numbers/* from the input path
+        const templateParts = mainObj.supported_obj_path.split('.');
+        const inputParts = path.split('.');
+        const concreteObjPath = templateParts.map((seg, idx) => {
+          if (seg === '{i}' && idx < inputParts.length) return inputParts[idx];
+          return seg;
+        }).join('.');
+        const paramsToFetch = supportedParams.map(p => concreteObjPath + p.param_name);
 
-        let parametersToFetch = () => {
-        let paramsToFetch = []
-        for (let i =0; i < supportedParams.length ;i++){
-            
-            let supported_obj_path = content.req_obj_results[0].supported_objs[0].supported_obj_path.replaceAll("{i}","*")
-            let param = supportedParams[i]
-            
-            paramsToFetch.push(supported_obj_path+param.param_name)
+        const paramsInfo = {};
+        supportedParams.forEach(p => {
+          paramsInfo[p.param_name] = {
+            value_change: p.value_change,
+            value_type: p.value_type,
+            access: p.access,
+            value: "-",
+          };
+        });
 
-            paramsInfo[param.param_name] = {
-                "value_change":param["value_change"],
-                "value_type":param["value_type"],
-                "access": param["access"],
-                "value": "-",
+        const result = await fetchWithAuth('get', {
+          param_paths: paramsToFetch,
+          max_depth: 1,
+        });
+
+        if (result?.req_path_results) {
+          const values = {};
+          result.req_path_results.forEach(x => {
+            if (!x.resolved_path_results) {
+              values[x.requested_path] = {};
+              return;
             }
-        }
 
-        if (supportedCommands === undefined){
-            return paramsToFetch
-        }
-
-        for(let i =0; i < supportedCommands.length; i++){
-            let command = supportedCommands[i]
-            commandsInfo[command.command_name] = {
-                "type":command["command_type"]
-            }
-        }
-
-        return paramsToFetch
-    }
-
-        if (supportedParams !== undefined) {
-            const fetchparameters = parametersToFetch()
-            console.log("parameters to fetch: ", fetchparameters)
-
-            raw = JSON.stringify({
-                "param_paths": fetchparameters,
-                "max_depth": 1
-            })
-
-            let result = await getDeviceParametersValue(raw)
-            console.log("result:", result)
-            console.log("/-------------------------------------------------------/")
-
-            let values = {}
-            let commands = {}
-
-            console.log("VALUES:",values)
-            result.req_path_results.map((x)=>{
-                if (!x.resolved_path_results){
-                    values[x.requested_path] = {}
-                    setDeviceParametersValue(values)
-                    return
-                }
-
-                let paths = x.requested_path.split(".")
-                if(paths[paths.length -2] == "*"){
-                    x.resolved_path_results.map(y=>{
-                        // console.log(y.result_params)
-                        // console.log(y.resolved_path)
-                        let key = Object.keys(y.result_params)[0]
-                        // console.log(key)
-                        // console.log(paramsInfo[key].value)
-                        // console.log(paramsInfo[key])
-                        // console.log(y.result_params[key])
-                        // console.log({[key]:paramsInfo[key]})
-
-                        //console.log("Take a look here mate: ",{...paramsInfo[key], value: y.result_params[key]})
-                        if (!values[y.resolved_path]){
-                            values[y.resolved_path] = []
-                        }
-
-                        if (!commands[y.resolved_path]){
-                            commands[y.resolved_path] = []
-                        }
-
-                        if (y.result_params[key] == ""){
-                            y.result_params[key] = "\"\""
-                        }
-                        
-                        values[y.resolved_path].push({[key]:{...paramsInfo[key], value: y.result_params[key]}})
-                    })
-                }else{
-                    Object.keys(x.resolved_path_results[0].result_params).forEach((key, index) =>{
-                        if (x.resolved_path_results[0].result_params[key] != ""){
-                            paramsInfo[key].value = x.resolved_path_results[0].result_params[key]
-                        }else{
-                            paramsInfo[key].value = "\"\""
-                        }
-                        values = paramsInfo
-                    })
-                }
-
-                //console.log("values:", values)
-                setDeviceParametersValue(values)
-                //console.log("commands:", commandsInfo)
-                setDeviceCommands(commandsInfo)
-            })
-            // Always set deviceCommands after processing
-            if (supportedCommands && supportedCommands.length > 0) {
-                setDeviceCommands(commandsInfo);
+            const parts = x.requested_path.split('.');
+            if (parts[parts.length - 2] === '*') {
+              // Multi-instance: group by resolved path (instance)
+              x.resolved_path_results.forEach(y => {
+                const key = Object.keys(y.result_params)[0];
+                if (!values[y.resolved_path]) values[y.resolved_path] = [];
+                const val = y.result_params[key] === "" ? '""' : y.result_params[key];
+                values[y.resolved_path].push({
+                  [key]: { ...paramsInfo[key], value: val }
+                });
+              });
             } else {
-                setDeviceCommands({});
+              // Single instance: flat key-value
+              Object.keys(x.resolved_path_results[0].result_params).forEach(key => {
+                const val = x.resolved_path_results[0].result_params[key];
+                values[key] = {
+                  ...paramsInfo[key],
+                  value: val === "" ? '""' : val,
+                };
+              });
             }
-            console.log("values:", values)
-            console.log("commands:", commandsInfo)
-            console.log("/-------------------------------------------------------/")
-            setDeviceParameters(content)
-        }else{
-            console.log("fixme")
-            setDeviceParameters(content)
+          });
+
+          setDeviceParametersValue(values);
         }
+      }
+
+      setDeviceParameters(content);
     } catch (error) {
-        console.error("Error in updateDeviceParameters:", error)
-        const errorMsg = error.message || "An error occurred while retrieving device parameters."
-        // Check if it's a device offline error (503 or contains "offline")
-        if (errorMsg.toLowerCase().includes("offline") || errorMsg.includes("503")) {
-            setDeviceOfflineErrorText(errorMsg)
-            setDeviceOfflineError(true)
-        } else {
-            setErrorModalText(errorMsg)
-            setErrorModal(true)
-        }
+      const errorMsg = error.message || "An error occurred while retrieving device parameters.";
+      if (errorMsg.toLowerCase().includes("offline") || errorMsg.includes("503")) {
+        setDeviceOfflineErrorText(errorMsg);
+        setDeviceOfflineError(true);
+      } else {
+        setErrorModalText(errorMsg);
+        setErrorModal(true);
+      }
     } finally {
-        setShowLoading(false)
+      setShowLoading(false);
     }
-  }
+  }, [fetchWithAuth]);
 
-  const getDeviceParametersValue = async (raw) => {
-
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    var requestOptions = {
-        method: 'PUT',
-        headers: myHeaders,
-        redirect: 'follow',
-        body: raw
-    };
-
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/get`, requestOptions))
-    if (result.status != 200) {
-        if (result.status === 401){
-            router.push("/auth/login")
-        }
-        throw new Error('Please check your email and password');
-    }else if (result.status === 401){
-        router.push("/auth/login")
-    }else{
-            return result.json()
-        }
-
-  }
-
-  function isInteger(value) {
-    return /^\d+$/.test(value);
-  }
-
-  const inputjow = () => {
-    if (inputArgsValue === ""){
-        return {"":""}
-    }else{
-        return inputArgsValue
+  // Fetch data when path changes
+  useEffect(() => {
+    if (deviceID && currentPath) {
+      updateDeviceParameters(currentPath);
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPath, deviceID]);
 
-  // Extract command name from command path
-  // Example: "Device.SoftwareModules.DeploymentUnit.3.Update()" -> "Update"
-  const extractCommandName = (commandPath) => {
-    if (!commandPath) return '';
-    const parts = commandPath.split('.');
-    if (parts.length === 0) return '';
-    const lastPart = parts[parts.length - 1];
-    // Remove parentheses if present
-    return lastPart.replace(/\(\)$/, '');
-  }
-
-  // Generate unique command_key in format: command_yyyymmdd_hhmmss_XXXX
-  // Example: "Update_20250105_143022_a3f2"
-  const generateUniqueCommandKey = (commandPath) => {
-    const commandName = extractCommandName(commandPath);
-    if (!commandName) return '';
-    
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    
-    // Generate 4 random hex characters
-    const randomHex = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-    
-    return `${commandName}_${year}${month}${day}_${hours}${minutes}${seconds}_${randomHex}`;
-  }
-  
-  const showParameters = () => {
-    // Check if deviceParameters is valid
-    if (!deviceParameters || !deviceParameters.req_obj_results || deviceParameters.req_obj_results.length === 0) {
-        return null
+  // Add device object instance
+  const addDeviceObj = async (objPath) => {
+    setShowLoading(true);
+    try {
+      const result = await fetchWithAuth('add', {
+        allow_partial: true,
+        create_objs: [{ obj_path: objPath }],
+      });
+      if (result) {
+        // Re-fetch current view
+        updateDeviceParameters(currentPath);
+      }
+    } catch (error) {
+      setErrorModalText(error.message);
+      setErrorModal(true);
+    } finally {
+      setShowLoading(false);
     }
+  };
 
-    return deviceParameters.req_obj_results.map((a,b)=>{
-        return a.supported_objs.map((x,i)=> {
+  // Delete device object instance
+  const deleteDeviceObj = async (objPath) => {
+    setShowLoading(true);
+    try {
+      const result = await fetchWithAuth('del', {
+        allow_partial: true,
+        obj_paths: [objPath],
+      });
+      if (result) {
+        updateDeviceParameters(currentPath);
+      }
+    } catch (error) {
+      setErrorModalText(error.message);
+      setErrorModal(true);
+    } finally {
+      setShowLoading(false);
+    }
+  };
 
-            let supported_obj_path = x.supported_obj_path.split(".")
-            let supportedObjPath = ""
+  // Set parameter value
+  const applyParameterChange = async () => {
+    const params = parameter.split('.');
+    const parameterToChange = params.pop();
+    const objToChange = params.join('.');
 
-            supported_obj_path.map((x,i)=>{
-                if(i !== supported_obj_path.length -2){
-                    supportedObjPath = supportedObjPath + x + "."
-                }
-            })
+    setOpen(false);
+    setShowLoading(true);
 
-            let req_obj_path = a.req_obj_path.split(".")
-            let reqObjPath = ""
+    try {
+      const result = await fetchWithAuth('set', {
+        allow_partial: true,
+        update_objs: [{
+          obj_path: objToChange,
+          param_settings: [{
+            param: parameterToChange,
+            value: parameterValueChange,
+            required: true,
+          }],
+        }],
+      });
 
-            req_obj_path.map((x,i)=>{
-                if(i !== req_obj_path.length -2){
-                    reqObjPath = reqObjPath + x + "."
-                }
-            })
+      if (!result) return;
 
-            // console.log("reqObjPath:", reqObjPath)
-            // console.log("supportedObjPath:", supportedObjPath)
+      const feedback = JSON.stringify(result, null, 2);
+      if (!result.updated_obj_results?.[0]?.oper_status?.OperStatus?.OperSuccess) {
+        setErrorModalText(feedback);
+        setErrorModal(true);
+        return;
+      }
 
-            let paramName = x.supported_obj_path
-            if (supportedObjPath != "Device.."){
-                if (supportedObjPath == reqObjPath){
-                    paramName = a.req_obj_path
-                }
+      // Update value in state
+      if (/^\d+$/.test(params[params.length - 1])) {
+        // Multi-instance param
+        setDeviceParametersValue(prev => ({
+          ...prev,
+          [objToChange + "."]: prev[objToChange + "."]?.map(el => {
+            if (el[parameterToChange] !== undefined) {
+              return { ...el, [parameterToChange]: { ...el[parameterToChange], value: parameterValueChange } };
             }
+            return el;
+          }),
+        }));
+      } else {
+        setDeviceParametersValue(prev => ({
+          ...prev,
+          [parameterToChange]: { ...prev[parameterToChange], value: parameterValueChange },
+        }));
+      }
+    } catch (error) {
+      setErrorModalText(error.message);
+      setErrorModal(true);
+    } finally {
+      setShowLoading(false);
+    }
+  };
 
+  // Execute command
+  const applyCommand = async () => {
+    const commandPath = Object.keys(deviceCommandToExecute)[0];
+    const commandKey = generateUniqueCommandKey(commandPath);
+
+    setShowLoading(true);
+    try {
+      const result = await fetchWithAuth('operate', {
+        command: commandPath,
+        command_key: commandKey,
+        input_args: inputArgsValue || {},
+        send_resp: true,
+      });
+
+      setInputArgsValue({});
+      setDeviceCommandToExecute(null);
+      setOpenCommandDialog(false);
+
+      if (result) {
+        const operationResp = result.operation_results?.[0]?.OperationResp;
+        if (operationResp?.CmdFailure) {
+          setErrorModalText(JSON.stringify(result, null, 2));
+          setErrorModal(true);
+        } else {
+          setErrorModalText(JSON.stringify(result, null, 2));
+          setErrorModal(true);
+        }
+      }
+    } catch (error) {
+      setErrorModalText(error.message);
+      setErrorModal(true);
+      setInputArgsValue({});
+      setDeviceCommandToExecute(null);
+      setOpenCommandDialog(false);
+    } finally {
+      setShowLoading(false);
+    }
+  };
+
+  // Show parameter edit dialog
+  const showEditDialog = (param, paramValue) => {
+    setParameter(param);
+    setParameterValue(paramValue === '""' ? "" : paramValue);
+    setOpen(true);
+  };
+
+  // Render the main object header with back button
+  const renderObjectHeader = () => {
+    if (!deviceParameters?.req_obj_results?.[0]) return null;
+    const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
+    const isRoot = currentPath === 'Device.';
+
+    return (
+      <List dense>
+        <ListItem
+          divider
+          secondaryAction={
+            !isRoot && (
+              <IconButton onClick={navigateBack}>
+                <SvgIcon><ArrowUturnLeftIcon /></SvgIcon>
+              </IconButton>
+            )
+          }
+          sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;' }}
+        >
+          <ListItemText
+            primary={<b>{currentPath}</b>}
+            sx={{ fontWeight: 'bold' }}
+          />
+        </ListItem>
+      </List>
+    );
+  };
+
+  // Render child object buttons for a given instance path
+  const renderChildObjects = (instancePath, mainObj) => {
+    if (childObjects.length === 0) return null;
+
+    const sortedChildren = [...childObjects].sort((a, b) =>
+      getObjName(a.supported_obj_path).localeCompare(getObjName(b.supported_obj_path))
+    );
+
+    return sortedChildren.map(child => {
+      const relPath = getRelativeChildPath(child.supported_obj_path, mainObj.supported_obj_path);
+      const displayName = getChildDisplayName(relPath);
+      const isMulti = isMultiInstance(relPath);
+
+      // Build the concrete navigation path
+      // instancePath = "Device.Bridging.Bridge.1."
+      // relPath = "Port.{i}." -> navigate to "Device.Bridging.Bridge.1.Port.*."
+      // relPath = "Stats." -> navigate to "Device.Bridging.Bridge.1.Stats."
+      let navPath;
+      if (isMulti) {
+        navPath = instancePath + relPath.replace('{i}', '*');
+      } else {
+        navPath = instancePath + relPath;
+      }
+
+      const canAdd = child.access === ObjAccessType.AddDelete || child.access === ObjAccessType.AddOnly;
+      const addPath = instancePath + relPath.replace('{i}.', '');
+
+      return (
+        <List component="div" disablePadding dense key={displayName}>
+          <ListItem
+            divider
+            sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+            secondaryAction={
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {canAdd && (
+                  <IconButton onClick={() => addDeviceObj(addPath)}>
+                    <SvgIcon><PlusCircleIcon /></SvgIcon>
+                  </IconButton>
+                )}
+                <IconButton onClick={() => navigateTo(navPath)}>
+                  <SvgIcon><ArrowRightIcon /></SvgIcon>
+                </IconButton>
+              </Box>
+            }
+          >
+            <ListItemText primary={<b>{displayName + (isMulti ? '.{i}.' : '.')}</b>} />
+          </ListItem>
+        </List>
+      );
+    });
+  };
+
+  // Sort params: alphabetically, but NumberOfEntries params go last
+  const sortParams = (params, getName = (p) => p) => {
+    return [...params].sort((a, b) => {
+      const nameA = getName(a);
+      const nameB = getName(b);
+      const aIsCount = nameA.endsWith('NumberOfEntries');
+      const bIsCount = nameB.endsWith('NumberOfEntries');
+      if (aIsCount !== bIsCount) return aIsCount ? 1 : -1;
+      return nameA.localeCompare(nameB);
+    });
+  };
+
+  // Render parameters for a single (non-instance) object
+  const renderFlatParams = (mainObj) => {
+    if (!mainObj.supported_params?.length) return null;
+
+    const sortedParams = sortParams(mainObj.supported_params, p => p.param_name);
+
+    return sortedParams.map(p => (
+      <List component="div" disablePadding dense key={p.param_name}>
+        <ListItem
+          divider
+          sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+          secondaryAction={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {deviceParametersValue[p.param_name]?.value}
+              </Typography>
+              {deviceParametersValue[p.param_name]?.access > ParamAccessType.ReadOnly && (
+                <IconButton onClick={() => showEditDialog(
+                  mainObj.supported_obj_path + p.param_name,
+                  deviceParametersValue[p.param_name]?.value
+                )}>
+                  <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
+                </IconButton>
+              )}
+            </Box>
+          }
+        >
+          <ListItemText primary={p.param_name} />
+        </ListItem>
+      </List>
+    ));
+  };
+
+  // Render commands for a single object (or per-instance)
+  const renderCommands = (commands, pathPrefix) => {
+    if (!commands?.length) return null;
+
+    const sortedCommands = [...commands].sort((a, b) =>
+      a.command_name.localeCompare(b.command_name)
+    );
+
+    return sortedCommands.map(cmd => (
+      <List component="div" disablePadding dense key={cmd.command_name + '__' + pathPrefix}>
+        <ListItem
+          divider
+          sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+          secondaryAction={
+            <IconButton onClick={() => {
+              setDeviceCommandToExecute({
+                [pathPrefix + cmd.command_name]: { input_arg_names: cmd.input_arg_names }
+              });
+              setOpenCommandDialog(true);
+            }}>
+              <SvgIcon><PlayCircleIcon /></SvgIcon>
+            </IconButton>
+          }
+        >
+          <ListItemText primary={cmd.command_name} />
+        </ListItem>
+      </List>
+    ));
+  };
+
+  // Render instance-based parameters (multi-instance objects)
+  const renderInstanceParams = (mainObj) => {
+    const templatePath = mainObj.supported_obj_path;
+    const instancePattern = new RegExp(
+      '^' + templatePath.replace(/\{i\}/g, '\\d+').replace(/\./g, '\\.') + '$'
+    );
+
+    const instanceKeys = Object.keys(deviceParametersValue)
+      .filter(key => instancePattern.test(key))
+      .sort(sortInstanceKeys);
+
+    if (instanceKeys.length === 0) return null;
+
+    const access = mainObj.access;
+    const canDelete = access === ObjAccessType.AddDelete || access === ObjAccessType.DeleteOnly;
+
+    return instanceKeys.map(instanceKey => {
+      const params = deviceParametersValue[instanceKey] || [];
+
+      // Sort params: alphabetically, NumberOfEntries last
+      const sortedParams = sortParams(params, p => Object.keys(p)[0]);
+
+      return (
+        <List dense key={instanceKey}>
+          <ListItem
+            divider
+            sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 2, backgroundColor: 'rgba(0,0,0,0.02)' }}
+            secondaryAction={
+              canDelete && (
+                <IconButton onClick={() => deleteDeviceObj(instanceKey)}>
+                  <SvgIcon><TrashIcon /></SvgIcon>
+                </IconButton>
+              )
+            }
+          >
+            <ListItemText primary={<b>{instanceKey}</b>} />
+          </ListItem>
+
+          {/* Parameters for this instance */}
+          {sortedParams.map(param => {
+            const paramName = Object.keys(param)[0];
+            const paramData = param[paramName];
             return (
-            <List dense={true} key={x.supported_obj_path}>
+              <List component="div" disablePadding dense key={paramName}>
                 <ListItem
-                    key={x.supported_obj_path}
-                    divider={true}
-                    secondaryAction={
-                        i == 0 && x.supported_obj_path != "Device." ?
-                        <IconButton onClick={()=>
-                            {   
-                                let supported_obj_path = x.supported_obj_path.replaceAll("{i}.","*.")
-                                let paths = supported_obj_path.split(".")
-                                console.log("paths:",paths)
-
-                                let pathsToJump = 2
-                                if (paths[paths.length -2] == "*"){
-                                    pathsToJump = 3
-                                }
-                                
-                                paths.splice(paths.length - pathsToJump, pathsToJump)
-                                let pathToFetch = paths.join(".")
-                                
-                                updateDeviceParameters(pathToFetch)
-                            }
-                        }>
-                        <SvgIcon>
-                            <ArrowUturnLeftIcon></ArrowUturnLeftIcon>
-                        </SvgIcon>
+                  divider
+                  sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+                  secondaryAction={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {paramData.value}
+                      </Typography>
+                      {paramData.access > ParamAccessType.ReadOnly && (
+                        <IconButton onClick={() => showEditDialog(instanceKey + paramName, paramData.value)}>
+                          <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
                         </IconButton>
-                        :
-                        <ShowPath x={x} setShowLoading={setShowLoading} updateDeviceParameters={updateDeviceParameters} router={router}></ShowPath>
-                    }
-                    sx={{
-                        boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;'
-                    }}
-                >
-                    <ListItemText
-                        primary={<b>{paramName}</b>}
-                        sx={{fontWeight:'bold'}}
-                    />
-                </ListItem>
-                <ShowParamsWithValues 
-                    x={x} 
-                    deviceParametersValue={deviceParametersValue} 
-                    setOpen={setOpen} 
-                    setParameter={setParameter}
-                    setParameterValue={setParameterValue}
-                    deviceParameters={deviceParameters}
-                    setShowLoading={setShowLoading}
-                    router={router}
-                    updateDeviceParameters={updateDeviceParameters}
-                    deviceCommands={deviceCommands}
-                    openCommandDialog={setOpenCommandDialog}
-                    setDeviceCommandToExecute={setDeviceCommandToExecute}
-                />
-            </List>)
-        })
-    })
-  }
-  
-  return ( deviceParameters || errorModal || deviceOfflineError ?
-    <Card>
-        <CardContent>
-            {deviceOfflineError && deviceOfflineErrorText && (
-                <Alert 
-                    severity="error" 
-                    onClose={() => {
-                        setDeviceOfflineError(false)
-                        setDeviceOfflineErrorText("")
-                    }}
-                    sx={{ mb: 2 }}
-                >
-                    {deviceOfflineErrorText}
-                </Alert>
-            )}
-            {showParameters()}
-        </CardContent>
-                    <Dialog open={open} 
-                    slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
-                    >
-                    <DialogContent>
-                    <DialogContentText>
-                        {parameter}
-                    </DialogContentText>
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        id="parameterValue"
-                        fullWidth
-                        variant="standard"
-                        defaultValue={parameterValue}
-                        autoComplete='off'
-                        onChange={(e)=>setParameterValueChange(e.target.value)}
-                    />
-                    </DialogContent>
-                    <DialogActions>
-                    <Button onClick={()=>{setOpen(false)}}>Cancel</Button>
-                    <Button onClick={async ()=>{
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    let params = parameter.split(".")
-    let objToChange;
-    let parameterToChange;
-    console.log("params",params)
-    parameterToChange = params.pop()
-    objToChange = params.join(".")
-
-    var requestOptions = {
-        method: 'PUT',
-        headers: myHeaders,
-        redirect: 'follow',
-        body: JSON.stringify(
-            {
-                "allow_partial":true,
-                "update_objs":[
-                    {
-                        "obj_path":objToChange,
-                        "param_settings":[
-                            {
-                            "param":parameterToChange,
-                            "value":parameterValueChange,
-                            "required":true
-                            }
-                        ]
-                    }
-                ]
-            }
-        )
-    };
-
-    console.log(requestOptions.body)
-
-    setOpen(false)
-    setShowLoading(true)
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/set`, requestOptions))
-    if (result.status != 200) {
-        if (result.status === 401){
-            router.push("/auth/login")
-        }
-        setShowLoading(false)
-        throw new Error('Please check your email and password');
-    }else{
-        setShowLoading(false)
-        let response = await result.json()
-        let feedback = JSON.stringify(response, null, 2)
-
-        if (response.updated_obj_results[0].oper_status.OperStatus["OperSuccess"] === undefined) {
-            console.log("Error to set parameter change")
-            setErrorModalText(feedback)
-            setErrorModal(true)
-            return
-        }
-
-        //Means it has more than one instance
-        if(isInteger(params[params.length -1])){
-            setDeviceParametersValue((prevState) => ({
-                ...prevState, [objToChange+"."]: prevState[objToChange+"."].map(el => {
-                    if (el[parameterToChange] !== undefined){
-                        console.log(el[parameterToChange])
-                        el[parameterToChange].value = parameterValueChange
-                        return el
-                    }else{
-                        console.log(el)
-                        return el
-                    }
-                })
-            }));
-        }else{
-            setDeviceParametersValue((prevState) => ({
-                ...prevState, 
-                [parameterToChange] : {
-                    ...prevState[parameterToChange], 
-                    value: parameterValueChange}
-            }));
-        }
-
-        setOpen(false)
-    }
-                    }}>Apply</Button>
-                    </DialogActions>
-                </Dialog>
-                <Dialog open={errorModal} 
-                    slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
-                    fullWidth={ true } 
-                    maxWidth={"md"}   
-                    scroll={"paper"}
-                    aria-labelledby="scroll-dialog-title"
-                    aria-describedby="scroll-dialog-description" 
-                >
-                <DialogTitle id="scroll-dialog-title">
-                <Box display="flex" alignItems="center">
-                    <Box flexGrow={1} >Response</Box>
-                    <Box>
-                        <IconButton onClick={()=>{
-                                    setErrorModalText("")
-                                    setErrorModal(false)
-                                }}>
-                                <SvgIcon>
-                                <XMarkIcon/>
-                            </SvgIcon>
-                        </IconButton>
+                      )}
                     </Box>
-                </Box>
-                </DialogTitle>    
-                    <DialogContent dividers={scroll === 'paper'}>
-                    <DialogContentText id="scroll-dialog-description" tabIndex={-1}>
-                    <pre style={{color: 'black'}}>
-                        {errorModalText}
-                    </pre>
-                    </DialogContentText>
-                    </DialogContent>
-                    <DialogActions>
-                    <Button onClick={()=>{
-                        setErrorModalText("")
-                        setErrorModal(false)
-                    }}>OK</Button>
-                    </DialogActions>
-                </Dialog>
-                {deviceCommandToExecute && <Dialog open={openCommandDialog} 
-                    slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
-                    fullWidth={ true } 
-                    maxWidth={"md"}   
-                    scroll={"paper"}
-                    aria-labelledby="scroll-dialog-title"
-                    aria-describedby="scroll-dialog-description" 
+                  }
                 >
-                <DialogTitle id="scroll-dialog-title">
-                {Object.keys(deviceCommandToExecute)[0]}
-                </DialogTitle>    
-                    <DialogContent dividers={scroll === 'paper'}>
-                    {Array.isArray(deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names) &&
-                      deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names.length > 0 && (
-                        <DialogContentText id="scroll-dialog-description" tabIndex={-1}>
-                          Input Arguments:
-                        </DialogContentText>
-                      )
-                    }
-                    {Array.isArray(deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names) &&
-                      deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names.length > 0 &&
-                      deviceCommandToExecute[Object.keys(deviceCommandToExecute)[0]].input_arg_names.map(arg => (
-                        <TextField
-                        autoFocus
-                        margin="dense"
-                        id={arg}
-                        key={arg}
-                        label={arg}
-                        type="text"
-                        onChange={(e)=> {setInputArgsValue(prevState=>{
-                            return {...prevState, [arg] : e.target.value}
-                        })}}
-                        onClick={()=>{console.log(deviceCommandToExecute)}}
-                        value={inputArgsValue[arg]}
-                      />
-                    ))}
-                    </DialogContent>
-                    <DialogActions>
-                    <Button onClick={()=>{
-                        setInputArgsValue("")
-                        setDeviceCommandToExecute(null)
-                        setOpenCommandDialog(false)
-                    }}>Cancel</Button>
-                    <Button onClick={async ()=>{
-                       const commandPath = Object.keys(deviceCommandToExecute)[0];
-                       const commandKey = generateUniqueCommandKey(commandPath);
-                       let raw = JSON.stringify(
-                        {
-                            "command": commandPath,
-                            "command_key": commandKey,
-                            "input_args": inputjow(),
-                            "send_resp": true
-                        }
-                       )
-                       console.log("deviceOperate => obj = ", raw)
-                       var myHeaders = new Headers();
-                       myHeaders.append("Content-Type", "application/json");
-                       myHeaders.append("Authorization", localStorage.getItem("token"));
-                   
-                       var requestOptions = {
-                           method: 'PUT',
-                           headers: myHeaders,
-                           redirect: 'follow',
-                           body: raw
-                       };
-                       setShowLoading(true)
-                       let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/any/operate`, requestOptions)
-                       let content = await result.json()
-                       if (result.status != 200) {
-                           setShowLoading(false)
-                           if (result.status === 401){
-                            router.push("/auth/login")
-                            }
-                            setInputArgsValue("")
-                            setDeviceCommandToExecute(null)
-                            setOpenCommandDialog(false)
-                            setShowLoading(false)
-                       }else{
-                            setInputArgsValue("")
-                            setDeviceCommandToExecute(null)
-                            setOpenCommandDialog(false)
-                            setShowLoading(false)
-                            
-                            const operationResult = content.operation_results?.[0];
-                            const operationResp = operationResult?.OperationResp;
-                            
-                            // Check for CmdFailure first
-                            if (operationResp?.CmdFailure != undefined){
-                                setErrorModalText(JSON.stringify(content, null, 2))
-                                setErrorModal(true)
-                                return
-                            }
-                            
-                            // Check for OperSuccess or any successful response
-                            if (operationResp?.OperSuccess !== undefined || !operationResp?.CmdFailure) {
-                                setErrorModalText(JSON.stringify(content, null, 2))
-                                setErrorModal(true)
-                                return
-                            }
-                       }
-                    }}>Apply</Button>
-                    </DialogActions>
-                </Dialog>}
-        <Backdrop
-            sx={{ 
-            color: '#fff', 
-            zIndex: (theme) => theme.zIndex.drawer + 1, 
-            overflow: 'hidden'
-            }}
-            open={showLoading}
-            >
-            <CircularProgress />
-        </Backdrop>
-    </Card> 
-    :
-    <Box sx={{display:'flex',justifyContent:'center'}}>
+                  <ListItemText primary={paramName} />
+                </ListItem>
+              </List>
+            );
+          })}
+
+          {/* Commands for this instance */}
+          {renderCommands(mainObj.supported_commands, instanceKey)}
+
+          {/* Child objects for this instance */}
+          {renderChildObjects(instanceKey, mainObj)}
+        </List>
+      );
+    });
+  };
+
+  // Render non-instance child objects at the top level (e.g., Device. showing WiFi., DeviceInfo., etc.)
+  const renderTopLevelChildObjects = () => {
+    if (!deviceParameters?.req_obj_results?.[0]) return null;
+    const allObjs = deviceParameters.req_obj_results[0].supported_objs;
+    const mainObj = allObjs[0];
+
+    // Check if the object itself ends with {i} (is multi-instance)
+    const pathParts = mainObj.supported_obj_path.replace(/\.$/, '').split('.');
+    const isInstanceObj = pathParts[pathParts.length - 1] === '{i}';
+    const hasInstanceValues = Object.keys(deviceParametersValue).some(k => k.includes('.'));
+
+    if (isInstanceObj && hasInstanceValues) {
+      // Instance objects: children are rendered per-instance in renderInstanceParams
+      return null;
+    }
+
+    // Non-instance (or concrete single instance): render children as top-level drill-down buttons
+    return renderChildObjects(currentPath, mainObj);
+  };
+
+  // Main render logic
+  const showParameters = () => {
+    if (!deviceParameters?.req_obj_results?.length) return null;
+
+    const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
+    // Check if the object itself is multi-instance (ends with {i}.)
+    // e.g., "Device.Bridge.{i}." is multi-instance, but "Device.Bridge.{i}.Stats." is not
+    const pathParts = mainObj.supported_obj_path.replace(/\.$/, '').split('.');
+    const isInstanceObj = pathParts[pathParts.length - 1] === '{i}';
+
+    // Determine if values were stored flat (by param name) or by instance key
+    // If the concrete query path had no wildcard, values are flat even for objects
+    // whose template contains {i} in ancestor segments
+    const hasInstanceValues = Object.keys(deviceParametersValue).some(k => k.includes('.'));
+    const showAsInstance = isInstanceObj && hasInstanceValues;
+
+    return (
+      <>
+        {renderObjectHeader()}
+
+        {/* For non-instance objects: show flat params, commands, then child objects */}
+        {!showAsInstance && renderFlatParams(mainObj)}
+        {!showAsInstance && renderCommands(mainObj.supported_commands,
+          currentPath.endsWith('.') ? currentPath : mainObj.supported_obj_path)}
+        {renderTopLevelChildObjects()}
+
+        {/* For instance objects: show per-instance params, commands, and child objects */}
+        {showAsInstance && renderInstanceParams(mainObj)}
+      </>
+    );
+  };
+
+  // Loading state
+  if (!deviceParameters && !errorModal && !deviceOfflineError) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
         <CircularProgress />
-    </Box>
-  )
+      </Box>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent>
+        {deviceOfflineError && deviceOfflineErrorText && (
+          <Alert
+            severity="error"
+            onClose={() => { setDeviceOfflineError(false); setDeviceOfflineErrorText(""); }}
+            sx={{ mb: 2 }}
+          >
+            {deviceOfflineErrorText}
+          </Alert>
+        )}
+        {showParameters()}
+      </CardContent>
+
+      {/* Parameter Edit Dialog */}
+      <Dialog open={open} slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}>
+        <DialogContent>
+          <DialogContentText>{parameter}</DialogContentText>
+          <TextField
+            autoFocus
+            margin="dense"
+            id="parameterValue"
+            fullWidth
+            variant="standard"
+            defaultValue={parameterValue}
+            autoComplete="off"
+            onChange={(e) => setParameterValueChange(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={applyParameterChange}>Apply</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Error/Response Modal */}
+      <Dialog
+        open={errorModal}
+        slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+        fullWidth
+        maxWidth="md"
+        scroll="paper"
+      >
+        <DialogTitle>
+          <Box display="flex" alignItems="center">
+            <Box flexGrow={1}>Response</Box>
+            <Box>
+              <IconButton onClick={() => { setErrorModalText(""); setErrorModal(false); }}>
+                <SvgIcon><XMarkIcon /></SvgIcon>
+              </IconButton>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <DialogContentText tabIndex={-1}>
+            <pre style={{ color: 'black' }}>{errorModalText}</pre>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setErrorModalText(""); setErrorModal(false); }}>OK</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Command Execution Dialog */}
+      {deviceCommandToExecute && (
+        <Dialog
+          open={openCommandDialog}
+          slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+          fullWidth
+          maxWidth="md"
+          scroll="paper"
+        >
+          <DialogTitle>{Object.keys(deviceCommandToExecute)[0]}</DialogTitle>
+          <DialogContent dividers>
+            {(() => {
+              const cmdKey = Object.keys(deviceCommandToExecute)[0];
+              const args = deviceCommandToExecute[cmdKey].input_arg_names;
+              if (!Array.isArray(args) || args.length === 0) return null;
+              return (
+                <>
+                  <DialogContentText tabIndex={-1}>Input Arguments:</DialogContentText>
+                  {args.map(arg => (
+                    <TextField
+                      key={arg}
+                      autoFocus
+                      margin="dense"
+                      id={arg}
+                      label={arg}
+                      type="text"
+                      onChange={(e) => setInputArgsValue(prev => ({ ...prev, [arg]: e.target.value }))}
+                      value={inputArgsValue[arg] || ''}
+                    />
+                  ))}
+                </>
+              );
+            })()}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => {
+              setInputArgsValue({});
+              setDeviceCommandToExecute(null);
+              setOpenCommandDialog(false);
+            }}>Cancel</Button>
+            <Button onClick={applyCommand}>Apply</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      <Backdrop
+        sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1, overflow: 'hidden' }}
+        open={showLoading}
+      >
+        <CircularProgress />
+      </Backdrop>
+
+      <Tooltip title="Refresh">
+        <Fab
+          color="primary"
+          size="small"
+          disabled={showLoading}
+          onClick={() => updateDeviceParameters(currentPath, { preserveState: true })}
+          sx={{ position: 'fixed', bottom: 24, right: 24 }}
+        >
+          <SvgIcon fontSize="small"><ArrowPathIcon /></SvgIcon>
+        </Fab>
+      </Tooltip>
+    </Card>
+  );
 };
