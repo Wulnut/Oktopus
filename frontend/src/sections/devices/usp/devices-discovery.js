@@ -221,17 +221,13 @@ export const DevicesDiscovery = () => {
     const parts = currentPath.replace(/\.$/, '').split('.');
     if (parts.length <= 1) return; // Already at Device.
 
-    // Remove last segment(s): skip trailing numbers/wildcards to go up to parent object level
-    let pathsToRemove = 1;
-    if (/^\d+$/.test(parts[parts.length - 1]) || parts[parts.length - 1] === '*') {
-      pathsToRemove = 2;
-    }
-    parts.splice(parts.length - pathsToRemove, pathsToRemove);
+    // Remove last segment
+    parts.pop();
 
-    // If the resulting path ends with a concrete instance number, replace it with *
-    // so we go back to the multi-instance view (e.g., Bridge.1. -> Bridge.*.)
+    // If the new last segment is a number, remove it too
+    // (go past instance number back to the table level)
     if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) {
-      parts[parts.length - 1] = '*';
+      parts.pop();
     }
 
     const parentPath = parts.join('.') + '.';
@@ -260,9 +256,9 @@ export const DevicesDiscovery = () => {
     return result.json();
   }, [deviceID, router]);
 
-  // Convert all instance numbers AND wildcards to {i} for template matching
+  // Convert all instance numbers to {i} for template matching
   const toTemplatePath = (path) => {
-    return path.split('.').map(seg => /^\d+$/.test(seg) || seg === '*' ? '{i}' : seg).join('.');
+    return path.split('.').map(seg => /^\d+$/.test(seg) ? '{i}' : seg).join('.');
   };
 
   // Main data fetching function
@@ -275,8 +271,8 @@ export const DevicesDiscovery = () => {
     }
 
     try {
-      // Use path directly for USP queries — it already has * where needed
-      // GetSupportedDM accepts both concrete (Bridge.2.) and wildcard (Bridge.*.) paths
+      // Send path directly to GetSupportedDM — works with table paths (Bridge.)
+      // and concrete paths (Bridge.2.); wildcards are added for Get queries below
       const content = await fetchWithAuth('parameters', {
         obj_paths: [path],
         first_level_only: true,
@@ -308,11 +304,15 @@ export const DevicesDiscovery = () => {
       const supportedParams = mainObj.supported_params;
       if (supportedParams?.length) {
         // Reconstruct the concrete query path: map {i} in template back to
-        // the actual numbers/* from the input path
+        // actual numbers from the input path, defaulting to * for unspecified instances
         const templateParts = mainObj.supported_obj_path.split('.');
         const inputParts = path.split('.');
         const concreteObjPath = templateParts.map((seg, idx) => {
-          if (seg === '{i}' && idx < inputParts.length) return inputParts[idx];
+          if (seg === '{i}') {
+            // Use concrete number from input if available, otherwise wildcard
+            if (idx < inputParts.length && /^\d+$/.test(inputParts[idx])) return inputParts[idx];
+            return '*';
+          }
           return seg;
         }).join('.');
         const paramsToFetch = supportedParams.map(p => concreteObjPath + p.param_name);
@@ -623,9 +623,55 @@ export const DevicesDiscovery = () => {
   };
 
   // Render the main object header with back button
+  // Build clickable breadcrumb from currentPath, appending {i} when multi-instance
+  // "Device.Bridging.Bridge." (multi-instance) -> [Device].[Bridging].[Bridge.{i}].
+  const renderPathBreadcrumb = () => {
+    const segments = currentPath.replace(/\.$/, '').split('.');
+
+    // Check if template ends with {i} (multi-instance view showing all instances)
+    const mainObj = deviceParameters?.req_obj_results?.[0]?.supported_objs?.[0];
+    const templateParts = mainObj?.supported_obj_path?.replace(/\.$/, '').split('.') || [];
+    const isMultiInstanceView = templateParts[templateParts.length - 1] === '{i}'
+      && !/^\d+$/.test(segments[segments.length - 1]);
+
+    return (
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', py: 1, px: 2 }}>
+        {segments.map((seg, idx) => {
+          const isLast = idx === segments.length - 1;
+          const targetPath = segments.slice(0, idx + 1).join('.') + '.';
+          // Combine last segment with .{i} when viewing a multi-instance object
+          const displaySeg = (isLast && isMultiInstanceView) ? seg + '.{i}' : seg;
+
+          return (
+            <span key={idx}>
+              {isLast ? (
+                <Typography component="span" variant="body1" sx={{ fontWeight: 700 }}>
+                  {displaySeg}
+                </Typography>
+              ) : (
+                <Typography
+                  component="span"
+                  variant="body1"
+                  onClick={() => navigateTo(targetPath)}
+                  sx={{
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    '&:hover': { color: 'primary.main', textDecoration: 'underline' },
+                  }}
+                >
+                  {displaySeg}
+                </Typography>
+              )}
+              <Typography component="span" variant="body1" sx={{ fontWeight: 700 }}>.</Typography>
+            </span>
+          );
+        })}
+      </Box>
+    );
+  };
+
   const renderObjectHeader = () => {
     if (!deviceParameters?.req_obj_results?.[0]) return null;
-    const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
     const isRoot = currentPath === 'Device.';
 
     return (
@@ -641,10 +687,7 @@ export const DevicesDiscovery = () => {
           }
           sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;' }}
         >
-          <ListItemText
-            primary={<b>{currentPath}</b>}
-            sx={{ fontWeight: 'bold' }}
-          />
+          <ListItemText primary={renderPathBreadcrumb()} />
         </ListItem>
       </List>
     );
@@ -665,11 +708,11 @@ export const DevicesDiscovery = () => {
 
       // Build the concrete navigation path
       // instancePath = "Device.Bridging.Bridge.1."
-      // relPath = "Port.{i}." -> navigate to "Device.Bridging.Bridge.1.Port.*."
+      // relPath = "Port.{i}." -> navigate to "Device.Bridging.Bridge.1.Port."
       // relPath = "Stats." -> navigate to "Device.Bridging.Bridge.1.Stats."
       let navPath;
       if (isMulti) {
-        navPath = instancePath + relPath.replace('{i}', '*');
+        navPath = instancePath + relPath.replace('{i}.', '');
       } else {
         navPath = instancePath + relPath;
       }
