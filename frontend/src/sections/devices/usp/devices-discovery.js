@@ -20,6 +20,9 @@ import {
   Typography,
   Fab,
   Tooltip,
+  Popover,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import ArrowRightIcon from '@heroicons/react/24/solid/ArrowRightIcon';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -126,6 +129,50 @@ const getAuthHeaders = () => {
   return headers;
 };
 
+const VALUE_TRUNCATE_LENGTH = 40;
+
+const ValueDisplay = ({ value }) => {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const displayValue = value == null ? '-' : String(value);
+  const isTruncated = displayValue.length > VALUE_TRUNCATE_LENGTH;
+
+  return (
+    <>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        onClick={isTruncated ? (e) => setAnchorEl(e.currentTarget) : undefined}
+        sx={{
+          maxWidth: 300,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          cursor: isTruncated ? 'pointer' : 'default',
+          '&:hover': isTruncated ? { color: 'primary.main' } : {},
+        }}
+      >
+        {displayValue}
+      </Typography>
+      <Popover
+        open={Boolean(anchorEl)}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Box sx={{ p: 2, maxWidth: 500, maxHeight: 300, overflow: 'auto' }}>
+          <Typography
+            variant="body2"
+            sx={{ fontFamily: 'monospace', wordBreak: 'break-all', whiteSpace: 'pre-wrap', userSelect: 'all' }}
+          >
+            {displayValue}
+          </Typography>
+        </Box>
+      </Popover>
+    </>
+  );
+};
+
 export const DevicesDiscovery = () => {
   const router = useRouter();
 
@@ -147,11 +194,17 @@ export const DevicesDiscovery = () => {
   const [parameterValueChange, setParameterValueChange] = useState(null);
   const [errorModal, setErrorModal] = useState(false);
   const [errorModalText, setErrorModalText] = useState("");
+  const [errorModalTitle, setErrorModalTitle] = useState("Response");
   const [deviceOfflineError, setDeviceOfflineError] = useState(false);
   const [deviceOfflineErrorText, setDeviceOfflineErrorText] = useState("");
   const [openCommandDialog, setOpenCommandDialog] = useState(false);
   const [deviceCommandToExecute, setDeviceCommandToExecute] = useState(null);
   const [inputArgsValue, setInputArgsValue] = useState({});
+  const [addDialog, setAddDialog] = useState(null); // { objPath, params: [{param_name, access, value_type}] }
+  const [addParamValues, setAddParamValues] = useState({}); // { paramName: value }
+  const [addParamRequired, setAddParamRequired] = useState({}); // { paramName: bool }
+  const [addAllowPartial, setAddAllowPartial] = useState(true);
+  const [addResult, setAddResult] = useState(null); // { status, message, result, failedParams }
 
   // Navigate to a TR-181 path by updating the URL
   const navigateTo = useCallback((tr181Path) => {
@@ -337,21 +390,111 @@ export const DevicesDiscovery = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPath, deviceID]);
 
-  // Add device object instance
-  const addDeviceObj = async (objPath) => {
+  // Open add-instance dialog — fetch the object's schema first
+  const openAddDialog = async (objPath, childTemplatePath) => {
+    // Show dialog immediately in loading state
+    setAddDialog({ objPath, params: null });
+    setAddParamValues({});
+    setAddParamRequired({});
+    setAddAllowPartial(true);
+
+    try {
+      // Fetch the schema for this object type
+      const content = await fetchWithAuth('parameters', {
+        obj_paths: [childTemplatePath],
+        first_level_only: true,
+        return_commands: false,
+        return_events: false,
+        return_params: true,
+      });
+
+      const supportedParams = content?.req_obj_results?.[0]?.supported_objs?.[0]?.supported_params || [];
+      const writableParams = supportedParams.filter(
+        p => p.access === ParamAccessType.ReadWrite || p.access === ParamAccessType.WriteOnly
+      );
+      setAddDialog({ objPath, params: writableParams });
+    } catch (error) {
+      setAddDialog({ objPath, params: [] });
+    }
+  };
+
+  const closeAddDialog = () => {
+    setAddDialog(null);
+    setAddParamValues({});
+    setAddParamRequired({});
+  };
+
+  // Submit add-instance with param_settings from dialog
+  const submitAddInstance = async () => {
+    if (!addDialog) return;
+    const { objPath } = addDialog;
+
+    // Build param_settings from non-empty values
+    const paramSettings = Object.entries(addParamValues)
+      .filter(([, value]) => value !== '' && value != null)
+      .map(([param, value]) => ({
+        param,
+        value,
+        required: !!addParamRequired[param],
+      }));
+
+    closeAddDialog();
     setShowLoading(true);
     try {
+      const createObj = { obj_path: objPath };
+      if (paramSettings.length > 0) {
+        createObj.param_settings = paramSettings;
+      }
       const result = await fetchWithAuth('add', {
-        allow_partial: true,
-        create_objs: [{ obj_path: objPath }],
+        allow_partial: addAllowPartial,
+        create_objs: [createObj],
       });
       if (result) {
-        // Re-fetch current view
+        const objResult = result.created_obj_results?.[0];
+        const operStatus = objResult?.oper_status?.OperStatus;
+        const instantiatedPath = operStatus?.OperSuccess?.instantiated_path;
+
+        // Collect failed param names for highlighting
+        const failedParams = new Set();
+
+        if (operStatus?.OperSuccess) {
+          const paramErrs = operStatus.OperSuccess.param_errs || [];
+          paramErrs.forEach(pe => failedParams.add(pe.param));
+          const isPartial = paramErrs.length > 0;
+          setAddResult({
+            status: 'success',
+            message: instantiatedPath
+              ? `${isPartial ? 'Partially successfully' : 'Successfully'} created ${instantiatedPath}:`
+              : `${isPartial ? 'Partially successfully' : 'Successfully'} created:`,
+            result,
+            failedParams,
+          });
+        } else if (operStatus?.OperFailure) {
+          const paramErrs = operStatus.OperFailure.param_errs || [];
+          paramErrs.forEach(pe => failedParams.add(pe.param));
+          setAddResult({
+            status: 'failure',
+            message: `Couldn't create new instance for ${objPath}:`,
+            result,
+            failedParams,
+          });
+        } else {
+          setAddResult({
+            status: 'error',
+            message: `Couldn't create new instance for ${objPath}:`,
+            result,
+            failedParams,
+          });
+        }
         updateDeviceParameters(currentPath);
       }
     } catch (error) {
-      setErrorModalText(error.message);
-      setErrorModal(true);
+      setAddResult({
+        status: 'error',
+        message: `Couldn't create new instance for ${addDialog?.objPath || ''}:`,
+        result: { error: error.message },
+        failedParams: new Set(),
+      });
     } finally {
       setShowLoading(false);
     }
@@ -542,7 +685,7 @@ export const DevicesDiscovery = () => {
             secondaryAction={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 {canAdd && (
-                  <IconButton onClick={() => addDeviceObj(addPath)}>
+                  <IconButton onClick={() => openAddDialog(addPath, child.supported_obj_path)}>
                     <SvgIcon><PlusCircleIcon /></SvgIcon>
                   </IconButton>
                 )}
@@ -584,9 +727,7 @@ export const DevicesDiscovery = () => {
           sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
           secondaryAction={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {deviceParametersValue[p.param_name]?.value}
-              </Typography>
+              <ValueDisplay value={deviceParametersValue[p.param_name]?.value} />
               {deviceParametersValue[p.param_name]?.access > ParamAccessType.ReadOnly && (
                 <IconButton onClick={() => showEditDialog(
                   mainObj.supported_obj_path + p.param_name,
@@ -683,9 +824,7 @@ export const DevicesDiscovery = () => {
                   sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
                   secondaryAction={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {paramData.value}
-                      </Typography>
+                      <ValueDisplay value={paramData.value} />
                       {paramData.access > ParamAccessType.ReadOnly && (
                         <IconButton onClick={() => showEditDialog(instanceKey + paramName, paramData.value)}>
                           <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
@@ -786,6 +925,118 @@ export const DevicesDiscovery = () => {
         {showParameters()}
       </CardContent>
 
+      {/* Add Instance Dialog */}
+      {addDialog && (
+        <Dialog
+          open
+          onClose={closeAddDialog}
+          slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+          fullWidth
+          maxWidth="sm"
+        >
+          <DialogTitle>Add Instance: {addDialog.objPath}</DialogTitle>
+          <DialogContent>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={addAllowPartial}
+                  onChange={(e) => setAddAllowPartial(e.target.checked)}
+                />
+              }
+              label="Allow partial"
+              sx={{ mb: 2 }}
+            />
+            {addDialog.params === null ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : addDialog.params.length > 0 ? (
+              addDialog.params
+                .sort((a, b) => a.param_name.localeCompare(b.param_name))
+                .map(p => (
+                  <Box key={p.param_name} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <TextField
+                      label={p.param_name}
+                      size="small"
+                      fullWidth
+                      value={addParamValues[p.param_name] || ''}
+                      onChange={(e) => setAddParamValues(prev => ({ ...prev, [p.param_name]: e.target.value }))}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={!!addParamRequired[p.param_name]}
+                          onChange={(e) => setAddParamRequired(prev => ({ ...prev, [p.param_name]: e.target.checked }))}
+                        />
+                      }
+                      label="Required"
+                      sx={{ whiteSpace: 'nowrap' }}
+                    />
+                  </Box>
+                ))
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                No writable parameters for this object.
+              </Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeAddDialog}>Cancel</Button>
+            <Button variant="contained" onClick={submitAddInstance} disabled={addDialog.params === null}>Add</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Add Result Dialog */}
+      {addResult && (
+        <Dialog
+          open
+          onClose={() => setAddResult(null)}
+          slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+          fullWidth
+          maxWidth="md"
+          scroll="paper"
+        >
+          <DialogTitle sx={{
+            color: addResult.status === 'success' ? 'success.main' : 'error.main',
+          }}>
+            {addResult.status === 'success' ? 'Success' : addResult.status === 'failure' ? 'Failure' : 'Error'}
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body1" sx={{ mb: 1.5, fontWeight: 500 }}>
+              {addResult.message}
+            </Typography>
+            <pre style={{
+              margin: 0,
+              padding: '12px',
+              backgroundColor: '#f5f5f5',
+              borderRadius: '4px',
+              overflow: 'auto',
+              fontSize: '13px',
+              lineHeight: 1.5,
+            }}>
+              {(() => {
+                const json = JSON.stringify(addResult.result, null, 2);
+                if (addResult.failedParams.size === 0) return json;
+                // Split into lines and highlight lines containing failed param names
+                return json.split('\n').map((line, i) => {
+                  const isFailedParam = [...addResult.failedParams].some(p => line.includes(`"${p}"`));
+                  return (
+                    <span key={i} style={isFailedParam ? { color: '#d32f2f', fontWeight: 600 } : undefined}>
+                      {line}{'\n'}
+                    </span>
+                  );
+                });
+              })()}
+            </pre>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setAddResult(null)}>OK</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
       {/* Parameter Edit Dialog */}
       <Dialog open={open} slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}>
         <DialogContent>
@@ -817,9 +1068,9 @@ export const DevicesDiscovery = () => {
       >
         <DialogTitle>
           <Box display="flex" alignItems="center">
-            <Box flexGrow={1}>Response</Box>
+            <Box flexGrow={1}>{errorModalTitle}</Box>
             <Box>
-              <IconButton onClick={() => { setErrorModalText(""); setErrorModal(false); }}>
+              <IconButton onClick={() => { setErrorModalText(""); setErrorModal(false); setErrorModalTitle("Response"); }}>
                 <SvgIcon><XMarkIcon /></SvgIcon>
               </IconButton>
             </Box>
@@ -831,7 +1082,7 @@ export const DevicesDiscovery = () => {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => { setErrorModalText(""); setErrorModal(false); }}>OK</Button>
+          <Button onClick={() => { setErrorModalText(""); setErrorModal(false); setErrorModalTitle("Response"); }}>OK</Button>
         </DialogActions>
       </Dialog>
 

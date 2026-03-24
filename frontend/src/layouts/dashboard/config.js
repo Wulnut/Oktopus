@@ -27,6 +27,11 @@ export const getDeviceSubItems = (protocol, deviceID) => [
     icon: <SvgIcon fontSize="small"><InformationCircleIcon /></SvgIcon>,
   },
   {
+    title: 'Data Model',
+    path: `/devices/${protocol}/${deviceID}/discovery`,
+    icon: <SvgIcon fontSize="small"><MagnifyingGlassIcon /></SvgIcon>,
+  },
+  {
     title: 'Network',
     path: `/devices/${protocol}/${deviceID}/network`,
     icon: <SvgIcon fontSize="small"><GlobeAltIcon /></SvgIcon>,
@@ -45,11 +50,6 @@ export const getDeviceSubItems = (protocol, deviceID) => [
     title: 'Topology',
     path: `/devices/${protocol}/${deviceID}/topology`,
     icon: <SvgIcon fontSize="small"><MapIcon /></SvgIcon>,
-  },
-  {
-    title: 'Data Model',
-    path: `/devices/${protocol}/${deviceID}/discovery`,
-    icon: <SvgIcon fontSize="small"><MagnifyingGlassIcon /></SvgIcon>,
   },
   {
     title: 'LCM',
