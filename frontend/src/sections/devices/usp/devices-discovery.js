@@ -344,7 +344,9 @@ export const DevicesDiscovery = () => {
             if (parts[parts.length - 2] === '*') {
               // Multi-instance: group by resolved path (instance)
               x.resolved_path_results.forEach(y => {
+                if (!y.result_params) return;
                 const key = Object.keys(y.result_params)[0];
+                if (!key) return;
                 if (!values[y.resolved_path]) values[y.resolved_path] = [];
                 const val = y.result_params[key] === "" ? '""' : y.result_params[key];
                 values[y.resolved_path].push({
@@ -353,8 +355,10 @@ export const DevicesDiscovery = () => {
               });
             } else {
               // Single instance: flat key-value
-              Object.keys(x.resolved_path_results[0].result_params).forEach(key => {
-                const val = x.resolved_path_results[0].result_params[key];
+              const rpr = x.resolved_path_results[0];
+              if (!rpr?.result_params) return;
+              Object.keys(rpr.result_params).forEach(key => {
+                const val = rpr.result_params[key];
                 values[key] = {
                   ...paramsInfo[key],
                   value: val === "" ? '""' : val,
@@ -491,7 +495,7 @@ export const DevicesDiscovery = () => {
     } catch (error) {
       setAddResult({
         status: 'error',
-        message: `Couldn't create new instance for ${addDialog?.objPath || ''}:`,
+        message: `Couldn't create new instance for ${objPath}:`,
         result: { error: error.message },
         failedParams: new Set(),
       });
@@ -523,7 +527,7 @@ export const DevicesDiscovery = () => {
   const applyParameterChange = async () => {
     const params = parameter.split('.');
     const parameterToChange = params.pop();
-    const objToChange = params.join('.');
+    const objToChange = params.join('.') + '.';
 
     setOpen(false);
     setShowLoading(true);
@@ -555,7 +559,7 @@ export const DevicesDiscovery = () => {
         // Multi-instance param
         setDeviceParametersValue(prev => ({
           ...prev,
-          [objToChange + "."]: prev[objToChange + "."]?.map(el => {
+          [objToChange]: prev[objToChange]?.map(el => {
             if (el[parameterToChange] !== undefined) {
               return { ...el, [parameterToChange]: { ...el[parameterToChange], value: parameterValueChange } };
             }
@@ -617,8 +621,10 @@ export const DevicesDiscovery = () => {
 
   // Show parameter edit dialog
   const showEditDialog = (param, paramValue) => {
+    const val = paramValue === '""' ? "" : paramValue;
     setParameter(param);
-    setParameterValue(paramValue === '""' ? "" : paramValue);
+    setParameterValue(val);
+    setParameterValueChange(val);
     setOpen(true);
   };
 
@@ -994,7 +1000,7 @@ export const DevicesDiscovery = () => {
                 <CircularProgress size={24} />
               </Box>
             ) : addDialog.params.length > 0 ? (
-              addDialog.params
+              [...addDialog.params]
                 .sort((a, b) => a.param_name.localeCompare(b.param_name))
                 .map(p => (
                   <Box key={p.param_name} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -1090,7 +1096,7 @@ export const DevicesDiscovery = () => {
             id="parameterValue"
             fullWidth
             variant="standard"
-            defaultValue={parameterValue}
+            value={parameterValueChange ?? ''}
             autoComplete="off"
             onChange={(e) => setParameterValueChange(e.target.value)}
           />
