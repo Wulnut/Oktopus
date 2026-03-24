@@ -1,17 +1,11 @@
 import ChartBarIcon from '@heroicons/react/24/solid/ChartBarIcon';
 import CogIcon from '@heroicons/react/24/solid/CogIcon';
-import ChatBubbleLeftRightIcon from '@heroicons/react/24/solid/ChatBubbleLeftRightIcon'
 import RectangleGroupIcon from '@heroicons/react/24/solid/RectangleGroupIcon'
 import ArrowDownOnSquareStackIcon from '@heroicons/react/24/solid/ArrowDownOnSquareStackIcon'
-import UserGroupIcon from '@heroicons/react/24/solid/UserGroupIcon'
 import KeyIcon from '@heroicons/react/24/solid/KeyIcon'
 import CpuChip from '@heroicons/react/24/solid/CpuChipIcon';
 import { SvgIcon } from '@mui/material';
-import FolderIcon from '@heroicons/react/24/solid/FolderIcon';
-import ShieldCheckIcon from '@heroicons/react/24/solid/ShieldCheckIcon';
-import EnvelopeIcon from '@heroicons/react/24/solid/EnvelopeIcon';
 import UserIcon from '@heroicons/react/24/solid/UserIcon';
-import BuildingOffice2Icon from '@heroicons/react/24/solid/BuildingOffice2Icon';
 import BookOpenIcon from '@heroicons/react/24/solid/BookOpenIcon';
 import CommandLineIcon from '@heroicons/react/24/solid/CommandLineIcon';
 import CubeIcon from '@heroicons/react/24/solid/CubeIcon';
@@ -178,49 +172,11 @@ export const items = [
     )
   },
   {
-    title: 'Access Control',
-    disabled: true,
+    title: 'Users',
+    path: '/users',
     icon: (
       <SvgIcon fontSize="small">
-        <UserGroupIcon color='gray'/>
-      </SvgIcon>
-    ),
-    children: [
-      {
-        title: 'Tenants',
-        disabled: true,
-        icon: (
-          <SvgIcon fontSize="small">
-            <BuildingOffice2Icon color='gray'/>
-          </SvgIcon>
-        )
-      },
-      {
-        title: 'Roles',
-        disabled: true,
-        icon: (
-          <SvgIcon fontSize="small">
-            <ShieldCheckIcon color='gray'/>
-          </SvgIcon>
-        )
-      },
-      {
-        title: 'Users',
-        path: '/access-control/users',
-        icon: (
-          <SvgIcon fontSize="small">
-           <UserIcon/>
-          </SvgIcon>
-        )
-      },
-     ]
-   },
-  {
-    title: 'File  Server',
-    disabled: true,
-    icon: (
-      <SvgIcon fontSize="small">
-        <FolderIcon color='gray'/>
+        <UserIcon />
       </SvgIcon>
     )
   },
