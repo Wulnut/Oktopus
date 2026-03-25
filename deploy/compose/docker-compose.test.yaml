@@ -1,0 +1,93 @@
+services:
+  mongo_test:
+    image: mongo:7.0
+    tmpfs:
+      - /data/db
+    networks:
+      - test_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  nats_test:
+    image: nats:2.10
+    command: ["--js"]
+    networks:
+      - test_network
+
+  test-controller-unit:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../backend/services/controller:/app
+    command: go test -v -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/
+    networks:
+      - test_network
+    profiles: [unit]
+
+  test-bridge:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../backend/services/controller:/app
+    environment:
+      - NATS_TEST_URL=nats://nats_test:4222
+    command: sh -c "sleep 3 && go test -v -count=1 -timeout=120s -run 'ConcurrentSameDevice|DoesNotTimeout|SingleRequest_Success' ./internal/bridge/"
+    depends_on:
+      - nats_test
+    networks:
+      - test_network
+    profiles: [integration]
+
+  test-db:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../backend/services/controller:/app
+    environment:
+      - MONGO_TEST_URI=mongodb://mongo_test:27017
+    command: sh -c "sleep 3 && go test -v -count=1 -tags=integration -timeout=60s ./internal/db/"
+    depends_on:
+      - mongo_test
+    networks:
+      - test_network
+    profiles: [integration]
+
+  test-adapter:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../backend/services/mtp/adapter:/app
+    command: go test -v -count=1 ./internal/events/usp_handler/
+    networks:
+      - test_network
+    profiles: [unit]
+
+  test-acs:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../backend/services/acs:/app
+    command: go test -race -v -count=1 ./internal/server/handler/
+    networks:
+      - test_network
+    profiles: [unit]
+
+  test-infra:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../deploy/tests:/app
+      - ../../:/project:ro
+    environment:
+      - PROJECT_ROOT=/project
+    command: go test -v -count=1 ./...
+    networks:
+      - test_network
+    profiles: [unit]
+
+networks:
+  test_network:
+    driver: bridge

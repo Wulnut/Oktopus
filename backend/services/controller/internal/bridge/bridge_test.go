@@ -1,0 +1,180 @@
+package bridge
+
+import (
+	"net/http/httptest"
+	"os"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/nats-io/nats.go"
+)
+
+// TestNatsUspInteraction_ConcurrentSameDevice verifies that two concurrent
+// requests to the same device serial number do not cross-contaminate responses.
+// Current code uses a deterministic subject (device.usp.v1.<sn>.api), so both
+// goroutines subscribe to the same subject. This test will FAIL.
+func TestNatsUspInteraction_ConcurrentSameDevice(t *testing.T) {
+	// This test requires a live NATS connection.
+	// Use NATS_URL env var or skip.
+	natsURL := natsTestURL()
+	if natsURL == "" {
+		t.Skip("NATS_URL not set -- skipping bridge integration test")
+	}
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to NATS: %v", err)
+	}
+	defer nc.Close()
+
+	sn := "TEST-DEVICE-001"
+	subSubj := "device.usp.v1." + sn + ".api"
+	pubSubj := "test-adapter.usp.v1." + sn + ".api"
+
+	// Mock responder: for each message received on pubSubj, reply on subSubj
+	// with the message data prefixed by a unique marker.
+	responderSub, err := nc.Subscribe(pubSubj, func(msg *nats.Msg) {
+		// Echo back with a marker so we can tell which response belongs to which request
+		nc.Publish(subSubj, msg.Data)
+	})
+	if err != nil {
+		t.Fatalf("Failed to subscribe responder: %v", err)
+	}
+	defer responderSub.Unsubscribe()
+
+	var wg sync.WaitGroup
+	results := make([][]byte, 2)
+	errors := make([]error, 2)
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			payload := []byte("request-" + string(rune('A'+idx)))
+			results[idx], errors[idx] = NatsUspInteraction(subSubj, pubSubj, payload, w, nc)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Both should succeed
+	for i := 0; i < 2; i++ {
+		if errors[i] != nil {
+			t.Errorf("Request %d failed: %v", i, errors[i])
+		}
+	}
+
+	// Key assertion: each request should get its own response, not the other's.
+	// With the current bug (shared subject), one request may get the other's response.
+	if len(results[0]) > 0 && len(results[1]) > 0 {
+		if string(results[0]) == string(results[1]) {
+			t.Error("Both concurrent requests got the same response -- subject collision detected")
+		}
+	}
+}
+
+// TestNatsCustomReq_DoesNotTimeout verifies that NatsCustomReq actually
+// receives a response. Current code subscribes and waits BEFORE publishing,
+// so it always times out.
+func TestNatsCustomReq_DoesNotTimeout(t *testing.T) {
+	natsURL := natsTestURL()
+	if natsURL == "" {
+		t.Skip("NATS_URL not set -- skipping bridge integration test")
+	}
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to NATS: %v", err)
+	}
+	defer nc.Close()
+
+	subSubj := "test.custom.sub"
+	pubSubj := "test.custom.pub"
+
+	// Responder: when we get a message on pubSubj, reply on subSubj
+	responderSub, err := nc.Subscribe(pubSubj, func(msg *nats.Msg) {
+		nc.Publish(subSubj, []byte(`{"Code":200,"Msg":"ok"}`))
+	})
+	if err != nil {
+		t.Fatalf("Failed to subscribe responder: %v", err)
+	}
+	defer responderSub.Unsubscribe()
+
+	w := httptest.NewRecorder()
+
+	start := time.Now()
+	_, _ = NatsCustomReq[*string](subSubj, pubSubj, []byte("test"), w, nc)
+	elapsed := time.Since(start)
+
+	// If it took close to NATS_REQUEST_TIMEOUT (10s), it timed out instead of
+	// receiving the response.
+	if elapsed > 5*time.Second {
+		t.Errorf("NatsCustomReq took %v -- likely timed out instead of receiving response (bug: subscribe before publish)", elapsed)
+	}
+}
+
+// TestNatsUspInteraction_SingleRequest_Success verifies the happy path.
+func TestNatsUspInteraction_SingleRequest_Success(t *testing.T) {
+	natsURL := natsTestURL()
+	if natsURL == "" {
+		t.Skip("NATS_URL not set -- skipping bridge integration test")
+	}
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to NATS: %v", err)
+	}
+	defer nc.Close()
+
+	subSubj := "test.usp.single.sub"
+	pubSubj := "test.usp.single.pub"
+	expected := []byte("hello-response")
+
+	responderSub, err := nc.Subscribe(pubSubj, func(msg *nats.Msg) {
+		nc.Publish(subSubj, expected)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer responderSub.Unsubscribe()
+
+	w := httptest.NewRecorder()
+	result, err := NatsUspInteraction(subSubj, pubSubj, []byte("request"), w, nc)
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+	if string(result) != string(expected) {
+		t.Errorf("Expected %q, got %q", expected, result)
+	}
+}
+
+// TestNatsUspInteraction_Timeout verifies timeout behavior.
+func TestNatsUspInteraction_Timeout(t *testing.T) {
+	natsURL := natsTestURL()
+	if natsURL == "" {
+		t.Skip("NATS_URL not set -- skipping bridge integration test")
+	}
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to NATS: %v", err)
+	}
+	defer nc.Close()
+
+	// No responder -- should timeout
+	w := httptest.NewRecorder()
+	_, err = NatsUspInteraction("test.timeout.sub", "test.timeout.pub", []byte("req"), w, nc)
+	if err == nil {
+		t.Error("Expected timeout error, got nil")
+	}
+	if err != errNatsRequestTimeout {
+		t.Errorf("Expected errNatsRequestTimeout, got %v", err)
+	}
+}
+
+func natsTestURL() string {
+	url := os.Getenv("NATS_TEST_URL")
+	return url
+}
