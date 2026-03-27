@@ -4,7 +4,7 @@ import Head from 'next/head';
 import {
   Box,
   Container,
-  Unstable_Grid2 as Grid,
+  Grid2 as Grid,
   Card,
   OutlinedInput,
   InputAdornment,

@@ -8,7 +8,7 @@ import {
   CardHeader,
   Divider,
   TextField,
-  Unstable_Grid2 as Grid
+  Grid2 as Grid
 } from '@mui/material';
 
 const states = [

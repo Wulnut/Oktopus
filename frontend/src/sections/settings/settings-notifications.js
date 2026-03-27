@@ -10,7 +10,7 @@ import {
   FormControlLabel,
   Stack,
   Typography,
-  Unstable_Grid2 as Grid
+  Grid2 as Grid
 } from '@mui/material';
 
 export const SettingsNotifications = () => {

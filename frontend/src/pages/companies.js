@@ -10,7 +10,7 @@ import {
   Stack,
   SvgIcon,
   Typography,
-  Unstable_Grid2 as Grid
+  Grid2 as Grid
 } from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { CompanyCard } from 'src/sections/companies/company-card';

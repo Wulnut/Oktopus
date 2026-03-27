@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import { Box, Stack, Typography, Container, Unstable_Grid2 as Grid,
+import { Box, Stack, Typography, Container, Grid2 as Grid,
 Tab, 
 Tabs,
 SvgIcon,

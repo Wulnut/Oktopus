@@ -5,7 +5,7 @@ import {
   Box, 
   Container,
   CircularProgress, 
-  Unstable_Grid2 as Grid } from '@mui/material';
+  Grid2 as Grid } from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { OverviewTasksProgress } from 'src/sections/overview/overview-tasks-progress';
 import { OverviewTotalCustomers } from 'src/sections/overview/overview-total-customers';

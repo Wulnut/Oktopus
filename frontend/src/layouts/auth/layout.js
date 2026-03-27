@@ -1,7 +1,7 @@
 import PropTypes from 'prop-types';
 import NextLink from 'next/link';
 import Link from 'next/link'
-import { Box, Typography, Unstable_Grid2 as Grid, Stack } from '@mui/material';
+import { Box, Typography, Grid2 as Grid, Stack } from '@mui/material';
 import { Logo } from 'src/components/logo';
 import { useTheme, useMediaQuery } from '@mui/material'
 
