@@ -15,7 +15,7 @@
 # 2) Create the OB-USP-A image, then build the application
 # > docker build -f Dockerfile -t obuspa:latest --target runner .
 #
-FROM ubuntu:lunar AS build-env
+FROM ubuntu:24.04 AS build-env
 
 # Install dependencies
 RUN apt-get update && apt-get -y install \

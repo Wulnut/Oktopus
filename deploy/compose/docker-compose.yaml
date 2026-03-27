@@ -1,7 +1,7 @@
 services:
   #/* ----------------------------- Message Broker ----------------------------- */
   msg_broker:
-    image: "nats:latest"
+    image: "nats:2.10"
     container_name: nats
     ports:
       - 4222:4222
@@ -38,7 +38,7 @@ services:
 
   #/* ---------------------------- Databases / Cache --------------------------- */
   mongo_usp:
-    image: mongo
+    image: mongo:8
     container_name: mongo_usp
     networks:
       usp_network:
@@ -182,7 +182,7 @@ services:
   #/* -------------------------------------------------------------------------- */
 
   portainer:
-    image: portainer/portainer-ce:latest
+    image: portainer/portainer-ce:2.25.1
     container_name: portainer
     ports:
       - 9443:9443
@@ -209,7 +209,7 @@ services:
     profiles: [cwmp]
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.27-alpine
     container_name: nginx
     ports:
       - 8090:80

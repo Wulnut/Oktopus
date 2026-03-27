@@ -1,6 +1,6 @@
 module github.com/go-stomp/stomp/v3
 
-go 1.15
+go 1.23.0
 
 require (
 	github.com/golang/mock v1.6.0
