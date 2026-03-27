@@ -61,6 +61,8 @@ docker compose -f docker-compose.test.yaml down --remove-orphans
 
 HTTP Handlers, Campaign Engine, and Script Execution tests require both MongoDB and NATS (run via `test-handlers` compose service). Results marked `--` pending first integration run.
 
+**Remaining 2 failing tests** (bridge NATS correlation) are deferred -- fixing requires coordinated changes to both controller bridge layer and MTP adapter async message forwarding. See `FULL_PROJECT_REVIEW.md` Section 2.1.
+
 ---
 
 ## Detailed Results
