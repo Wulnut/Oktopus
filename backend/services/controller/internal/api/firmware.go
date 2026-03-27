@@ -166,7 +166,9 @@ func (a *Api) deleteFirmware(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Disable campaigns that referenced this firmware
-	a.db.DisableCampaignsByFirmware(r.Context(), id)
+	if err := a.db.DisableCampaignsByFirmware(r.Context(), id); err != nil {
+		log.Printf("Warning: failed to disable campaigns for firmware %s: %v", id.Hex(), err)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

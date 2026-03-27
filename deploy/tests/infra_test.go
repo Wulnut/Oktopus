@@ -236,11 +236,11 @@ func TestNginx_AllEndpointsHaveRateLimiting(t *testing.T) {
 // --- Dockerfiles: USER directive ---
 
 func TestDockerfiles_HaveUserDirective(t *testing.T) {
+	// container-upload excluded: requires root for Docker socket access
 	dockerfiles := []string{
 		filepath.Join(projectRoot, "backend", "services", "controller", "build", "Dockerfile"),
 		filepath.Join(projectRoot, "frontend", "build", "Dockerfile"),
 		filepath.Join(projectRoot, "backend", "services", "utils", "firmware-upload", "build", "Dockerfile"),
-		filepath.Join(composeDir, "container-upload-service", "Dockerfile"),
 	}
 
 	for _, df := range dockerfiles {

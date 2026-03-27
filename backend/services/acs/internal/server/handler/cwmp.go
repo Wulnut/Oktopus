@@ -68,9 +68,9 @@ func (h *Handler) CwmpHandler(w http.ResponseWriter, r *http.Request) {
 		sn := Inform.DeviceId.SerialNumber
 
 		h.mu.Lock()
-		if _, exists := h.Cpes[sn]; !exists {
+		if existing, ok := h.Cpes[sn]; !ok {
 			log.Println("New device: " + sn)
-			h.Cpes[sn] = CPE{
+			cpe = CPE{
 				SerialNumber:         sn,
 				LastConnection:       time.Now(),
 				SoftwareVersion:      Inform.GetSoftwareVersion(),
@@ -81,11 +81,15 @@ func (h *Handler) CwmpHandler(w http.ResponseWriter, r *http.Request) {
 				Queue:                lane.NewQueue(),
 				DataModel:            Inform.GetDataModelType(),
 			}
+			h.Cpes[sn] = cpe
+			h.mu.Unlock()
 			h.pub(NATS_CWMP_SUBJECT_PREFIX+sn+".info", tmp)
+		} else {
+			cpe = existing
+			h.mu.Unlock()
 		}
-		h.mu.Unlock()
 
-		cpe.ConnectionRequestURL = Inform.GetConnectionRequest() // Update connection request URL, in case the CPE changed IP
+		cpe.ConnectionRequestURL = Inform.GetConnectionRequest()
 
 		log.Printf("Received an Inform from device %s withEventCodes %s", addr, Inform.GetEvents())
 

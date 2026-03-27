@@ -35,19 +35,20 @@ export const BackendProvider = (props) => {
         }
 
         const response = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${path}`, requestOptions);
-        if (response.status != 200) {
-            if (response.status == 401) {
-                router.push("/auth/login");
-            }
-            if (response.status == 204 || response.status == 201) {
-                return {status : response.status, result: null};
-            }
+        if (response.status === 401) {
+            router.push("/auth/login");
+            return {status: response.status, result: null};
+        }
+        if (!response.ok) {
             const data = await response.text();
             setAlert({
                 severity: "error",
                 message: `${data}`,
             });
             return {status : response.status, result: null};
+        }
+        if (response.status === 204) {
+            return {status: response.status, result: null};
         }
         if (encoding) {
             if (encoding == "text") {

@@ -21,6 +21,8 @@ import (
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var testApi Api
@@ -64,6 +66,15 @@ func TestMain(m *testing.M) {
 	setupTestRoutes(testRouter)
 
 	code := m.Run()
+
+	// Cleanup: drop test databases
+	cleanupClient, cleanupErr := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	if cleanupErr == nil {
+		cleanupClient.Database("account-mngr").Drop(ctx)
+		cleanupClient.Database("general").Drop(ctx)
+		cleanupClient.Database("usp").Drop(ctx)
+		cleanupClient.Disconnect(ctx)
+	}
 
 	nc.Close()
 	os.Exit(code)

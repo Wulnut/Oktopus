@@ -38,6 +38,7 @@ beforeEach(() => {
 test('httpRequest sends GET with auth header and returns parsed JSON', async () => {
   global.fetch.mockResolvedValue({
     status: 200,
+    ok: true,
     json: () => Promise.resolve({ data: 'test-data' }),
   });
 
