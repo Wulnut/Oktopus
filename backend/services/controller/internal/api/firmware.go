@@ -165,6 +165,8 @@ func (a *Api) deleteFirmware(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Disable campaigns that referenced this firmware
+	a.db.DisableCampaignsByFirmware(r.Context(), id)
 	w.WriteHeader(http.StatusNoContent)
 }
 

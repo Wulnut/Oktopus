@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"oktopUSP/backend/services/acs/internal/config"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -58,6 +59,7 @@ type Handler struct {
 	pub       func(string, []byte) error
 	sub       func(string, func(*nats.Msg)) error
 	Cpes      map[string]CPE
+	mu        sync.RWMutex
 	acsConfig config.Acs
 }
 

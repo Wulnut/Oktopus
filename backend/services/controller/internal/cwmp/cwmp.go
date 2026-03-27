@@ -158,6 +158,9 @@ func (i *CWMPInform) GetHardwareVersion() string {
 }
 
 func (i *CWMPInform) GetDataModelType() string {
+	if len(i.ParameterList) == 0 {
+		return ""
+	}
 	if strings.HasPrefix(i.ParameterList[0].Name, "InternetGatewayDevice") {
 		return "TR098"
 	} else if strings.HasPrefix(i.ParameterList[0].Name, "Device") {
@@ -165,6 +168,13 @@ func (i *CWMPInform) GetDataModelType() string {
 	}
 
 	return ""
+}
+
+// esc escapes a string for safe XML embedding.
+func esc(s string) string {
+	var b strings.Builder
+	xml.Escape(&b, []byte(s))
+	return b.String()
 }
 
 type DeviceID struct {
@@ -177,7 +187,7 @@ type DeviceID struct {
 func InformResponse(mustUnderstand string) string {
 	mustUnderstandHeader := ""
 	if mustUnderstand != "" {
-		mustUnderstandHeader = `<cwmp:ID soap:mustUnderstand="1">` + mustUnderstand + `</cwmp:ID>`
+		mustUnderstandHeader = `<cwmp:ID soap:mustUnderstand="1">` + esc(mustUnderstand) + `</cwmp:ID>`
 	}
 
 	return `<?xml version="1.0" encoding="UTF-8"?>
@@ -198,7 +208,7 @@ func GetParameterValues(leaf string) string {
   <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <cwmp:GetParameterValues>
       <ParameterNames>
-      	<string>` + leaf + `</string>
+      	<string>` + esc(leaf) + `</string>
       </ParameterNames>
     </cwmp:GetParameterValues>
   </soap:Body>
@@ -214,7 +224,7 @@ func GetParameterMultiValues(leaves []string) string {
       <ParameterNames>`
 
 	for idx := range leaves {
-		msg += `<string>` + leaves[idx] + `</string>`
+		msg += `<string>` + esc(leaves[idx]) + `</string>`
 
 	}
 	msg += `</ParameterNames>
@@ -236,8 +246,8 @@ func SetParameterValues(leaf string, value string) string {
     <cwmp:SetParameterValues>
       <ParameterList soapenc:arrayType="cwmp:ParameterValueStruct[1]">
 		  <ParameterValueStruct>
-			  <Name>` + leaf + `</Name>
-			  <Value>` + value + `</Value>
+			  <Name>` + esc(leaf) + `</Name>
+			  <Value>` + esc(value) + `</Value>
 		  </ParameterValueStruct>
       </ParameterList>
       <ParameterKey>LC1309` + randToken() + `</ParameterKey>
@@ -262,8 +272,8 @@ func SetParameterMultiValues(data map[string]string) string {
 
 	for key, value := range data {
 		msg += `<ParameterValueStruct>
-			  <Name>` + key + `</Name>
-			  <Value>` + value + `</Value>
+			  <Name>` + esc(key) + `</Name>
+			  <Value>` + esc(value) + `</Value>
 		  </ParameterValueStruct>`
 	}
 
@@ -282,7 +292,7 @@ func GetParameterNames(leaf string, nextlevel int) string {
   <soap:Header/>
   <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <cwmp:GetParameterNames>
-      <ParameterPath>` + leaf + `</ParameterPath>
+      <ParameterPath>` + esc(leaf) + `</ParameterPath>
       <NextLevel>` + strconv.Itoa(nextlevel) + `</NextLevel>
     </cwmp:GetParameterNames>
   </soap:Body>
@@ -309,11 +319,11 @@ func Download(filetype, url, username, password, filesize string) string {
   <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <cwmp:Download>
       <CommandKey>MSDWK</CommandKey>
-      <FileType>` + filetype + `</FileType>
-      <URL>` + url + `</URL>
-      <Username>` + username + `</Username>
-      <Password>` + password + `</Password>
-      <FileSize>` + filesize + `</FileSize>
+      <FileType>` + esc(filetype) + `</FileType>
+      <URL>` + esc(url) + `</URL>
+      <Username>` + esc(username) + `</Username>
+      <Password>` + esc(password) + `</Password>
+      <FileSize>` + esc(filesize) + `</FileSize>
       <TargetFileName></TargetFileName>
       <DelaySeconds>0</DelaySeconds>
       <SuccessURL></SuccessURL>
@@ -330,7 +340,7 @@ func CancelTransfer() string {
   <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <cwmp:CancelTransfer>
       <CommandKey></CommandKey>
-    <cwmp:CancelTransfer/>
+    </cwmp:CancelTransfer>
   </soap:Body>
 </soap:Envelope>`
 }
@@ -345,11 +355,11 @@ type TimeWindowStruct struct {
 
 func (window *TimeWindowStruct) String() string {
 	return `<TimeWindowStruct>
-<WindowStart>` + window.WindowStart + `</WindowStart>
-<WindowEnd>` + window.WindowEnd + `</WindowEnd>
-<WindowMode>` + window.WindowMode + `</WindowMode>
-<UserMessage>` + window.UserMessage + `</UserMessage>
-<MaxRetries>` + window.MaxRetries + `</MaxRetries>
+<WindowStart>` + esc(window.WindowStart) + `</WindowStart>
+<WindowEnd>` + esc(window.WindowEnd) + `</WindowEnd>
+<WindowMode>` + esc(window.WindowMode) + `</WindowMode>
+<UserMessage>` + esc(window.UserMessage) + `</UserMessage>
+<MaxRetries>` + esc(window.MaxRetries) + `</MaxRetries>
 </TimeWindowStruct>`
 }
 
@@ -360,11 +370,11 @@ func ScheduleDownload(filetype, url, username, password, filesize string, window
   <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <cwmp:ScheduleDownload>
       <CommandKey>MSDWK</CommandKey>
-      <FileType>` + filetype + `</FileType>
-      <URL>` + url + `</URL>
-      <Username>` + username + `</Username>
-      <Password>` + password + `</Password>
-      <FileSize>` + filesize + `</FileSize>
+      <FileType>` + esc(filetype) + `</FileType>
+      <URL>` + esc(url) + `</URL>
+      <Username>` + esc(username) + `</Username>
+      <Password>` + esc(password) + `</Password>
+      <FileSize>` + esc(filesize) + `</FileSize>
       <TargetFileName></TargetFileName>
       <TimeWindowList>`
 
@@ -390,11 +400,11 @@ type InstallOpStruct struct {
 
 func (op *InstallOpStruct) String() string {
 	return `<InstallOpStruct>
-	<URL>` + op.Url + `</URL>
-	<UUID>` + op.Uuid + `</UUID>
-	<Username>` + op.Username + `</Username>
-	<Password>` + op.Password + `</Password>
-	<ExecutionEnvRef>` + op.ExecutionEnvironment + `</ExecutionEnvRef>
+	<URL>` + esc(op.Url) + `</URL>
+	<UUID>` + esc(op.Uuid) + `</UUID>
+	<Username>` + esc(op.Username) + `</Username>
+	<Password>` + esc(op.Password) + `</Password>
+	<ExecutionEnvRef>` + esc(op.ExecutionEnvironment) + `</ExecutionEnvRef>
 </InstallOpStruct>`
 }
 
@@ -408,11 +418,11 @@ type UpdateOpStruct struct {
 
 func (op *UpdateOpStruct) String() string {
 	return `<UpdateOpStruct>
-<UUID>` + op.Uuid + `</UUID>
-<Version>` + op.Version + `</Version>
-<URL>` + op.Url + `</URL>
-<Username>` + op.Username + `</Username>
-<Password>` + op.Password + `</Password>
+<UUID>` + esc(op.Uuid) + `</UUID>
+<Version>` + esc(op.Version) + `</Version>
+<URL>` + esc(op.Url) + `</URL>
+<Username>` + esc(op.Username) + `</Username>
+<Password>` + esc(op.Password) + `</Password>
 </UpdateOpStruct>`
 }
 
@@ -424,9 +434,9 @@ type UninstallOpStruct struct {
 
 func (op *UninstallOpStruct) String() string {
 	return `<UninstallOpStruct>
-<UUID>` + op.Uuid + `</UUID>
-<Version>` + op.Version + `</Version>
-<ExecutionEnvRef>` + op.ExecutionEnvironment + `</ExecutionEnvRef>
+<UUID>` + esc(op.Uuid) + `</UUID>
+<Version>` + esc(op.Version) + `</Version>
+<ExecutionEnvRef>` + esc(op.ExecutionEnvironment) + `</ExecutionEnvRef>
 </UninstallOpStruct>`
 }
 
@@ -435,7 +445,7 @@ func ChangeDuState(ops []fmt.Stringer) string {
 <soap:Envelope xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:cwmp="urn:dslforum-org:cwmp-1-0" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:schemaLocation="urn:dslforum-org:cwmp-1-0 ..\schemas\wt121.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <soap:Header/>
 <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-<cmwp:ChangeDUState>
+<cwmp:ChangeDUState>
 <Operations>`
 
 	for _, op := range ops {
@@ -444,7 +454,7 @@ func ChangeDuState(ops []fmt.Stringer) string {
 
 	ret += `</Operations>
 <CommandKey></CommandKey>
-</cmwp:ChangeDUState>
+</cwmp:ChangeDUState>
 </soap:Body>
 </soap:Envelope>`
 

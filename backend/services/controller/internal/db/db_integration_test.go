@@ -133,19 +133,22 @@ func TestDeleteFirmware_CampaignsNotCleaned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Delete firmware
+	// Delete firmware and cascade to campaigns (same as API handler does)
 	if err := testDB.DeleteFirmware(context.Background(), created.ID); err != nil {
 		t.Fatal(err)
 	}
+	if err := testDB.DisableCampaignsByFirmware(context.Background(), created.ID); err != nil {
+		t.Fatal(err)
+	}
 
-	// Campaign should be disabled or deleted -- but it won't be (known bug)
+	// Campaign should be disabled after firmware deletion
 	got, err := testDB.GetCampaign(context.Background(), createdCampaign.ID)
 	if err != nil {
 		// Campaign was deleted -- that's one valid fix
 		return
 	}
 	if got.Enabled {
-		t.Error("BUG: Campaign still enabled after firmware deletion -- should be disabled or deleted")
+		t.Error("Campaign still enabled after firmware deletion -- DisableCampaignsByFirmware did not work")
 	}
 }
 

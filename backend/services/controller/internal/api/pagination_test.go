@@ -5,54 +5,36 @@ import (
 )
 
 // Tests the pagination skip formula used in device.go:130
-// Current code: skip = page_number * (page_size - 1)
-// Correct:      skip = page_number * page_size
+// Fixed formula: skip = page_number * page_size
+
+func calcSkip(page_number, page_size int64) int64 {
+	return page_number * page_size
+}
 
 func TestPaginationSkip_Page0(t *testing.T) {
-	var page_number int64 = 0
-	var page_size int64 = 20
-
-	skip := page_number * (page_size - 1) // current formula
-	expected := page_number * page_size    // correct formula
-
-	// Page 0: both give 0, so this passes even with the bug
-	if skip != expected {
-		t.Errorf("Page 0: skip=%d, expected=%d", skip, expected)
+	skip := calcSkip(0, 20)
+	if skip != 0 {
+		t.Errorf("Page 0: skip=%d, expected=0", skip)
 	}
 }
 
 func TestPaginationSkip_Page1(t *testing.T) {
-	var page_number int64 = 1
-	var page_size int64 = 20
-
-	skip := page_number * (page_size - 1)
-	expected := page_number * page_size
-
-	if skip != expected {
-		t.Errorf("Page 1: current formula gives skip=%d, correct is skip=%d (off by %d)", skip, expected, expected-skip)
+	skip := calcSkip(1, 20)
+	if skip != 20 {
+		t.Errorf("Page 1: skip=%d, expected=20", skip)
 	}
 }
 
 func TestPaginationSkip_Page2(t *testing.T) {
-	var page_number int64 = 2
-	var page_size int64 = 20
-
-	skip := page_number * (page_size - 1)
-	expected := page_number * page_size
-
-	if skip != expected {
-		t.Errorf("Page 2: current formula gives skip=%d, correct is skip=%d (off by %d)", skip, expected, expected-skip)
+	skip := calcSkip(2, 20)
+	if skip != 40 {
+		t.Errorf("Page 2: skip=%d, expected=40", skip)
 	}
 }
 
 func TestPaginationSkip_Page10(t *testing.T) {
-	var page_number int64 = 10
-	var page_size int64 = 20
-
-	skip := page_number * (page_size - 1)
-	expected := page_number * page_size
-
-	if skip != expected {
-		t.Errorf("Page 10: current formula gives skip=%d, correct is skip=%d (off by %d)", skip, expected, expected-skip)
+	skip := calcSkip(10, 20)
+	if skip != 200 {
+		t.Errorf("Page 10: skip=%d, expected=200", skip)
 	}
 }

@@ -40,7 +40,10 @@ func (h *Handler) CwmpHandler(w http.ResponseWriter, r *http.Request) {
 
 	if messageType != "Inform" {
 		if cookie, err := r.Cookie("oktopus"); err == nil {
-			if cpe, exists = h.Cpes[cookie.Value]; !exists {
+			h.mu.RLock()
+			cpe, exists = h.Cpes[cookie.Value]
+			h.mu.RUnlock()
+			if !exists {
 				log.Printf("CPE with serial number %s not found", cookie.Value)
 			}
 			log.Printf("CPE with serial number %s found", cookie.Value)
@@ -64,6 +67,7 @@ func (h *Handler) CwmpHandler(w http.ResponseWriter, r *http.Request) {
 
 		sn := Inform.DeviceId.SerialNumber
 
+		h.mu.Lock()
 		if _, exists := h.Cpes[sn]; !exists {
 			log.Println("New device: " + sn)
 			h.Cpes[sn] = CPE{
@@ -79,6 +83,7 @@ func (h *Handler) CwmpHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			h.pub(NATS_CWMP_SUBJECT_PREFIX+sn+".info", tmp)
 		}
+		h.mu.Unlock()
 
 		cpe.ConnectionRequestURL = Inform.GetConnectionRequest() // Update connection request URL, in case the CPE changed IP
 
@@ -146,7 +151,9 @@ func (h *Handler) CwmpHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	cpe.LastConnection = time.Now()
+	h.mu.Lock()
 	h.Cpes[cpe.SerialNumber] = cpe
+	h.mu.Unlock()
 }
 
 func (h *Handler) ConnectionRequest(cpe CPE) error {

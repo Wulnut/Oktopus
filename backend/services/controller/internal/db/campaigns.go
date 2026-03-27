@@ -80,3 +80,12 @@ func (d *Database) DeleteCampaign(ctx context.Context, id primitive.ObjectID) er
 	_, err := d.campaigns.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
+
+// DisableCampaignsByFirmware disables all campaigns that reference the given firmware ID.
+func (d *Database) DisableCampaignsByFirmware(ctx context.Context, firmwareID primitive.ObjectID) error {
+	_, err := d.campaigns.UpdateMany(ctx,
+		bson.M{"firmware_id": firmwareID},
+		bson.M{"$set": bson.M{"enabled": false, "updated_at": time.Now()}},
+	)
+	return err
+}
