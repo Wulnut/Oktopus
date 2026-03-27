@@ -75,6 +75,32 @@ services:
       - test_network
     profiles: [unit]
 
+  test-handlers:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../backend/services/controller:/app
+    environment:
+      - MONGO_TEST_URI=mongodb://mongo_test:27017
+      - NATS_TEST_URL=nats://nats_test:4222
+    command: sh -c "sleep 3 && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/"
+    depends_on:
+      - mongo_test
+      - nats_test
+    networks:
+      - test_network
+    profiles: [integration]
+
+  test-frontend:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ../../frontend:/app
+    command: npx jest --verbose
+    networks:
+      - test_network
+    profiles: [unit]
+
   test-infra:
     image: golang:1.23
     working_dir: /app

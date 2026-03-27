@@ -20,12 +20,19 @@ docker compose -f docker-compose.test.yaml --profile unit up \
 docker compose -f docker-compose.test.yaml --profile unit up \
   --abort-on-container-exit --exit-code-from test-infra test-infra
 
+# Frontend tests
+docker compose -f docker-compose.test.yaml --profile unit up \
+  --abort-on-container-exit --exit-code-from test-frontend test-frontend
+
 # Integration tests (starts Mongo + NATS)
 docker compose -f docker-compose.test.yaml --profile integration up \
   --abort-on-container-exit --exit-code-from test-db test-db
 
 docker compose -f docker-compose.test.yaml --profile integration up \
   --abort-on-container-exit --exit-code-from test-bridge test-bridge
+
+docker compose -f docker-compose.test.yaml --profile integration up \
+  --abort-on-container-exit --exit-code-from test-handlers test-handlers
 
 # Cleanup
 docker compose -f docker-compose.test.yaml down --remove-orphans
@@ -42,12 +49,17 @@ docker compose -f docker-compose.test.yaml down --remove-orphans
 | Pagination | `controller/internal/api/pagination_test.go` | 4 | 1 | 3 | 0 |
 | Bridge (NATS) | `controller/internal/bridge/bridge_test.go` | 3 | 1 | 2 | 0 |
 | DB Integration | `controller/internal/db/db_integration_test.go` | 17 | 16 | 1 | 0 |
+| HTTP Handlers | `controller/internal/api/handlers_test.go` | 12 | -- | -- | -- |
+| Campaign Engine | `controller/internal/api/campaign_engine_test.go` | 5 | -- | -- | -- |
+| Script Execution | `controller/internal/api/script_execution_test.go` | 6 | -- | -- | -- |
 | Adapter | `adapter/internal/events/usp_handler/info_test.go` | 6 | 5 | 0 | 1 |
 | ACS (-race) | `acs/internal/server/handler/handler_test.go` | 4 | 2 | 1 | 0 |
+| Frontend | `frontend/src/contexts/__tests__/*.test.js` | 7 | 1 | 6 | 0 |
+| Frontend (pages) | `frontend/__tests__/pages/devices.test.js` | 4 | 1 | 3 | 0 |
 | Infrastructure | `deploy/tests/infra_test.go` | 11 | 0 | 11 | 0 |
-| **Total** | | **87** | **56** | **29** | **1** |
+| **Total** | | **121** | **58** | **38** | **1** |
 
-Frontend tests (4 files, ~11 tests) require Jest setup (`npm install` with jest deps). Not yet executed.
+HTTP Handlers, Campaign Engine, and Script Execution tests require both MongoDB and NATS (run via `test-handlers` compose service). Results marked `--` pending first integration run.
 
 ---
 
@@ -176,12 +188,15 @@ Bug: `device.go:130` uses `page_number * (page_size - 1)` instead of `page_numbe
 | `backend/services/controller/internal/api/pagination_test.go` | 1C | Device list pagination skip formula |
 | `backend/services/controller/internal/bridge/bridge_test.go` | 2 | NATS subject correlation, NatsCustomReq |
 | `backend/services/controller/internal/db/db_integration_test.go` | 3 | MongoDB CRUD, cascading deletes, indexes |
+| `backend/services/controller/internal/api/handlers_test.go` | 4 | Auth middleware, body size limits, password validation |
+| `backend/services/controller/internal/api/campaign_engine_test.go` | 5A | Concurrent upgrades, completion detection, retry logic |
+| `backend/services/controller/internal/api/script_execution_test.go` | 5B | Script CRUD, iteration cap, delay steps, mass action cap |
 | `backend/services/mtp/adapter/internal/events/usp_handler/info_test.go` | 6 | Adapter bounds checking, MTP parsing |
 | `backend/services/acs/internal/server/handler/handler_test.go` | 7 | ACS XML handling, race condition, body size |
 | `frontend/src/contexts/__tests__/backend-context.test.js` | 8 | Token caching, error alerts, 401 redirect |
 | `frontend/src/contexts/__tests__/auth-context.test.js` | 8 | Token console leak, hardcoded Devias data |
 | `frontend/src/contexts/__tests__/socketio-context.test.js` | 8 | Socket per-render, empty disconnect |
-| `frontend/src/pages/__tests__/devices.test.js` | 8 | Raw fetch, console.error-only errors |
+| `frontend/__tests__/pages/devices.test.js` | 8 | Raw fetch, console.error-only errors |
 | `deploy/tests/infra_test.go` | 9 | Docker/nginx/Dockerfile config validation |
 | `deploy/compose/docker-compose.test.yaml` | - | Test infrastructure (Mongo, NATS, runners) |
 | `frontend/jest.config.js` | - | Jest configuration for Next.js |
