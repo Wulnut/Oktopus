@@ -1,5 +1,39 @@
 version: 2.1
 jobs:
+  test:
+    docker:
+      - image: golang:1.23
+      - image: mongo:8
+      - image: nats:2.10
+        command: ["--js"]
+    steps:
+      - checkout
+      - run:
+          name: Run Go unit tests
+          command: |
+            cd backend/services/controller
+            go test -race -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/
+      - run:
+          name: Run Go integration tests
+          command: |
+            cd backend/services/controller
+            MONGO_TEST_URI=mongodb://localhost:27017 NATS_TEST_URL=nats://localhost:4222 \
+              go test -race -count=1 -tags=integration -timeout=120s ./internal/db/ ./internal/bridge/
+      - run:
+          name: Run adapter tests
+          command: |
+            cd backend/services/mtp/adapter
+            go test -count=1 ./internal/events/usp_handler/
+      - run:
+          name: Run ACS tests
+          command: |
+            cd backend/services/acs
+            go test -race -count=1 ./internal/server/handler/
+      - run:
+          name: Run infrastructure tests
+          command: |
+            cd deploy/tests
+            PROJECT_ROOT=$(pwd)/../.. go test -count=1 ./...
   release:
     docker:
       - image: cimg/base:2022.09
@@ -15,9 +49,12 @@ jobs:
             echo $DOCKERHUB_PASSWORD | docker login -u $DOCKERHUB_USERNAME --password-stdin
             cd build && make release
 workflows:
-  release:
+  test-and-release:
     jobs:
+      - test
       - release:
+          requires:
+            - test
           filters:
             branches:
               only: main

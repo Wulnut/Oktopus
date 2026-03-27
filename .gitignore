@@ -17,5 +17,19 @@ go.work
 *.acl
 .idea
 .vscode
+
+# Generated env files with secrets (use generate-secrets.sh to create)
+deploy/compose/.env.acs
+deploy/compose/.env.adapter
+deploy/compose/.env.controller
+deploy/compose/.env.file-server
+deploy/compose/.env.firmware-upload
+deploy/compose/.env.mqtt
+deploy/compose/.env.mqtt-adapter
+deploy/compose/.env.nats
+deploy/compose/.env.socketio
+deploy/compose/.env.stomp-adapter
+deploy/compose/.env.ws
+deploy/compose/.env.ws-adapter
 main
 mochi

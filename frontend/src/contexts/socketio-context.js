@@ -21,7 +21,13 @@ export const WsProvider = (props) => {
 	const userVideo = useRef();
 	const connectionRef = useRef();
   const auth = useAuth()
-  const socket = io(process.env.NEXT_PUBLIC_WS_ENDPOINT)
+  const socketRef = useRef(null);
+
+  // Create socket once, not on every render
+  if (!socketRef.current) {
+    socketRef.current = io(process.env.NEXT_PUBLIC_WS_ENDPOINT);
+  }
+  const socket = socketRef.current;
 
   const initialize = async () => {
     // Prevent from calling twice in development mode with React.StrictMode enable
@@ -45,7 +51,7 @@ export const WsProvider = (props) => {
       });
 
       socket.on('disconnect', function(){
-        
+        console.warn('[IO] Disconnected from server');
     });
 
     })

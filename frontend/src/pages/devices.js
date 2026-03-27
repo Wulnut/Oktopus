@@ -58,6 +58,7 @@ import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import { Scrollbar } from 'src/components/scrollbar';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useAuth } from 'src/hooks/use-auth';
+import { useBackendContext } from 'src/contexts/backend-context';
 import { useRouter } from 'next/router';
 import { useTheme } from '@emotion/react';
 
@@ -66,6 +67,7 @@ const Page = () => {
   const theme = useTheme();
   const router = useRouter()
   const auth = useAuth();
+  const { httpRequest, setAlert } = useBackendContext();
 
   const [devices, setDevices] = useState([]);
   const [total, setTotal] = useState(null);
@@ -205,240 +207,148 @@ const Page = () => {
   ];
 
   useEffect(() => {
+    const loadDevices = async () => {
     getColumns()
     setLoading(true)
 
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    var requestOptions = {
-      method: 'GET',
-      headers: myHeaders,
-      redirect: 'follow'
+    try {
+      const { status, result } = await httpRequest(
+        `/api/device?statusOrder=${statusOrder}&page_number=${page}&page_size=${rowsPerPage}&vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
+        'GET'
+      );
+      if (status == 404) {
+        setLoading(false);
+        setDeviceFound(false);
+      } else if (status == 200 && result) {
+        setPages(result.pages + 1);
+        setPage(result.page + 1);
+        setTotal(result.total);
+        setDevices(result.devices);
+        setSelected(new Array(result.devices.length).fill(false));
+        setLoading(false);
+        setDeviceFound(true);
+      } else {
+        setLoading(false);
+      }
+    } catch (error) {
+      setAlert({ severity: 'error', message: 'Failed to load devices' });
+      setLoading(false);
     }
 
-    let status;
-
-    fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device?statusOrder=${statusOrder}&page_number=${page}&page_size=${rowsPerPage}&vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`, requestOptions)
-      .then(response => {
-        if (response.status === 401){
-          router.push("/auth/login")
-        }
-        status = response.status
-        return response.json()
-      })
-      .then(json => {
-        if (status == 404) {
-          console.log("device not found")
-          setLoading(false)
-          setDeviceFound(false)
-          return
-        }
-        console.log("Status:", status)
-        setPages(json.pages + 1)
-        setPage(json.page + 1)
-        setTotal(json.total)
-        setDevices(json.devices)
-        setSelected(new Array(json.devices.length).fill(false))
-        setLoading(false)
-        return setDeviceFound(true)
-      })
-      .catch(error => {
-        return console.error('Error:', error)
-      });
-
-    fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/filterOptions`, requestOptions)
-      .then(response => {
-        if (response.status === 401)
-          router.push("/auth/login")
-        return response.json()
-      })
-      .then(json => {
-        return setFilterOptions(json)
-      })
-      .catch(error => {
-        return console.error('Error:', error)
-      });
-
+    try {
+      const { status, result } = await httpRequest('/api/device/filterOptions', 'GET');
+      if (status == 200 && result) {
+        setFilterOptions(result);
+      }
+    } catch (error) {
+      console.error('Error loading filter options:', error);
+    }
+    };
+    loadDevices();
   }, [auth.user]);
 
   const removeDevice = async (sn) => {
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    var requestOptions = {
-      method: 'DELETE',
-      headers: myHeaders,
-      redirect: 'follow'
-    };
-
-    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device?id=${sn}`, requestOptions)
-    console.log("result:", result)
-    if (result.status === 401) {
-      router.push("/auth/login")
-    } else if (result.status != 200) {
-      console.log("Status:", result.status)
-      let content = await result.json()
-      console.log("Message:", content)
-      setShowSetDeviceToBeRemoved(false)
-      setDeviceToBeRemoved(null)
-    } else {
-      let content = await result.json()
-      console.log("remove device result:", content)
-      setShowSetDeviceToBeRemoved(false)
-      setDeviceToBeRemoved(null)
-      devices.splice(deviceToBeRemoved, 1)
-      setDevices([...devices])
+    try {
+      const { status } = await httpRequest(`/api/device?id=${sn}`, 'DELETE');
+      setShowSetDeviceToBeRemoved(false);
+      setDeviceToBeRemoved(null);
+      if (status == 200) {
+        devices.splice(deviceToBeRemoved, 1);
+        setDevices([...devices]);
+      }
+    } catch (error) {
+      setAlert({ severity: 'error', message: 'Failed to remove device' });
+      setShowSetDeviceToBeRemoved(false);
+      setDeviceToBeRemoved(null);
     }
-
   }
 
   const setNewDeviceAlias = async (alias, sn) => {
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    var requestOptions = {
-      method: 'PUT',
-      headers: myHeaders,
-      body: alias,
-      redirect: 'follow'
-    };
-
-    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/alias?id=${sn}`, requestOptions)
-    console.log("result:", result)
-    if (result.status === 401) {
-      router.push("/auth/login")
-    } else if (result.status != 200) {
-      console.log("Status:", result.status)
-      let content = await result.json()
-      console.log("Message:", content)
-      setShowSetDeviceAlias(false)
-      setDeviceAlias(null)
-      setDeviceToBeChanged(null)
-    } else {
-      let content = await result.json()
-      console.log("set alias result:", content)
-      setShowSetDeviceAlias(false)
-      setDeviceAlias(null)
-      devices[deviceToBeChanged].Alias = alias
-      setDeviceToBeChanged(null)
-      setDevices([...devices])
+    try {
+      const { status } = await httpRequest(`/api/device/alias?id=${sn}`, 'PUT', alias);
+      setShowSetDeviceAlias(false);
+      setDeviceAlias(null);
+      if (status == 200) {
+        devices[deviceToBeChanged].Alias = alias;
+        setDeviceToBeChanged(null);
+        setDevices([...devices]);
+      } else {
+        setDeviceToBeChanged(null);
+      }
+    } catch (error) {
+      setAlert({ severity: 'error', message: 'Failed to update device alias' });
+      setShowSetDeviceAlias(false);
+      setDeviceAlias(null);
+      setDeviceToBeChanged(null);
     }
-    // .then(response => {
-    //   if (response.status === 401) {
-    //     router.push("/auth/login")
-    //   }
-    //   return response.json()
-    // })
-    // .then(result => {
-    //   console.log("alias result:", result)
-    //   setShowSetDeviceAlias(false)
-    //   setDeviceAlias(null)
-    // })
-    // .catch(error => {
-    //   console.log('error:', error)
-    //   setShowSetDeviceAlias(false)
-    //   setDeviceAlias(null)
-    // })
   }
 
   const fetchDevicePerPage = async (p, s, localFilterList, page_size) => {
-    //setLoading(true)
-
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
-
-    var requestOptions = {
-      method: 'GET',
-      headers: myHeaders,
-      redirect: 'follow'
-    }
-
     if (localFilterList == undefined) {
-      localFilterList = filtersList
+      localFilterList = filtersList;
     }
-
     if (page_size == undefined) {
-      page_size = rowsPerPage
+      page_size = rowsPerPage;
     }
 
-    p = p - 1
-    p = p.toString()
+    p = p - 1;
 
-    fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device?page_number=${p}&page_size=${page_size}&statusOrder=${s}&vendor=${localFilterList["vendor"]}&version=${localFilterList["version"]}&alias=${localFilterList["alias"]}&type=${localFilterList["type"]}&status=${localFilterList["status"]}&model=${localFilterList["model"]}`, requestOptions)
-      .then(response => {
-        if (response.status === 401)
-          router.push("/auth/login")
-        return response.json()
-      })
-      .then(json => {
-        setTotal(json.total)
-        setDevices(json.devices)
-        setPages(json.pages + 1)
-        setPage(json.page + 1)
-        //setLoading(false)
-        return
-      })
-      .catch(error => {
-        return console.error('Error:', error)
-      });
+    try {
+      const { status, result } = await httpRequest(
+        `/api/device?page_number=${p}&page_size=${page_size}&statusOrder=${s}&vendor=${localFilterList["vendor"]}&version=${localFilterList["version"]}&alias=${localFilterList["alias"]}&type=${localFilterList["type"]}&status=${localFilterList["status"]}&model=${localFilterList["model"]}`,
+        'GET'
+      );
+      if (status == 200 && result) {
+        setTotal(result.total);
+        setDevices(result.devices);
+        setPages(result.pages + 1);
+        setPage(result.page + 1);
+      }
+    } catch (error) {
+      setAlert({ severity: 'error', message: 'Failed to load devices' });
+    }
   }
 
   const fetchDevicePerId = async (id) => {
-    setLoading(true)
-    setDeviceFound(true)
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
+    setLoading(true);
+    setDeviceFound(true);
 
-    var requestOptions = {
-      method: 'GET',
-      headers: myHeaders,
-      redirect: 'follow'
-    }
+    try {
+      if (id == "") {
+        const { status, result } = await httpRequest(
+          `/api/device?vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
+          'GET'
+        );
+        if (status == 200 && result) {
+          setPages(result.pages + 1);
+          setPage(result.page + 1);
+          setTotal(result.total);
+          setDevices(result.devices);
+          setDeviceFound(true);
+        }
+        setLoading(false);
+        return;
+      }
 
-    if (id == "") {
-      return fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device?vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`, requestOptions)
-        .then(response => {
-          if (response.status === 401)
-            router.push("/auth/login")
-          return response.json()
-        })
-        .then(json => {
-          setPages(json.pages + 1)
-          setPage(json.page + 1)
-          setTotal(json.total)
-          setDevices(json.devices)
-          setLoading(false)
-          return setDeviceFound(true)
-        })
-        .catch(error => {
-          return console.error('Error:', error)
-        });
+      const { status, result } = await httpRequest(`/api/device?id=${id}`, 'GET');
+      if (status == 200 && result && result.SN != undefined) {
+        setDevices([result]);
+        setTotal(1);
+        setDeviceFound(true);
+        setPages(1);
+        setPage(1);
+      } else {
+        setDeviceFound(false);
+        setDevices(null);
+        setTotal(null);
+        setPages(null);
+        setPage(null);
+      }
+    } catch (error) {
+      setAlert({ severity: 'error', message: 'Failed to search device' });
+      setDeviceFound(false);
     }
-
-    let response = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device?id=${id}`, requestOptions)
-    if (response.status === 401)
-      router.push("/auth/login")
-    let json = await response.json()
-    if (json.SN != undefined) {
-      setDevices([json])
-      setTotal(1)
-      setDeviceFound(true)
-      setLoading(false)
-      setPages(1)
-      setPage(1)
-    } else {
-      setDeviceFound(false)
-      setDevices(null)
-      setTotal(null)
-      setPages(null)
-      setPage(null)
-    }
+    setLoading(false);
 
   }
 

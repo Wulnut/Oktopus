@@ -16,14 +16,20 @@ services:
       usp_network:
         ipv4_address: 172.16.235.2
     profiles: [nats]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   #/* -------------------------------------------------------------------------- */
 
   #/* ------------------------ API REST / USP Controller ----------------------- */
   controller:
     image: "oktopusp/controller"
     container_name: controller
-    ports:
-      - 8000:8000
+    expose:
+      - "8000"
     depends_on:
       - mongo_usp
     env_file:
@@ -34,6 +40,12 @@ services:
       usp_network:
         ipv4_address: 172.16.235.3
     profiles: [controller]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8000/api/auth/admin/exists || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   #/* -------------------------------------------------------------------------- */
 
   #/* ---------------------------- Databases / Cache --------------------------- */
@@ -46,6 +58,12 @@ services:
     volumes:
       - ./mongo_data:/data/db
     profiles: [controller, adapter]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   #/* -------------------------------------------------------------------------- */
 
@@ -64,6 +82,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.6
     profiles: [mqtt]
+    restart: unless-stopped
 
   ws:
     image: "oktopusp/ws"
@@ -78,6 +97,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.7
     profiles: [ws]
+    restart: unless-stopped
 
   stomp:
     image: "oktopusp/stomp"
@@ -88,6 +108,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.8
     profiles: [stomp]
+    restart: unless-stopped
   #/* -------------------------------------------------------------------------- */
 
   #/* --------------- Message transfer Protocols Adapters to NATS -------------- */
@@ -104,6 +125,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.9
     profiles: [mqtt]
+    restart: unless-stopped
 
   ws-adapter:
     image: "oktopusp/ws-adapter"
@@ -118,6 +140,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.10
     profiles: [ws]
+    restart: unless-stopped
 
   stomp-adapter:
     image: "oktopusp/stomp-adapter"
@@ -132,6 +155,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.11
     profiles: [stomp]
+    restart: unless-stopped
 
   adapter:
     image: "oktopusp/adapter"
@@ -146,14 +170,15 @@ services:
       usp_network:
         ipv4_address: 172.16.235.12
     profiles: [adapter]
+    restart: unless-stopped
   #/* -------------------------------------------------------------------------- */
 
   #/* ------------- SocketIO Real Time Communication With Frontend ------------- */
   socketio:
     image: "oktopusp/socketio"
     container_name: socketio
-    ports:
-      - 5000:5000
+    expose:
+      - "5000"
     env_file:
       - .env.socketio
     volumes:
@@ -162,6 +187,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.13
     profiles: [frontend]
+    restart: unless-stopped
   #/* -------------------------------------------------------------------------- */
 
   #/* -------------------------------- Frontend -------------------------------- */
@@ -179,6 +205,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.14
     profiles: [frontend]
+    restart: unless-stopped
   #/* -------------------------------------------------------------------------- */
 
   portainer:
@@ -190,6 +217,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.15
     profiles: [portainer]
+    restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./portainer_data:/data
@@ -207,6 +235,7 @@ services:
       usp_network:
         ipv4_address: 172.16.235.16
     profiles: [cwmp]
+    restart: unless-stopped
 
   nginx:
     image: nginx:1.27-alpine
@@ -220,6 +249,12 @@ services:
     networks:
       usp_network:
         ipv4_address: 172.16.235.17
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/api/auth/admin/exists || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     # Validate config on startup
     command: >
       sh -c "nginx -t && nginx -g 'daemon off;'"
@@ -227,8 +262,8 @@ services:
   file-server:
     image: oktopusp/file-server
     container_name: file-server
-    ports:
-      - 8004:8004
+    expose:
+      - "8004"
     volumes:
       - ./firmwares:/app/firmwares
       - ./images:/app/images
@@ -237,6 +272,7 @@ services:
     networks:
       usp_network:
         ipv4_address: 172.16.235.18
+    restart: unless-stopped
 
   firmware-upload:
     build:
@@ -252,14 +288,15 @@ services:
     networks:
       usp_network:
         ipv4_address: 172.16.235.21
+    restart: unless-stopped
 
   container-upload:
     build:
       context: ./container-upload-service
       dockerfile: Dockerfile
     container_name: container-upload
-    ports:
-      - 8005:8005
+    expose:
+      - "8005"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
@@ -270,6 +307,7 @@ services:
     networks:
       usp_network:
         ipv4_address: 172.16.235.19
+    restart: unless-stopped
 
   #/* -------------------------------- Docker Registry -------------------------------- */
   registry-certs-generator:

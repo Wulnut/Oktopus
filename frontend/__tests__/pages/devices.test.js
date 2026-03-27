@@ -9,7 +9,7 @@ test('devices.js should use httpRequest or show user-visible errors, not console
   const fs = require('fs');
   const path = require('path');
   const source = fs.readFileSync(
-    path.join(__dirname, '..', 'devices.js'),
+    path.join(__dirname, '..', '..', 'src', 'pages', 'devices.js'),
     'utf8'
   );
 
@@ -28,7 +28,7 @@ test('devices.js should not use raw fetch() -- should use httpRequest from Backe
   const fs = require('fs');
   const path = require('path');
   const source = fs.readFileSync(
-    path.join(__dirname, '..', 'devices.js'),
+    path.join(__dirname, '..', '..', 'src', 'pages', 'devices.js'),
     'utf8'
   );
 
@@ -50,7 +50,7 @@ test('devices.js removeDevice should show error on failure, not just console.log
   const fs = require('fs');
   const path = require('path');
   const source = fs.readFileSync(
-    path.join(__dirname, '..', 'devices.js'),
+    path.join(__dirname, '..', '..', 'src', 'pages', 'devices.js'),
     'utf8'
   );
 

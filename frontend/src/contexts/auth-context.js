@@ -82,22 +82,18 @@ export const AuthProvider = (props) => {
       console.error(err);
     }
 
-    console.log("isAuthenticated: ", isAuthenticated)
     if (isAuthenticated) {
+      const email = window.sessionStorage.getItem('email') || '';
       const user = {
-        id: '5e86809283e28b96d2d38537',
         avatar: '/assets/avatars/default-avatar.png',
-        name: window.sessionStorage.getItem('email'),
-        email: 'anika.visser@devias.io',
-        token: localStorage.getItem("token")
+        name: email,
+        email: email,
       };
 
       dispatch({
         type: HANDLERS.INITIALIZE,
         payload: user
       });
-
-      console.log("AUTH CONTEXT --> auth.user.token:", user.token)
     } else {
       dispatch({
         type: HANDLERS.INITIALIZE
@@ -120,11 +116,11 @@ export const AuthProvider = (props) => {
       console.error(err);
     }
 
+    const email = window.sessionStorage.getItem('email') || '';
     const user = {
-      id: '5e86809283e28b96d2d38537',
       avatar: '/assets/avatars/default-avatar.png',
-      name: window.sessionStorage.getItem('email'),
-      email: 'anika.visser@devias.io',
+      name: email,
+      email: email,
     };
 
     dispatch({
@@ -167,11 +163,9 @@ export const AuthProvider = (props) => {
     }
 
     const user = {
-      id: '5e86809283e28b96d2d38537',
       avatar: '/assets/avatars/default-avatar.png',
-      name: window.sessionStorage.getItem('email'),
+      name: email,
       email: email,
-      token: token
     };
 
     localStorage.setItem("token", token)

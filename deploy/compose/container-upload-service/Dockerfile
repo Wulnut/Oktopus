@@ -15,6 +15,10 @@ COPY container-upload-service.js ./
 # Expose port
 EXPOSE 8005
 
+# Run as non-root user with docker group access
+RUN addgroup -S docker && adduser -S appuser -G docker
+USER appuser
+
 # Run service
 CMD ["node", "container-upload-service.js"]
 
