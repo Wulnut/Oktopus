@@ -1,10 +1,13 @@
 #!/bin/bash
-# Generate secrets for .env files if they don't already exist.
+# Generate .env files from .env.*.example templates.
 # Called automatically by run.sh and run_debug.sh.
 #
 # Secrets generated:
 #   NATS_USER, NATS_PW  - NATS broker authentication
 #   JWT_SECRET          - JWT signing key (shared between controller and firmware-upload)
+#
+# Template files (.env.*.example) are checked into git with __PLACEHOLDER__ values.
+# Generated .env.* files contain real secrets and are gitignored.
 
 set -e
 
