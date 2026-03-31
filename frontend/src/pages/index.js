@@ -144,23 +144,14 @@ const Page = () => {
           container
           spacing={3}
         >
-          <Grid
-            xs={12}
-            sm={6}
-            lg={3}
-          >
+          <Grid size={12}>
             <OverviewTotalCustomers
-              //difference={16}
               positive={false}
               sx={{ height: '100%' }}
               value={devicesCount.toString()}
             />
           </Grid>
-          <Grid
-            xs={12}
-            sm={6}
-            lg={3}
-          >
+          <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
             <OverviewTasksProgress
               sx={{ height: '100%' }}
               mtp={"STOMP Connection"}
@@ -168,11 +159,7 @@ const Page = () => {
               value={generalInfo.StompRtt}
             />
           </Grid>
-          <Grid
-            xs={12}
-            sm={6}
-            lg={3}
-          >
+          <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
             <OverviewTasksProgress
               sx={{ height: '100%' }}
               mtp={"MQTT Connection"}
@@ -180,57 +167,37 @@ const Page = () => {
               value={generalInfo.MqttRtt}
             />
           </Grid>
-          <Grid
-            xs={12}
-            sm={6}
-            lg={3}
-          >
-          <OverviewTasksProgress
+          <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
+            <OverviewTasksProgress
               sx={{ height: '100%' }}
               mtp={"Websockets Connection"}
               type={"websocket"}
               value={generalInfo.WebsocketsRtt}
             />
           </Grid>
-          <Grid
-            xs={12}
-            lg={4}
-          >
-          <OverviewTraffic
-          chartSeries={vendorValues}
-          labels={vendorLabels}
-          sx={{ height: '100%' }}
-          title={'Vendors'}
-          />
+          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+            <OverviewTraffic
+              chartSeries={vendorValues}
+              labels={vendorLabels}
+              sx={{ height: '100%' }}
+              title={'Vendors'}
+            />
           </Grid>
-          <Grid
-            xs={12}
-            lg={4}
-          >
-          <OverviewTraffic
-          chartSeries={devicesStatus}
-          labels={['Online', 'Offline']}
-          sx={{ height: '100%' }}
-          title={'Status'}
-          />
+          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+            <OverviewTraffic
+              chartSeries={devicesStatus}
+              labels={['Online', 'Offline']}
+              sx={{ height: '100%' }}
+              title={'Status'}
+            />
           </Grid>
-          <Grid
-            xs={12}
-            //md={6}
-            lg={4}
-          >
+          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
             <OverviewTraffic
               chartSeries={productClassValues}
               labels={productClassLabels}
               sx={{ height: '100%' }}
               title={'Devices Type'}
             />
-          </Grid>
-          <Grid
-            xs={12}
-            md={6}
-            lg={4}
-          >
           </Grid>
         </Grid>
       </Container>

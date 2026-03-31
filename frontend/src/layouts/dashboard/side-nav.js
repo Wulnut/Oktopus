@@ -82,7 +82,7 @@ export const SideNav = (props) => {
             <Link href={typeof window !== 'undefined' ? `${window.location.origin}/devices` : '/devices'}>
               <div style={{display:'flex',justifyContent:'center'}}>
                 <img src={`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/images/logo.png`}
-                width={'30%'}
+                style={{ width: '30%' }}
                 />
               </div>
             </Link>
