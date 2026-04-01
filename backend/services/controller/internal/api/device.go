@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/entity"
@@ -203,14 +204,22 @@ type DeviceAuth struct {
 
 func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 
-	user, err := a.db.FindUser(r.Context().Value("email").(string))
+	email := middleware.GetEmail(r)
+	user, err := a.db.FindUser(email)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		utils.MarshallEncoder(err, w)
 		return
 	}
-	if user.Level != db.AdminUser {
+	if user.Level != db.TenantAdmin && user.Level != db.SuperAdmin {
 		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	kv, err := a.tenantKV(r)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		utils.MarshallEncoder("failed to access device auth store: "+err.Error(), w)
 		return
 	}
 
@@ -218,7 +227,7 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 
 		id := r.URL.Query().Get("id")
 		if id != "" {
-			entry, err := a.kv.Get(r.Context(), id)
+			entry, err := kv.Get(r.Context(), id)
 			if err != nil {
 				if err == jetstream.ErrKeyNotFound {
 					w.WriteHeader(http.StatusNotFound)
@@ -234,7 +243,7 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		entries, err := a.kv.ListKeys(r.Context(), jetstream.IgnoreDeletes())
+		entries, err := kv.ListKeys(r.Context(), jetstream.IgnoreDeletes())
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			utils.MarshallEncoder(err, w)
@@ -245,16 +254,13 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 
 		keys := entries.Keys()
 		for key := range keys {
-			entry, err := a.kv.Get(r.Context(), key)
+			entry, err := kv.Get(r.Context(), key)
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				utils.MarshallEncoder(err, w)
 				return
 			}
 
-			/*listOfKeys = append(listOfKeys, map[string]string{
-				key: string(entry.Value()),
-			})*/
 			listOfKeys[key] = string(entry.Value())
 		}
 
@@ -264,7 +270,7 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 
 		id := r.URL.Query().Get("id")
 		if id != "" {
-			err := a.kv.Purge(r.Context(), id)
+			err := kv.Purge(r.Context(), id)
 			if err != nil {
 				if err == jetstream.ErrKeyNotFound {
 					w.WriteHeader(http.StatusNotFound)
@@ -291,12 +297,12 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if deviceAuth.User != "" {
-			_, err := a.kv.Get(r.Context(), deviceAuth.User)
+			_, err := kv.Get(r.Context(), deviceAuth.User)
 
 			if err != nil {
 
 				if err == jetstream.ErrKeyNotFound {
-					_, err = a.kv.PutString(r.Context(), deviceAuth.User, deviceAuth.Password)
+					_, err = kv.PutString(r.Context(), deviceAuth.User, deviceAuth.Password)
 					if err != nil {
 						w.WriteHeader(http.StatusInternalServerError)
 						utils.MarshallEncoder(err, w)
@@ -392,7 +398,7 @@ func (a *Api) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = a.db.UpdateTemplate(r.Context(), name, string(payload))
+	err = a.tenantDB(r).UpdateTemplate(r.Context(), name, string(payload))
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(err.Error())
@@ -428,7 +434,7 @@ func (a *Api) addTemplate(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	switch vars["type"] {
 	case "cwmp":
-		err = a.db.AddTemplate(r.Context(), name, "cwmp", string(payload))
+		err = a.tenantDB(r).AddTemplate(r.Context(), name, "cwmp", string(payload))
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(err.Error())
@@ -437,7 +443,7 @@ func (a *Api) addTemplate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	case "usp":
-		err = a.db.AddTemplate(r.Context(), name, "usp", string(payload))
+		err = a.tenantDB(r).AddTemplate(r.Context(), name, "usp", string(payload))
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(err.Error())
@@ -466,7 +472,7 @@ func (a *Api) getTemplate(w http.ResponseWriter, r *http.Request) {
 			filter = bson.D{{"type", msgType}}
 		}
 
-		result, err := a.db.AllTemplates(r.Context(), filter)
+		result, err := a.tenantDB(r).AllTemplates(r.Context(), filter)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode("Error to get all templates: " + err.Error())
@@ -476,7 +482,7 @@ func (a *Api) getTemplate(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(result)
 		return
 	} else {
-		t, err := a.db.FindTemplate(r.Context(), bson.D{{"name", name}})
+		t, err := a.tenantDB(r).FindTemplate(r.Context(), bson.D{{"name", name}})
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode("error to find message: " + err.Error())
@@ -497,7 +503,7 @@ func (a *Api) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode("needs template name!")
 		return
 	} else {
-		err := a.db.DeleteTemplate(r.Context(), name)
+		err := a.tenantDB(r).DeleteTemplate(r.Context(), name)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode("error to delete template: " + err.Error())

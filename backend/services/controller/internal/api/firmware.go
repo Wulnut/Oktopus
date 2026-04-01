@@ -32,7 +32,7 @@ func getEnvOrDefault(key, defaultVal string) string {
 
 // GET /api/firmware
 func (a *Api) listFirmware(w http.ResponseWriter, r *http.Request) {
-	list, err := a.db.ListFirmware(r.Context())
+	list, err := a.tenantDB(r).ListFirmware(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -135,7 +135,7 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 		FileName:     fileName,
 	}
 
-	created, err := a.db.CreateFirmware(r.Context(), fw)
+	created, err := a.tenantDB(r).CreateFirmware(r.Context(), fw)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -153,7 +153,7 @@ func (a *Api) deleteFirmware(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	fw, err := a.db.GetFirmware(r.Context(), id)
+	fw, err := a.tenantDB(r).GetFirmware(r.Context(), id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -162,12 +162,12 @@ func (a *Api) deleteFirmware(w http.ResponseWriter, r *http.Request) {
 		// Best-effort delete from file service — ignore errors
 		deleteFileFromUploadService(fw.FileName, r.Header.Get("Authorization"))
 	}
-	if err := a.db.DeleteFirmware(r.Context(), id); err != nil {
+	if err := a.tenantDB(r).DeleteFirmware(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	// Disable campaigns that referenced this firmware
-	if err := a.db.DisableCampaignsByFirmware(r.Context(), id); err != nil {
+	if err := a.tenantDB(r).DisableCampaignsByFirmware(r.Context(), id); err != nil {
 		log.Printf("Warning: failed to disable campaigns for firmware %s: %v", id.Hex(), err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -203,7 +203,7 @@ func (a *Api) updateFirmware(w http.ResponseWriter, r *http.Request) {
 		HWVersion:    body.HWVersion,
 		BuildVersion: body.BuildVersion,
 	}
-	matched, err := a.db.UpdateFirmware(r.Context(), id, fw)
+	matched, err := a.tenantDB(r).UpdateFirmware(r.Context(), id, fw)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -234,7 +234,7 @@ func (a *Api) updateFirmwarePhase(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "phase must be 'internal_testing' or 'release'", http.StatusBadRequest)
 		return
 	}
-	if err := a.db.UpdateFirmwarePhase(r.Context(), id, body.Phase); err != nil {
+	if err := a.tenantDB(r).UpdateFirmwarePhase(r.Context(), id, body.Phase); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

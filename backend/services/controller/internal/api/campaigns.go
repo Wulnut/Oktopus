@@ -15,7 +15,7 @@ import (
 
 // GET /api/campaigns
 func (a *Api) listCampaigns(w http.ResponseWriter, r *http.Request) {
-	list, err := a.db.ListCampaigns(r.Context())
+	list, err := a.tenantDB(r).ListCampaigns(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -46,7 +46,7 @@ func (a *Api) createCampaign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "firmware_id is required", http.StatusBadRequest)
 		return
 	}
-	if _, err := a.db.GetFirmware(r.Context(), c.FirmwareID); err != nil {
+	if _, err := a.tenantDB(r).GetFirmware(r.Context(), c.FirmwareID); err != nil {
 		http.Error(w, "firmware not found", http.StatusBadRequest)
 		return
 	}
@@ -56,7 +56,7 @@ func (a *Api) createCampaign(w http.ResponseWriter, r *http.Request) {
 		c.Concurrency = 50
 	}
 
-	created, err := a.db.CreateCampaign(r.Context(), c)
+	created, err := a.tenantDB(r).CreateCampaign(r.Context(), c)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			http.Error(w, "campaign already exists for this vendor+model+hw_version", http.StatusConflict)
@@ -66,7 +66,8 @@ func (a *Api) createCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if created.Enabled {
-		go a.RunCampaignBatch(created)
+		tdb := a.tenantDB(r)
+		go a.RunCampaignBatch(tdb, created)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -88,7 +89,7 @@ func (a *Api) updateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !body.FirmwareID.IsZero() {
-		if _, err := a.db.GetFirmware(r.Context(), body.FirmwareID); err != nil {
+		if _, err := a.tenantDB(r).GetFirmware(r.Context(), body.FirmwareID); err != nil {
 			http.Error(w, "firmware not found", http.StatusBadRequest)
 			return
 		}
@@ -98,7 +99,7 @@ func (a *Api) updateCampaign(w http.ResponseWriter, r *http.Request) {
 	} else if body.Concurrency > 50 {
 		body.Concurrency = 50
 	}
-	matched, err := a.db.UpdateCampaign(r.Context(), id, body)
+	matched, err := a.tenantDB(r).UpdateCampaign(r.Context(), id, body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -109,9 +110,10 @@ func (a *Api) updateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Enabled {
-		updated, fetchErr := a.db.GetCampaign(r.Context(), id)
+		tdb := a.tenantDB(r)
+		updated, fetchErr := tdb.GetCampaign(r.Context(), id)
 		if fetchErr == nil {
-			go a.RunCampaignBatch(updated)
+			go a.RunCampaignBatch(tdb, updated)
 		}
 	}
 
@@ -126,7 +128,7 @@ func (a *Api) deleteCampaign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	if err := a.db.DeleteCampaign(r.Context(), id); err != nil {
+	if err := a.tenantDB(r).DeleteCampaign(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -148,7 +150,7 @@ func (a *Api) campaignUpgradeLogs(w http.ResponseWriter, r *http.Request) {
 		pageSize = 20
 	}
 
-	logs, total, err := a.db.ListUpgradeLogsByCampaign(r.Context(), id, page, pageSize)
+	logs, total, err := a.tenantDB(r).ListUpgradeLogsByCampaign(r.Context(), id, page, pageSize)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -172,7 +174,7 @@ func (a *Api) getDeviceFWPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policy, err := a.db.GetDeviceFWPolicy(r.Context(), sn)
+	policy, err := a.tenantDB(r).GetDeviceFWPolicy(r.Context(), sn)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -201,7 +203,7 @@ func (a *Api) setDeviceFWPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	body.DeviceSN = sn
 
-	if err := a.db.SetDeviceFWPolicy(r.Context(), body); err != nil {
+	if err := a.tenantDB(r).SetDeviceFWPolicy(r.Context(), body); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -217,7 +219,7 @@ func (a *Api) deviceUpgradeLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logs, err := a.db.ListUpgradeLogsByDevice(r.Context(), sn)
+	logs, err := a.tenantDB(r).ListUpgradeLogsByDevice(r.Context(), sn)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

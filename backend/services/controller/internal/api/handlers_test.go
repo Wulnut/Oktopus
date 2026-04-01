@@ -27,6 +27,7 @@ import (
 
 var testApi Api
 var testRouter *mux.Router
+var testTenantDB *db.TenantDB
 
 func TestMain(m *testing.M) {
 	mongoURI := os.Getenv("MONGO_TEST_URI")
@@ -47,9 +48,6 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	js, _ := jetstream.New(nc)
-	kv, _ := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
-		Bucket: "test-devices-auth",
-	})
 	b := bridge.NewBridge(js, nc)
 
 	testApi = Api{
@@ -58,9 +56,10 @@ func TestMain(m *testing.M) {
 		nc:     nc,
 		bridge: b,
 		db:     d,
-		kv:     kv,
 		ctx:    ctx,
 	}
+
+	testTenantDB = d.ForTenant("test")
 
 	testRouter = mux.NewRouter()
 	setupTestRoutes(testRouter)
@@ -71,8 +70,8 @@ func TestMain(m *testing.M) {
 	cleanupClient, cleanupErr := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
 	if cleanupErr == nil {
 		cleanupClient.Database("account-mngr").Drop(ctx)
-		cleanupClient.Database("general").Drop(ctx)
-		cleanupClient.Database("usp").Drop(ctx)
+		cleanupClient.Database("tenant_test_general").Drop(ctx)
+		cleanupClient.Database("tenant_test_usp").Drop(ctx)
 		cleanupClient.Disconnect(ctx)
 	}
 
@@ -81,10 +80,10 @@ func TestMain(m *testing.M) {
 }
 
 func setupTestRoutes(r *mux.Router) {
-	auth := r.PathPrefix("/api/auth").Subrouter()
-	auth.HandleFunc("/register", testApi.registerUser).Methods("POST")
-	auth.HandleFunc("/login", testApi.generateToken).Methods("PUT")
-	auth.HandleFunc("/admin/register", testApi.registerAdminUser).Methods("POST")
+	authRouter := r.PathPrefix("/api/auth").Subrouter()
+	authRouter.HandleFunc("/register", testApi.registerUser).Methods("POST")
+	authRouter.HandleFunc("/login", testApi.generateToken).Methods("PUT")
+	authRouter.HandleFunc("/admin/register", testApi.registerAdminUser).Methods("POST")
 
 	firmware := r.PathPrefix("/api/firmware").Subrouter()
 	firmware.HandleFunc("", testApi.listFirmware).Methods("GET")
@@ -102,14 +101,14 @@ func setupTestRoutes(r *mux.Router) {
 	devices.HandleFunc("", testApi.retrieveDevices).Methods("GET")
 
 	// Apply middleware to protected routes
-	firmware.Use(func(h http.Handler) http.Handler { return middleware.Middleware(h) })
-	scripts.Use(func(h http.Handler) http.Handler { return middleware.Middleware(h) })
-	campaigns.Use(func(h http.Handler) http.Handler { return middleware.Middleware(h) })
-	devices.Use(func(h http.Handler) http.Handler { return middleware.Middleware(h) })
+	firmware.Use(middleware.AuthMiddleware)
+	scripts.Use(middleware.AuthMiddleware)
+	campaigns.Use(middleware.AuthMiddleware)
+	devices.Use(middleware.AuthMiddleware)
 }
 
 func validToken() string {
-	token, _ := auth.GenerateJWT("test@test.com", "testuser")
+	token, _ := auth.GenerateJWT("test@test.com", "testuser", "", "test", 0)
 	return token
 }
 
@@ -243,7 +242,7 @@ func TestCreateCampaign_ValidInput_Returns201(t *testing.T) {
 		BuildVersion: "1.0",
 		Phase:        db.PhaseRelease,
 	}
-	created, err := testApi.db.CreateFirmware(context.Background(), fw)
+	created, err := testTenantDB.CreateFirmware(context.Background(), fw)
 	if err != nil {
 		t.Fatal(err)
 	}

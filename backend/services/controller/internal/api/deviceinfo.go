@@ -56,10 +56,11 @@ func (a *Api) deviceInfoGet(w http.ResponseWriter, r *http.Request) {
 
 	// Cache the raw JSON response in the background
 	if rec.statusCode == http.StatusOK && len(rec.body) > 0 {
+		tdb := a.tenantDB(r)
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			if err := a.db.UpsertDeviceInfo(bgCtx, sn, rec.body); err != nil {
+			if err := tdb.UpsertDeviceInfo(bgCtx, sn, rec.body); err != nil {
 				log.Printf("deviceInfoGet: cache error for %s: %v", sn, err)
 			}
 		}()
@@ -78,7 +79,7 @@ func (a *Api) deviceInfoGet(w http.ResponseWriter, r *http.Request) {
 func (a *Api) deviceCachedInfoGet(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	sn := vars["sn"]
-	cached, err := a.db.GetCachedDeviceInfo(r.Context(), sn)
+	cached, err := a.tenantDB(r).GetCachedDeviceInfo(r.Context(), sn)
 	if err != nil {
 		http.Error(w, "No cached info available for this device", http.StatusNotFound)
 		return
@@ -188,13 +189,14 @@ func (a *Api) devicePerformanceGet(w http.ResponseWriter, r *http.Request) {
 	sendUspMsg(msg, sn, rec, a.nc, mtp)
 
 	if rec.statusCode == http.StatusOK {
+		tdb := a.tenantDB(r)
 		select {
 		case perfStoreSem <- struct{}{}:
 			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			go func() {
 				defer func() { <-perfStoreSem }()
 				defer cancel()
-				a.storePerformanceMetrics(bgCtx, sn, rec.body)
+				a.storePerformanceMetrics(bgCtx, tdb, sn, rec.body)
 			}()
 		default:
 			log.Printf("devicePerformanceGet: metrics store queue full, skipping for %s", sn)
@@ -208,7 +210,7 @@ func (a *Api) devicePerformanceGet(w http.ResponseWriter, r *http.Request) {
 	w.Write(rec.body)
 }
 
-func (a *Api) storePerformanceMetrics(ctx context.Context, sn string, data []byte) {
+func (a *Api) storePerformanceMetrics(ctx context.Context, tdb *db.TenantDB, sn string, data []byte) {
 	var resp usp_msg.GetResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		log.Printf("storePerformanceMetrics: unmarshal error for %s: %v", sn, err)
@@ -235,7 +237,7 @@ func (a *Api) storePerformanceMetrics(ctx context.Context, sn string, data []byt
 			}
 		}
 	}
-	if err := a.db.StoreDeviceMetrics(ctx, m); err != nil {
+	if err := tdb.StoreDeviceMetrics(ctx, m); err != nil {
 		log.Printf("storePerformanceMetrics: store error for %s: %v", sn, err)
 	}
 }
@@ -251,7 +253,7 @@ func (a *Api) deviceMetricsHistory(w http.ResponseWriter, r *http.Request) {
 			since = time.Now().Add(-time.Duration(hours) * time.Hour)
 		}
 	}
-	metrics, err := a.db.GetDeviceMetricsHistory(r.Context(), sn, since)
+	metrics, err := a.tenantDB(r).GetDeviceMetricsHistory(r.Context(), sn, since)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

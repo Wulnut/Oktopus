@@ -195,7 +195,9 @@ func (a *Api) massScriptExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	script, err := a.db.GetScript(r.Context(), scriptID)
+	tdb := a.tenantDB(r)
+
+	script, err := tdb.GetScript(r.Context(), scriptID)
 	if err != nil {
 		http.Error(w, "Script not found", http.StatusNotFound)
 		return
@@ -245,31 +247,31 @@ func (a *Api) massScriptExecution(w http.ResponseWriter, r *http.Request) {
 		StartedAt:     time.Now(),
 	}
 
-	ma, err = a.db.CreateMassAction(r.Context(), ma)
+	ma, err = tdb.CreateMassAction(r.Context(), ma)
 	if err != nil {
 		http.Error(w, "Failed to create mass action: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	go a.runMassScriptExecution(ma, script, req.Variables)
+	go a.runMassScriptExecution(tdb, ma, script, req.Variables)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(ma)
 }
 
-func (a *Api) runMassScriptExecution(ma db.MassAction, script db.Script, variables map[string]string) {
+func (a *Api) runMassScriptExecution(tdb *db.TenantDB, ma db.MassAction, script db.Script, variables map[string]string) {
 	sem := make(chan struct{}, ma.Concurrency)
 	var wg sync.WaitGroup
 
 	for i, dr := range ma.DeviceResults {
-		current, err := a.db.GetMassAction(context.Background(), ma.ID)
+		current, err := tdb.GetMassAction(context.Background(), ma.ID)
 		if err == nil && current.Status == "cancelled" {
 			for j := i; j < len(ma.DeviceResults); j++ {
 				if ma.DeviceResults[j].Status == "pending" {
 					result := ma.DeviceResults[j]
 					result.Status = "skipped"
-					a.db.UpdateMassActionDevice(context.Background(), ma.ID, j, result)
+					tdb.UpdateMassActionDevice(context.Background(), ma.ID, j, result)
 				}
 			}
 			break
@@ -287,20 +289,20 @@ func (a *Api) runMassScriptExecution(ma db.MassAction, script db.Script, variabl
 				Status:    "running",
 				StartedAt: time.Now(),
 			}
-			a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
+			tdb.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
 
 			mtp, online := deviceStateOKNoWrite(a.nc, sn)
 			if !online {
 				result.Status = "skipped"
 				result.Error = "device offline"
 				result.FinishedAt = time.Now()
-				a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
-				a.db.IncrementMassActionProgress(context.Background(), ma.ID, false)
+				tdb.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
+				tdb.IncrementMassActionProgress(context.Background(), ma.ID, false)
 				return
 			}
 
 			result.MTP = mtp
-			execution, execErr := a.executeScriptForDevice(script, sn, mtp, variables)
+			execution, execErr := a.executeScriptForDevice(tdb, script, sn, mtp, variables)
 
 			success := true
 			if execErr != nil || execution.Status == "failed" {
@@ -316,15 +318,15 @@ func (a *Api) runMassScriptExecution(ma db.MassAction, script db.Script, variabl
 			}
 			result.ExecutionID = execution.ID
 			result.FinishedAt = time.Now()
-			a.db.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
-			a.db.IncrementMassActionProgress(context.Background(), ma.ID, success)
+			tdb.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
+			tdb.IncrementMassActionProgress(context.Background(), ma.ID, success)
 		}(i, dr.DeviceSN)
 	}
 
 	wg.Wait()
 
 	// Final status update — no concurrency at this point
-	current, err := a.db.GetMassAction(context.Background(), ma.ID)
+	current, err := tdb.GetMassAction(context.Background(), ma.ID)
 	if err != nil {
 		log.Printf("runMassScriptExecution: failed to read final state for %s: %v", ma.ID.Hex(), err)
 		return
@@ -332,7 +334,7 @@ func (a *Api) runMassScriptExecution(ma db.MassAction, script db.Script, variabl
 
 	if current.Status == "cancelled" {
 		current.FinishedAt = time.Now()
-		a.db.UpdateMassAction(context.Background(), ma.ID, current)
+		tdb.UpdateMassAction(context.Background(), ma.ID, current)
 		return
 	}
 
@@ -342,11 +344,11 @@ func (a *Api) runMassScriptExecution(ma db.MassAction, script db.Script, variabl
 		current.Status = "completed"
 	}
 	current.FinishedAt = time.Now()
-	a.db.UpdateMassAction(context.Background(), ma.ID, current)
+	tdb.UpdateMassAction(context.Background(), ma.ID, current)
 }
 
 // executeScriptForDevice runs a script on a single device and returns the execution record.
-func (a *Api) executeScriptForDevice(script db.Script, sn, mtp string, variables map[string]string) (db.ScriptExecution, error) {
+func (a *Api) executeScriptForDevice(tdb *db.TenantDB, script db.Script, sn, mtp string, variables map[string]string) (db.ScriptExecution, error) {
 	execution := db.ScriptExecution{
 		ScriptID:   script.ID,
 		ScriptName: script.Name,
@@ -357,7 +359,7 @@ func (a *Api) executeScriptForDevice(script db.Script, sn, mtp string, variables
 		StartedAt:  time.Now(),
 	}
 	var err error
-	execution, err = a.db.CreateExecution(context.Background(), execution)
+	execution, err = tdb.CreateExecution(context.Background(), execution)
 	if err != nil {
 		return execution, fmt.Errorf("failed to create execution log: %w", err)
 	}
@@ -492,7 +494,7 @@ func (a *Api) executeScriptForDevice(script db.Script, sn, mtp string, variables
 
 done:
 	execution.FinishedAt = time.Now()
-	if err := a.db.UpdateExecution(context.Background(), execution.ID, execution); err != nil {
+	if err := tdb.UpdateExecution(context.Background(), execution.ID, execution); err != nil {
 		log.Printf("executeScriptForDevice: failed to update execution %s: %v", execution.ID.Hex(), err)
 	}
 	return execution, nil
@@ -501,7 +503,7 @@ done:
 // --- List / Get / Cancel ---
 
 func (a *Api) listMassActions(w http.ResponseWriter, r *http.Request) {
-	list, err := a.db.ListMassActions(r.Context())
+	list, err := a.tenantDB(r).ListMassActions(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -520,7 +522,7 @@ func (a *Api) getMassAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
-	ma, err := a.db.GetMassAction(r.Context(), id)
+	ma, err := a.tenantDB(r).GetMassAction(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Mass action not found", http.StatusNotFound)
 		return
@@ -536,7 +538,7 @@ func (a *Api) cancelMassAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
-	if err := a.db.CancelMassAction(r.Context(), id); err != nil {
+	if err := a.tenantDB(r).CancelMassAction(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

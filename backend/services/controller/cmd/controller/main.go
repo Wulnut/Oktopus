@@ -21,18 +21,20 @@ func main() {
 
 	c := config.NewConfig()
 
-	js, nc, kv := nats.StartNatsClient(c.Nats)
+	js, nc := nats.StartNatsClient(c.Nats)
 
 	bridge := bridge.NewBridge(js, nc)
 
-	db := db.NewDatabase(c.Mongo.Ctx, c.Mongo.Uri)
+	database := db.NewDatabase(c.Mongo.Ctx, c.Mongo.Uri)
 
 	// Start message interceptor BEFORE API starts (to capture all messages)
-	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, db, c.Controller.ControllerId)
+	// Use a default tenant DB for the interceptor until tenant-scoped NATS subjects are implemented
+	defaultTenantDB := database.ForTenant("default")
+	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, defaultTenantDB, c.Controller.ControllerId)
 
-	api := api.NewApi(c, js, nc, bridge, db, kv)
-	api.StartApi()
-	api.StartCampaignEngine()
+	a := api.NewApi(c, js, nc, bridge, database)
+	a.StartApi()
+	a.StartCampaignEngine()
 
 	<-done
 

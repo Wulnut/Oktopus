@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/leandrofars/oktopus/internal/api/auth"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/utils"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -37,33 +38,36 @@ func (a *Api) retrieveUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Api) registerUser(w http.ResponseWriter, r *http.Request) {
+	email := middleware.GetEmail(r)
+	level := middleware.GetLevel(r)
 
-	tokenString := r.Header.Get("Authorization")
-	if tokenString == "" {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-	email, err := auth.ValidateToken(tokenString)
-	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
-	//Check if user which is requesting creation has the necessary privileges
-	rUser, err := a.db.FindUser(email)
-	if rUser.Level != db.AdminUser {
+	// Check if user which is requesting creation has the necessary privileges
+	if db.UserLevels(level) > db.TenantAdmin {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 
 	var user db.User
-	err = json.NewDecoder(r.Body).Decode(&user)
+	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	user.Level = db.NormalUser
+	// New users created under a tenant get Operator level
+	user.Level = db.Operator
+
+	// Assign user to the tenant from URL slug
+	slug := middleware.GetTenantSlug(r)
+	if slug != "" {
+		tenant, err := a.db.FindTenant(r.Context(), slug)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode("Tenant not found")
+			return
+		}
+		user.TenantID = tenant.ID
+	}
 
 	if err := user.HashPassword(user.Password); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -74,6 +78,8 @@ func (a *Api) registerUser(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	_ = email // logged for audit
 
 	if err := a.db.RegisterUser(user); err != nil {
 		if err == db.ErrorUserExists {
@@ -92,27 +98,13 @@ func valid(email string) bool {
 }
 
 func (a *Api) deleteUser(w http.ResponseWriter, r *http.Request) {
-	tokenString := r.Header.Get("Authorization")
-	if tokenString == "" {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-	email, err := auth.ValidateToken(tokenString)
-	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
-	//Check if user which is requesting deletion has the necessary privileges
-	rUser, err := a.db.FindUser(email)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	email := middleware.GetEmail(r)
+	level := middleware.GetLevel(r)
 
 	userEmail := mux.Vars(r)["user"]
 
-	if rUser.Email == userEmail || (rUser.Level == db.AdminUser) { //Admin can delete any account
+	// SuperAdmin can delete any user, TenantAdmin can delete within their tenant
+	if email == userEmail || db.UserLevels(level) <= db.TenantAdmin {
 		if err := a.db.DeleteUser(userEmail); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(err)
@@ -129,7 +121,7 @@ func (a *Api) changePassword(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	email, err := auth.ValidateToken(tokenString)
+	claims, err := auth.ValidateToken(tokenString)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -142,7 +134,7 @@ func (a *Api) changePassword(w http.ResponseWriter, r *http.Request) {
 		utils.MarshallEncoder(err, w)
 		return
 	}
-	user.Email = email
+	user.Email = claims.Email
 
 	if len(user.Password) < 8 {
 		w.WriteHeader(http.StatusBadRequest)
@@ -181,7 +173,8 @@ func (a *Api) registerAdminUser(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			user.Level = db.AdminUser
+			// First admin is SuperAdmin (no tenant)
+			user.Level = db.SuperAdmin
 
 			if err := user.HashPassword(user.Password); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -199,15 +192,14 @@ func (a *Api) registerAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email, err := auth.ValidateToken(tokenString)
+	claims, err := auth.ValidateToken(tokenString)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	//Check if user which is requesting creation has the necessary privileges
-	rUser, err := a.db.FindUser(email)
-	if rUser.Level != db.AdminUser {
+	// Only SuperAdmin can create more admin users
+	if db.UserLevels(claims.Level) != db.SuperAdmin {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -219,7 +211,7 @@ func (a *Api) registerAdminUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user.Level = db.AdminUser
+	user.Level = db.SuperAdmin
 
 	if err := user.HashPassword(user.Password); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -239,7 +231,7 @@ func adminUserExists(users []map[string]interface{}) bool {
 	}
 
 	for _, x := range users {
-		if db.UserLevels(x["level"].(int32)) == db.AdminUser {
+		if db.UserLevels(x["level"].(int32)) == db.SuperAdmin {
 			return true
 		}
 	}
@@ -287,7 +279,25 @@ func (a *Api) generateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.GenerateJWT(user.Email, user.Name)
+	// Look up tenant info if user has a TenantID
+	var tenantID, tenantSlug string
+	if !user.TenantID.IsZero() {
+		tenant, err := a.db.FindTenantByID(r.Context(), user.TenantID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode("Failed to look up tenant")
+			return
+		}
+		if tenant.Status != db.TenantStatusActive {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode("Tenant is disabled")
+			return
+		}
+		tenantID = tenant.ID.Hex()
+		tenantSlug = tenant.Slug
+	}
+
+	token, err := auth.GenerateJWT(user.Email, user.Name, tenantID, tenantSlug, int(user.Level))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return

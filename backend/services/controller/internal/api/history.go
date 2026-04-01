@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/utils"
 )
@@ -176,7 +177,7 @@ func (a *Api) deviceMessageHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Call db.GetMessageHistory() with cursor-based pagination, date filters, and message filters
-	messages, nextCursor, err := a.db.GetMessageHistory(r.Context(), deviceSerial, limit, cursor, fromTime, toTime, filters)
+	messages, nextCursor, err := a.tenantDB(r).GetMessageHistory(r.Context(), deviceSerial, limit, cursor, fromTime, toTime, filters)
 	if err != nil {
 		log.Printf("Failed to get message history: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -210,8 +211,8 @@ func (a *Api) deviceClearHistory(w http.ResponseWriter, r *http.Request) {
 	deviceSerial := vars["sn"]
 
 	// Get user email from context (set by authentication middleware)
-	userEmail := r.Context().Value("email")
-	if userEmail == nil {
+	userEmail := middleware.GetEmail(r)
+	if userEmail == "" {
 		// This should not happen if middleware is working correctly, but check anyway
 		log.Printf("Warning: Clear History called without authenticated user")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -220,7 +221,7 @@ func (a *Api) deviceClearHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log the action for audit purposes
-	log.Printf("User %v clearing message history for device %s", userEmail, deviceSerial)
+	log.Printf("User %s clearing message history for device %s", userEmail, deviceSerial)
 
 	// TODO: Add authorization check here
 	// Example: Check if user is admin or owns the device
@@ -231,7 +232,7 @@ func (a *Api) deviceClearHistory(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	// Delete messages and errors
-	messagesCount, errorsCount, err := a.db.DeleteMessageHistory(r.Context(), deviceSerial)
+	messagesCount, errorsCount, err := a.tenantDB(r).DeleteMessageHistory(r.Context(), deviceSerial)
 	if err != nil {
 		log.Printf("Failed to delete message history for device %s by user %v: %v", deviceSerial, userEmail, err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -240,7 +241,7 @@ func (a *Api) deviceClearHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log successful deletion
-	log.Printf("User %v successfully deleted %d messages and %d errors for device %s",
+	log.Printf("User %s successfully deleted %d messages and %d errors for device %s",
 		userEmail, messagesCount, errorsCount, deviceSerial)
 
 	// Return success response with counts

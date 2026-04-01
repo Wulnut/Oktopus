@@ -165,7 +165,7 @@ func stripVars(s string) string {
 // --- CRUD Handlers ---
 
 func (a *Api) listScripts(w http.ResponseWriter, r *http.Request) {
-	list, err := a.db.ListScripts(r.Context())
+	list, err := a.tenantDB(r).ListScripts(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -188,7 +188,7 @@ func (a *Api) createScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Validation error: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	created, err := a.db.CreateScript(r.Context(), s)
+	created, err := a.tenantDB(r).CreateScript(r.Context(), s)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -205,7 +205,7 @@ func (a *Api) getScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
-	s, err := a.db.GetScript(r.Context(), id)
+	s, err := a.tenantDB(r).GetScript(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Script not found", http.StatusNotFound)
 		return
@@ -231,7 +231,7 @@ func (a *Api) updateScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Validation error: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := a.db.UpdateScript(r.Context(), id, s); err != nil {
+	if err := a.tenantDB(r).UpdateScript(r.Context(), id, s); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -246,7 +246,7 @@ func (a *Api) deleteScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Check if builtin
-	s, err := a.db.GetScript(r.Context(), id)
+	s, err := a.tenantDB(r).GetScript(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Script not found", http.StatusNotFound)
 		return
@@ -255,7 +255,7 @@ func (a *Api) deleteScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Cannot delete built-in scripts", http.StatusForbidden)
 		return
 	}
-	if err := a.db.DeleteScript(r.Context(), id); err != nil {
+	if err := a.tenantDB(r).DeleteScript(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -271,7 +271,7 @@ func (a *Api) listScriptExecutions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
-	list, err := a.db.ListExecutions(r.Context(), id)
+	list, err := a.tenantDB(r).ListExecutions(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -290,7 +290,7 @@ func (a *Api) getExecution(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
-	e, err := a.db.GetExecution(r.Context(), id)
+	e, err := a.tenantDB(r).GetExecution(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Execution not found", http.StatusNotFound)
 		return
@@ -617,7 +617,7 @@ func (a *Api) executeScriptHandler(w http.ResponseWriter, r *http.Request) {
 	mtp := vars["mtp"]
 
 	// Load script
-	script, err := a.db.GetScript(r.Context(), id)
+	script, err := a.tenantDB(r).GetScript(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Script not found", http.StatusNotFound)
 		return
@@ -672,7 +672,7 @@ func (a *Api) executeScriptHandler(w http.ResponseWriter, r *http.Request) {
 		Variables:  reqBody.Variables,
 		StartedAt:  time.Now(),
 	}
-	execution, err = a.db.CreateExecution(r.Context(), execution)
+	execution, err = a.tenantDB(r).CreateExecution(r.Context(), execution)
 	if err != nil {
 		http.Error(w, "Failed to create execution log: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -812,7 +812,7 @@ func (a *Api) executeScriptHandler(w http.ResponseWriter, r *http.Request) {
 
 done:
 	execution.FinishedAt = time.Now()
-	if err := a.db.UpdateExecution(r.Context(), execution.ID, execution); err != nil {
+	if err := a.tenantDB(r).UpdateExecution(r.Context(), execution.ID, execution); err != nil {
 		log.Printf("failed to update execution %s: %v", execution.ID.Hex(), err)
 	}
 

@@ -110,7 +110,7 @@ func getDeviceMTP(ctx context.Context, nc *nats.Conn, deviceSerial string) strin
 
 // StartMessageInterceptor subscribes to NATS subjects to intercept all USP messages
 // IMPORTANT: Use Subscribe() (not QueueSubscribe()) to ensure all subscribers receive messages
-func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, d db.Database, controllerID string) {
+func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, d *db.TenantDB, controllerID string) {
 	// Subscribe to all adapter-to-device subjects (messages being sent TO devices)
 	// Pattern: "{mtp}-adapter.usp.v1.{sn}.api" where mtp in [mqtt, ws, stomp]
 	patterns := []string{
@@ -164,7 +164,7 @@ func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, d db.Database, 
 }
 
 // handleSentMessage processes messages being sent TO devices
-func handleSentMessage(ctx context.Context, msg *nats.Msg, d db.Database, controllerID string) {
+func handleSentMessage(ctx context.Context, msg *nats.Msg, d *db.TenantDB, controllerID string) {
 	deviceSerial := extractDeviceSerial(msg.Subject)
 
 	// Parse record
@@ -211,7 +211,7 @@ func handleSentMessage(ctx context.Context, msg *nats.Msg, d db.Database, contro
 }
 
 // handleReceivedMessage processes messages being received FROM devices
-func handleReceivedMessage(ctx context.Context, msg *nats.Msg, nc *nats.Conn, d db.Database, controllerID string) {
+func handleReceivedMessage(ctx context.Context, msg *nats.Msg, nc *nats.Conn, d *db.TenantDB, controllerID string) {
 	deviceSerial := extractDeviceSerial(msg.Subject)
 	
 	// Skip non-protobuf messages (e.g., status messages which are just "0" or "1")
@@ -360,7 +360,7 @@ func extractMTP(ctx context.Context, subject string, nc *nats.Conn, deviceSerial
 }
 
 // storeError stores a failed message parsing/storage attempt
-func storeError(ctx context.Context, d db.Database, msg *nats.Msg, deviceSerial, errorType, errorMessage string) {
+func storeError(ctx context.Context, d *db.TenantDB, msg *nats.Msg, deviceSerial, errorType, errorMessage string) {
 	errMsg := db.UspMessageError{
 		Timestamp:    time.Now(),
 		DeviceSerial: deviceSerial,

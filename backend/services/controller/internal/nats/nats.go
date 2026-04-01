@@ -1,6 +1,7 @@
 package nats
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -20,12 +21,10 @@ const (
 	NATS_STOMP_ADAPTER_SUBJECT_PREFIX = "stomp-adapter.usp.v1."
 	DEVICE_SUBJECT_PREFIX             = "device.usp.v1."
 	DEVICE_CWMP_SUBJECT_PREFIX        = "device.cwmp.v1."
-	BUCKET_NAME                       = "devices-auth"
-	BUCKET_DESCRIPTION                = "Devices authentication"
 	NATS_CWMP_ADAPTER_SUBJECT_PREFIX  = "cwmp-adapter.v1."
 )
 
-func StartNatsClient(c config.Nats) (jetstream.JetStream, *nats.Conn, jetstream.KeyValue) {
+func StartNatsClient(c config.Nats) (jetstream.JetStream, *nats.Conn) {
 
 	var (
 		nc  *nats.Conn
@@ -51,15 +50,20 @@ func StartNatsClient(c config.Nats) (jetstream.JetStream, *nats.Conn, jetstream.
 		log.Fatalf("Failed to create JetStream client: %v", err)
 	}
 
-	kv, err := js.CreateOrUpdateKeyValue(c.Ctx, jetstream.KeyValueConfig{
-		Bucket:      BUCKET_NAME,
-		Description: BUCKET_DESCRIPTION,
-	})
-	if err != nil {
-		log.Fatalf("Failed to create KeyValue store: %v", err)
-	}
+	return js, nc
+}
 
-	return js, nc, kv
+// CreateTenantKVBucket creates or updates a NATS KeyValue bucket for tenant device authentication.
+func CreateTenantKVBucket(js jetstream.JetStream, slug string) (jetstream.KeyValue, error) {
+	return js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
+		Bucket:      "devices-auth-" + slug,
+		Description: "Device authentication for tenant " + slug,
+	})
+}
+
+// DeleteTenantKVBucket deletes a tenant's device authentication KV bucket.
+func DeleteTenantKVBucket(js jetstream.JetStream, slug string) error {
+	return js.DeleteKeyValue(context.Background(), "devices-auth-"+slug)
 }
 
 func defineOptions(c config.Nats) []nats.Option {

@@ -31,7 +31,7 @@ func validateMessage(msg usp_msg.Msg, deviceSerial string) error {
 // StoreUspMessage stores a USP message with source detection
 // source: "controller" (sent TO device - cannot distinguish localhost vs remote), "device" (received FROM device)
 // mtp: "mqtt", "ws", "stomp", or "unknown" (extracted from NATS subject)
-func StoreUspMessage(ctx context.Context, d db.Database, msg usp_msg.Msg, record usp_record.Record, deviceSerial, direction, source, mtp string) error {
+func StoreUspMessage(ctx context.Context, d *db.TenantDB, msg usp_msg.Msg, record usp_record.Record, deviceSerial, direction, source, mtp string) error {
 	// Convert protobuf record to JSON
 	// Using protojson to convert the record to JSON format
 	protojsonMarshaler := protojson.MarshalOptions{
@@ -103,7 +103,7 @@ func StoreUspMessage(ctx context.Context, d db.Database, msg usp_msg.Msg, record
 
 // StoreUspRecord stores a USP record (including Connect/Disconnect records without NoSessionContext)
 // For records without NoSessionContext, recordType is used as msg_type and a generated ID is used as msg_id
-func StoreUspRecord(ctx context.Context, d db.Database, record usp_record.Record, deviceSerial, direction, source, mtp, recordType string) error {
+func StoreUspRecord(ctx context.Context, d *db.TenantDB, record usp_record.Record, deviceSerial, direction, source, mtp, recordType string) error {
 	// Convert protobuf record to JSON
 	protojsonMarshaler := protojson.MarshalOptions{
 		EmitUnpopulated: true,
