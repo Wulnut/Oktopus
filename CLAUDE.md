@@ -11,6 +11,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - When in doubt, ask the user — do not make assumptions unless explicitly asked to.
 - Verify before acting: read the code, check the current state, confirm understanding.
 
+## Recommended Plugins
+
+The following Claude Code plugins are used in this project:
+
+- **Feature Dev** — guided feature development with codebase understanding
+- **Frontend Design** — production-grade frontend interface generation
+- **Code Review** — code review for pull requests
+- **Superpowers** — planning, execution, debugging, and verification workflows
+- **Playwright** — browser automation for testing and verification
+- **Context7** — up-to-date documentation lookup for libraries and frameworks
+- **Firecrawl** — web scraping and crawling
+- **PR Review Toolkit** — pull request review utilities
+- **Code Simplifier** — review changed code for reuse, quality, and efficiency
+- **CLAUDE.md Management** — manage and update CLAUDE.md files
+- **Commit Commands** — commit workflow helpers
+- **Playground** — experimentation and prototyping
+
 ## What is Oktopus
 
 Oktopus is an Open Source USP (User Services Platform) Controller and CWMP (CPE WAN Management Protocol) multi-vendor management platform for CPEs and IoT devices. It manages and controls network devices using multiple transport protocols.
