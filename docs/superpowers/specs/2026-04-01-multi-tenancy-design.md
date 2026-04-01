@@ -26,6 +26,7 @@ type Tenant struct {
     Name      string             `bson:"name" json:"name"`           // Display name, e.g. "Acme ISP"
     Slug      string             `bson:"slug" json:"slug"`           // URL-safe unique identifier
     Status    string             `bson:"status" json:"status"`       // "active", "suspended", "disabled"
+    CACerts   []string           `bson:"ca_certs,omitempty" json:"ca_certs,omitempty"` // PEM-encoded trusted CA certs for device TLS auth
     CreatedAt time.Time          `bson:"created_at" json:"created_at"`
     UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
@@ -220,9 +221,62 @@ Set `Tenant.Status = "suspended"`. Middleware rejects all requests from that ten
 
 ## Device-to-Tenant Assignment
 
-Devices are assigned to tenants via tenant-specific transport endpoints. The mechanism (e.g., per-tenant MQTT topics, per-tenant WebSocket URLs, per-tenant STOMP destinations) is an implementation detail handled at the MTP service layer. When a device connects through a tenant-specific endpoint, the MTP adapter tags the device with the tenant identifier before forwarding to NATS.
+Two-layer approach: transport routing determines the tenant, credentials/certificates prove the device is authorized.
 
-The exact transport endpoint configuration per tenant is deferred to implementation planning.
+### Layer 1: Tenant-specific transport endpoints
+
+Each tenant gets dedicated endpoint paths. CPEs are provisioned with their tenant's endpoint:
+
+| Protocol | Endpoint pattern | CPE data model |
+|----------|-----------------|----------------|
+| MQTT | Topic prefix `<tenant_slug>/usp/v1/<endpoint_id>` | `Device.MQTT.Client.{i}.Topic` |
+| WebSocket | `ws://host/<tenant_slug>/` | `Device.WebSocket.Client.{i}.URL` (proposed) |
+| STOMP | Destination prefix `/<tenant_slug>/` | `Device.STOMP.Connection.{i}.Destination` (proposed) |
+| CWMP | ACS URL `http://host/acs/<tenant_slug>/` | `Device.ManagementServer.URL` |
+
+The MTP service extracts the tenant slug from the path/topic and tags the connection. If the slug doesn't match a valid active tenant, the connection is rejected.
+
+### Layer 2: Device authentication
+
+Two mechanisms, usable independently or together:
+
+#### Password-based authentication
+
+Uses TR-181 data model fields already present on CPEs:
+
+| Protocol | Username field | Password field |
+|----------|---------------|----------------|
+| MQTT | `Device.MQTT.Client.{i}.Username` | `Device.MQTT.Client.{i}.Password` |
+| STOMP | `Device.STOMP.Connection.{i}.Username` | `Device.STOMP.Connection.{i}.Password` |
+| WebSocket | Provided via HTTP Basic Auth or protocol-specific mechanism | |
+| CWMP | `Device.ManagementServer.Username` | `Device.ManagementServer.Password` |
+
+Platform side:
+- Device credentials stored in tenant-scoped NATS KV bucket: `devices-auth-<tenant_slug>`
+- MTP service validates: credential exists in the bucket for the tenant resolved from Layer 1
+- A valid credential on the wrong tenant's endpoint is rejected — both layers must agree
+
+#### Certificate-based authentication (TLS client certificates)
+
+Uses USP trust model (TR-369 Section "Trusted Certificate Authorities"):
+
+- Each tenant is assigned a CA certificate (or uses their own CA)
+- CPE devices are provisioned with client certificates signed by their tenant's CA
+- Relevant CPE data model: `Device.LocalAgent.Certificate`, `Device.Security.Certificate`
+- Platform side:
+  - Tenant record stores the tenant's trusted CA certificate(s)
+  - MTP service terminates TLS, validates client cert against the tenant's CA (resolved from Layer 1)
+  - Cert tenant identity must match the transport endpoint tenant
+
+#### Enforcement rule
+
+The tenant slug in the transport path MUST match the tenant that owns the credential or issued the certificate. This prevents a device from connecting to the wrong tenant even with otherwise valid credentials.
+
+#### Recommended deployment
+
+- **Minimum**: Password-based auth (extends existing `devices-auth` mechanism, no PKI needed)
+- **Enhanced**: Certificate-based auth (stronger identity, requires CA management per tenant)
+- **Maximum**: Both (defense in depth — cert validates tenant identity, password validates device identity)
 
 ## Frontend Changes
 
@@ -269,4 +323,5 @@ NATS JetStream KeyValue bucket for device auth becomes tenant-scoped: `devices-a
 - Billing / usage metering per tenant
 - Tenant-specific branding or theming
 - Rate limiting per tenant
-- Exact transport endpoint provisioning per tenant
+- CA certificate management UI and provisioning workflow
+- Automatic CPE provisioning (zero-touch) via TR-369 OnBoardRequest
