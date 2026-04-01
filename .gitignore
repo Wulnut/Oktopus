@@ -15,6 +15,7 @@ go.work
 *.db.new
 *.pwd
 *.acl
+.claude
 .idea
 .vscode
 
