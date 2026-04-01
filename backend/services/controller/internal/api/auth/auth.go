@@ -1,9 +1,7 @@
 package auth
 
 import (
-	"errors"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -19,52 +17,48 @@ func getJwtKey() []byte {
 }
 
 type JWTClaim struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	TenantID   string `json:"tenant_id"`
+	TenantSlug string `json:"tenant_slug"`
+	Level      int    `json:"level"`
 	jwt.RegisteredClaims
 }
 
-func GenerateJWT(email string, username string) (tokenString string, err error) {
+func GenerateJWT(email, username, tenantID, tenantSlug string, level int) (string, error) {
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &JWTClaim{
-		username,
-		email,
-		jwt.RegisteredClaims{
+		Username:   username,
+		Email:      email,
+		TenantID:   tenantID,
+		TenantSlug: tenantSlug,
+		Level:      level,
+		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			Issuer:    "Oktopus",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err = token.SignedString(getJwtKey())
-	return
+	return token.SignedString(getJwtKey())
 }
 
-func ValidateToken(signedToken string) (email string, err error) {
+func ValidateToken(signedToken string) (*JWTClaim, error) {
 	token, err := jwt.ParseWithClaims(
 		signedToken,
 		&JWTClaim{},
 		func(token *jwt.Token) (interface{}, error) {
-			// Don't forget to validate the alg is what you expect:
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-
-			// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
 			return getJwtKey(), nil
 		},
 	)
 	if err != nil {
-		log.Println(err)
-		return
+		return nil, err
 	}
-
 	claims, ok := token.Claims.(*JWTClaim)
-	if !ok {
-		err = errors.New("couldn't parse claims")
-		return
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid token")
 	}
-
-	email = claims.Email
-
-	return
+	return claims, nil
 }

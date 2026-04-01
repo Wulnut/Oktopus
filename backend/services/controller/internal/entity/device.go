@@ -3,7 +3,7 @@ package entity
 type Device struct {
 	SN           string
 	Model        string
-	Customer     string
+	TenantID     string
 	Vendor       string
 	Version      string
 	ProductClass string

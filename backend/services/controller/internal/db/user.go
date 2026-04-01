@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -12,16 +13,18 @@ import (
 type UserLevels int32
 
 const (
-	NormalUser UserLevels = iota
-	AdminUser
+	SuperAdmin  UserLevels = iota // 0 — Provider (SEI)
+	TenantAdmin                   // 1 — ISP admin
+	Operator                      // 2 — ISP operator
 )
 
 type User struct {
-	Email    string     `json:"email"`
-	Name     string     `json:"name"`
-	Password string     `json:"password,omitempty"`
-	Level    UserLevels `json:"level"`
-	Phone    string     `json:"phone"`
+	Email    string             `json:"email"`
+	Name     string             `json:"name"`
+	Password string             `json:"password,omitempty"`
+	Level    UserLevels         `json:"level"`
+	Phone    string             `json:"phone"`
+	TenantID primitive.ObjectID `json:"tenant_id,omitempty" bson:"tenant_id,omitempty"`
 }
 
 var ErrorUserExists = errors.New("User already exists")
@@ -65,6 +68,21 @@ func (d *Database) FindUser(email string) (User, error) {
 
 func (d *Database) DeleteUser(email string) error {
 	_, err := d.users.DeleteOne(d.ctx, bson.D{{"email", email}})
+	return err
+}
+
+func (d *Database) FindUsersByTenant(tenantID primitive.ObjectID) ([]User, error) {
+	cursor, err := d.users.Find(d.ctx, bson.M{"tenant_id": tenantID})
+	if err != nil {
+		return nil, err
+	}
+	var users []User
+	err = cursor.All(d.ctx, &users)
+	return users, err
+}
+
+func (d *Database) DeleteUsersByTenant(tenantID primitive.ObjectID) error {
+	_, err := d.users.DeleteMany(d.ctx, bson.M{"tenant_id": tenantID})
 	return err
 }
 
