@@ -18,28 +18,28 @@ type Template struct {
 var ErrorTemplateExists = errors.New("message already exists")
 var ErrorTemplateNotExists = errors.New("message don't exist")
 
-func (d *Database) FindTemplate(filter interface{}) (Template, error) {
+func (t *TenantDB) FindTemplate(filter interface{}) (Template, error) {
 	var result Template
-	err := d.template.FindOne(d.ctx, filter).Decode(&result)
+	err := t.Templates().FindOne(t.ctx, filter).Decode(&result)
 	return result, err
 }
 
-func (d *Database) AllTemplates(filter interface{}) ([]Template, error) {
+func (t *TenantDB) AllTemplates(filter interface{}) ([]Template, error) {
 	var results []Template
 
-	cursor, err := d.template.Find(d.ctx, filter)
+	cursor, err := t.Templates().Find(t.ctx, filter)
 	if err != nil {
 		return results, err
 	}
-	if err = cursor.All(d.ctx, &results); err != nil {
+	if err = cursor.All(t.ctx, &results); err != nil {
 		log.Println(err)
 	}
 	return results, err
 }
 
-func (d *Database) AddTemplate(name, tr string, t string) error {
+func (t *TenantDB) AddTemplate(name, tr string, tmpl string) error {
 	opts := options.FindOneAndReplace().SetUpsert(true)
-	err := d.template.FindOneAndReplace(d.ctx, bson.D{{"name", name}}, Template{Name: name, Type: tr, Value: t}, opts).Err()
+	err := t.Templates().FindOneAndReplace(t.ctx, bson.D{{"name", name}}, Template{Name: name, Type: tr, Value: tmpl}, opts).Err()
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			log.Printf("New message %s added to database", name)
@@ -51,8 +51,8 @@ func (d *Database) AddTemplate(name, tr string, t string) error {
 	return err
 }
 
-func (d *Database) UpdateTemplate(name, t string) error {
-	result, err := d.template.UpdateOne(d.ctx, bson.D{{"name", name}}, bson.D{{"$set", bson.D{{"value", t}}}})
+func (t *TenantDB) UpdateTemplate(name, tmpl string) error {
+	result, err := t.Templates().UpdateOne(t.ctx, bson.D{{"name", name}}, bson.D{{"$set", bson.D{{"value", tmpl}}}})
 	if err == nil {
 		if result.MatchedCount == 0 {
 			return ErrorTemplateNotExists
@@ -61,8 +61,8 @@ func (d *Database) UpdateTemplate(name, t string) error {
 	return err
 }
 
-func (d *Database) DeleteTemplate(name string) error {
-	result, err := d.template.DeleteOne(d.ctx, bson.D{{"name", name}})
+func (t *TenantDB) DeleteTemplate(name string) error {
+	result, err := t.Templates().DeleteOne(t.ctx, bson.D{{"name", name}})
 	if err == nil {
 		if result.DeletedCount == 0 {
 			return ErrorTemplateNotExists

@@ -13,6 +13,7 @@ import (
 )
 
 var testDB Database
+var testTDB *TenantDB
 
 func TestMain(m *testing.M) {
 	mongoURI := os.Getenv("MONGO_TEST_URI")
@@ -21,19 +22,22 @@ func TestMain(m *testing.M) {
 	}
 
 	ctx := context.Background()
-	dbName := fmt.Sprintf("test_%d", time.Now().UnixNano())
 
-	// Temporarily override NewDatabase to use a test DB name
-	// Since NewDatabase uses hardcoded DB names, we connect directly
 	testDB = NewDatabase(ctx, mongoURI)
+
+	// Provision a test tenant
+	testTenantSlug := fmt.Sprintf("test_%d", time.Now().UnixNano())
+	if err := testDB.ProvisionTenantDBs(testTenantSlug); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to provision tenant DBs: %v\n", err)
+		os.Exit(1)
+	}
+	testTDB = testDB.ForTenant(testTenantSlug)
 
 	code := m.Run()
 
 	// Cleanup: drop test databases
 	testDB.client.Database("account-mngr").Drop(ctx)
-	testDB.client.Database("general").Drop(ctx)
-	testDB.client.Database("usp").Drop(ctx)
-	_ = dbName
+	_ = testDB.DropTenantDBs(testTenantSlug)
 
 	os.Exit(code)
 }
@@ -48,7 +52,7 @@ func TestCreateAndGetFirmware(t *testing.T) {
 		BuildVersion: "1.0.0",
 		Phase:        PhaseInternalTesting,
 	}
-	created, err := testDB.CreateFirmware(context.Background(), fw)
+	created, err := testTDB.CreateFirmware(context.Background(), fw)
 	if err != nil {
 		t.Fatalf("CreateFirmware failed: %v", err)
 	}
@@ -56,7 +60,7 @@ func TestCreateAndGetFirmware(t *testing.T) {
 		t.Error("Created firmware has zero ID")
 	}
 
-	got, err := testDB.GetFirmware(context.Background(), created.ID)
+	got, err := testTDB.GetFirmware(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("GetFirmware failed: %v", err)
 	}
@@ -71,11 +75,11 @@ func TestCreateAndGetFirmware(t *testing.T) {
 func TestCreateAndListFirmware(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		fw := Firmware{Name: fmt.Sprintf("fw-list-%d-%d", time.Now().UnixNano(), i), BuildVersion: "1.0"}
-		if _, err := testDB.CreateFirmware(context.Background(), fw); err != nil {
+		if _, err := testTDB.CreateFirmware(context.Background(), fw); err != nil {
 			t.Fatal(err)
 		}
 	}
-	list, err := testDB.ListFirmware(context.Background())
+	list, err := testTDB.ListFirmware(context.Background())
 	if err != nil {
 		t.Fatalf("ListFirmware failed: %v", err)
 	}
@@ -85,7 +89,7 @@ func TestCreateAndListFirmware(t *testing.T) {
 }
 
 func TestUpdateFirmware_NonexistentID_Returns0Matched(t *testing.T) {
-	matched, err := testDB.UpdateFirmware(context.Background(), primitive.NewObjectID(), Firmware{
+	matched, err := testTDB.UpdateFirmware(context.Background(), primitive.NewObjectID(), Firmware{
 		Name: "nonexistent", BuildVersion: "1.0",
 	})
 	if err != nil {
@@ -98,14 +102,14 @@ func TestUpdateFirmware_NonexistentID_Returns0Matched(t *testing.T) {
 
 func TestCreateAndDeleteFirmware(t *testing.T) {
 	fw := Firmware{Name: fmt.Sprintf("fw-del-%d", time.Now().UnixNano()), BuildVersion: "1.0"}
-	created, err := testDB.CreateFirmware(context.Background(), fw)
+	created, err := testTDB.CreateFirmware(context.Background(), fw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.DeleteFirmware(context.Background(), created.ID); err != nil {
+	if err := testTDB.DeleteFirmware(context.Background(), created.ID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = testDB.GetFirmware(context.Background(), created.ID)
+	_, err = testTDB.GetFirmware(context.Background(), created.ID)
 	if err == nil {
 		t.Error("Expected error getting deleted firmware, got nil")
 	}
@@ -115,7 +119,7 @@ func TestCreateAndDeleteFirmware(t *testing.T) {
 
 func TestDeleteFirmware_CampaignsNotCleaned(t *testing.T) {
 	fw := Firmware{Name: fmt.Sprintf("fw-cascade-%d", time.Now().UnixNano()), BuildVersion: "2.0"}
-	created, err := testDB.CreateFirmware(context.Background(), fw)
+	created, err := testTDB.CreateFirmware(context.Background(), fw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,21 +132,21 @@ func TestDeleteFirmware_CampaignsNotCleaned(t *testing.T) {
 		Enabled:     true,
 		Concurrency: 10,
 	}
-	createdCampaign, err := testDB.CreateCampaign(context.Background(), campaign)
+	createdCampaign, err := testTDB.CreateCampaign(context.Background(), campaign)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Delete firmware and cascade to campaigns (same as API handler does)
-	if err := testDB.DeleteFirmware(context.Background(), created.ID); err != nil {
+	if err := testTDB.DeleteFirmware(context.Background(), created.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.DisableCampaignsByFirmware(context.Background(), created.ID); err != nil {
+	if err := testTDB.DisableCampaignsByFirmware(context.Background(), created.ID); err != nil {
 		t.Fatal(err)
 	}
 
 	// Campaign should be disabled after firmware deletion
-	got, err := testDB.GetCampaign(context.Background(), createdCampaign.ID)
+	got, err := testTDB.GetCampaign(context.Background(), createdCampaign.ID)
 	if err != nil {
 		// Campaign was deleted -- that's one valid fix
 		return
@@ -163,11 +167,11 @@ func TestCreateAndGetCampaign(t *testing.T) {
 		Enabled:     true,
 		Concurrency: 5,
 	}
-	created, err := testDB.CreateCampaign(context.Background(), c)
+	created, err := testTDB.CreateCampaign(context.Background(), c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := testDB.GetCampaign(context.Background(), created.ID)
+	got, err := testTDB.GetCampaign(context.Background(), created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,11 +186,11 @@ func TestCreateAndGetCampaign(t *testing.T) {
 func TestCampaignUniqueConstraint(t *testing.T) {
 	hw := fmt.Sprintf("hw-unique-%d", time.Now().UnixNano())
 	c := Campaign{Vendor: "V", Model: "M", HWVersion: hw, FirmwareID: primitive.NewObjectID(), Concurrency: 10}
-	if _, err := testDB.CreateCampaign(context.Background(), c); err != nil {
+	if _, err := testTDB.CreateCampaign(context.Background(), c); err != nil {
 		t.Fatal(err)
 	}
 	// Same vendor+model+hw_version should fail
-	_, err := testDB.CreateCampaign(context.Background(), c)
+	_, err := testTDB.CreateCampaign(context.Background(), c)
 	if err == nil {
 		t.Error("Expected duplicate key error, got nil")
 	}
@@ -204,17 +208,17 @@ func TestCreateUpgradeLog_And_UpdateStatus(t *testing.T) {
 		Status:           "pending",
 		TriggeredAt:      time.Now(),
 	}
-	created, err := testDB.CreateUpgradeLog(context.Background(), log)
+	created, err := testTDB.CreateUpgradeLog(context.Background(), log)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = testDB.UpdateUpgradeLogStatus(context.Background(), created.ID, "success", "")
+	err = testTDB.UpdateUpgradeLogStatus(context.Background(), created.ID, "success", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := testDB.GetUpgradeLogByDeviceAndFirmware(context.Background(), log.DeviceSN, log.FirmwareID)
+	got, err := testTDB.GetUpgradeLogByDeviceAndFirmware(context.Background(), log.DeviceSN, log.FirmwareID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,10 +231,10 @@ func TestUpgradeLogUniqueIndex(t *testing.T) {
 	fwID := primitive.NewObjectID()
 	sn := fmt.Sprintf("SN-UNIQUE-%d", time.Now().UnixNano())
 	log1 := FirmwareUpgradeLog{DeviceSN: sn, FirmwareID: fwID, Status: "pending", TriggeredAt: time.Now()}
-	if _, err := testDB.CreateUpgradeLog(context.Background(), log1); err != nil {
+	if _, err := testTDB.CreateUpgradeLog(context.Background(), log1); err != nil {
 		t.Fatal(err)
 	}
-	_, err := testDB.CreateUpgradeLog(context.Background(), log1)
+	_, err := testTDB.CreateUpgradeLog(context.Background(), log1)
 	if err == nil {
 		t.Error("Expected duplicate key error for same device_sn + firmware_id")
 	}
@@ -240,14 +244,14 @@ func TestIncrementRetryAndResetStatus(t *testing.T) {
 	fwID := primitive.NewObjectID()
 	sn := fmt.Sprintf("SN-RETRY-%d", time.Now().UnixNano())
 	log1 := FirmwareUpgradeLog{DeviceSN: sn, FirmwareID: fwID, Status: "failed", RetryCount: 0, TriggeredAt: time.Now()}
-	created, err := testDB.CreateUpgradeLog(context.Background(), log1)
+	created, err := testTDB.CreateUpgradeLog(context.Background(), log1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDB.IncrementRetryAndResetStatus(context.Background(), created.ID); err != nil {
+	if err := testTDB.IncrementRetryAndResetStatus(context.Background(), created.ID); err != nil {
 		t.Fatal(err)
 	}
-	got, err := testDB.GetUpgradeLogByDeviceAndFirmware(context.Background(), sn, fwID)
+	got, err := testTDB.GetUpgradeLogByDeviceAndFirmware(context.Background(), sn, fwID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +266,7 @@ func TestIncrementRetryAndResetStatus(t *testing.T) {
 // --- FW Policy ---
 
 func TestGetDeviceFWPolicy_NoDocument_ReturnsDefault(t *testing.T) {
-	policy, err := testDB.GetDeviceFWPolicy(context.Background(), "nonexistent-device")
+	policy, err := testTDB.GetDeviceFWPolicy(context.Background(), "nonexistent-device")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,10 +278,10 @@ func TestGetDeviceFWPolicy_NoDocument_ReturnsDefault(t *testing.T) {
 func TestUpsertDeviceFWPolicy(t *testing.T) {
 	sn := fmt.Sprintf("SN-POLICY-%d", time.Now().UnixNano())
 	p := DeviceFWPolicy{DeviceSN: sn, Policy: "skip"}
-	if err := testDB.SetDeviceFWPolicy(context.Background(), p); err != nil {
+	if err := testTDB.SetDeviceFWPolicy(context.Background(), p); err != nil {
 		t.Fatal(err)
 	}
-	got, err := testDB.GetDeviceFWPolicy(context.Background(), sn)
+	got, err := testTDB.GetDeviceFWPolicy(context.Background(), sn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,10 +291,10 @@ func TestUpsertDeviceFWPolicy(t *testing.T) {
 
 	// Upsert again
 	p.Policy = "manual"
-	if err := testDB.SetDeviceFWPolicy(context.Background(), p); err != nil {
+	if err := testTDB.SetDeviceFWPolicy(context.Background(), p); err != nil {
 		t.Fatal(err)
 	}
-	got, err = testDB.GetDeviceFWPolicy(context.Background(), sn)
+	got, err = testTDB.GetDeviceFWPolicy(context.Background(), sn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,10 +308,10 @@ func TestUpsertDeviceFWPolicy(t *testing.T) {
 func TestCachedDeviceInfo_UpsertAndGet(t *testing.T) {
 	sn := fmt.Sprintf("SN-CACHE-%d", time.Now().UnixNano())
 	info := []byte(`{"Manufacturer":"Test","ModelName":"M1"}`)
-	if err := testDB.UpsertDeviceInfo(context.Background(), sn, info); err != nil {
+	if err := testTDB.UpsertDeviceInfo(context.Background(), sn, info); err != nil {
 		t.Fatal(err)
 	}
-	got, err := testDB.GetCachedDeviceInfo(context.Background(), sn)
+	got, err := testTDB.GetCachedDeviceInfo(context.Background(), sn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,11 +327,11 @@ func TestStoreAndGetMetrics(t *testing.T) {
 		DeviceSerial: fmt.Sprintf("SN-METRICS-%d", time.Now().UnixNano()),
 		Timestamp:    time.Now(),
 	}
-	if err := testDB.StoreDeviceMetrics(context.Background(), m); err != nil {
+	if err := testTDB.StoreDeviceMetrics(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
 	since := time.Now().Add(-1 * time.Minute)
-	history, err := testDB.GetDeviceMetricsHistory(context.Background(), m.DeviceSerial, since)
+	history, err := testTDB.GetDeviceMetricsHistory(context.Background(), m.DeviceSerial, since)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,10 +364,10 @@ func TestFindAllUsers_ReturnsUsers(t *testing.T) {
 
 func TestAddAndFindTemplate(t *testing.T) {
 	name := fmt.Sprintf("tmpl-%d", time.Now().UnixNano())
-	if err := testDB.AddTemplate(name, "tr-181", "template-content"); err != nil {
+	if err := testTDB.AddTemplate(name, "tr-181", "template-content"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := testDB.FindTemplate(map[string]string{"name": name})
+	got, err := testTDB.FindTemplate(map[string]string{"name": name})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +382,7 @@ func TestDeviceInfo_NoTTL(t *testing.T) {
 	// This test documents that device_info has no TTL index.
 	// After fix, this test should be updated to verify TTL exists.
 	ctx := context.Background()
-	cursor, err := testDB.deviceInfo.Indexes().List(ctx)
+	cursor, err := testTDB.DeviceInfo().Indexes().List(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

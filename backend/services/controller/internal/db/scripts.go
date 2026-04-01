@@ -103,8 +103,8 @@ type ScriptExecution struct {
 
 // --- Script CRUD ---
 
-func (d *Database) ListScripts(ctx context.Context) ([]Script, error) {
-	cursor, err := d.scripts.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+func (t *TenantDB) ListScripts(ctx context.Context) ([]Script, error) {
+	cursor, err := t.Scripts().Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
@@ -115,22 +115,22 @@ func (d *Database) ListScripts(ctx context.Context) ([]Script, error) {
 	return results, nil
 }
 
-func (d *Database) CreateScript(ctx context.Context, s Script) (Script, error) {
+func (t *TenantDB) CreateScript(ctx context.Context, s Script) (Script, error) {
 	s.ID = primitive.NewObjectID()
 	s.CreatedAt = time.Now()
 	s.UpdatedAt = time.Now()
-	_, err := d.scripts.InsertOne(ctx, s)
+	_, err := t.Scripts().InsertOne(ctx, s)
 	return s, err
 }
 
-func (d *Database) GetScript(ctx context.Context, id primitive.ObjectID) (Script, error) {
+func (t *TenantDB) GetScript(ctx context.Context, id primitive.ObjectID) (Script, error) {
 	var s Script
-	err := d.scripts.FindOne(ctx, bson.M{"_id": id}).Decode(&s)
+	err := t.Scripts().FindOne(ctx, bson.M{"_id": id}).Decode(&s)
 	return s, err
 }
 
-func (d *Database) UpdateScript(ctx context.Context, id primitive.ObjectID, s Script) error {
-	_, err := d.scripts.UpdateOne(ctx,
+func (t *TenantDB) UpdateScript(ctx context.Context, id primitive.ObjectID, s Script) error {
+	_, err := t.Scripts().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
 			"name":        s.Name,
@@ -143,22 +143,22 @@ func (d *Database) UpdateScript(ctx context.Context, id primitive.ObjectID, s Sc
 	return err
 }
 
-func (d *Database) DeleteScript(ctx context.Context, id primitive.ObjectID) error {
-	_, err := d.scripts.DeleteOne(ctx, bson.M{"_id": id})
+func (t *TenantDB) DeleteScript(ctx context.Context, id primitive.ObjectID) error {
+	_, err := t.Scripts().DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 
 // --- Execution CRUD ---
 
-func (d *Database) CreateExecution(ctx context.Context, e ScriptExecution) (ScriptExecution, error) {
+func (t *TenantDB) CreateExecution(ctx context.Context, e ScriptExecution) (ScriptExecution, error) {
 	e.ID = primitive.NewObjectID()
 	e.CreatedAt = time.Now()
-	_, err := d.scriptExecutions.InsertOne(ctx, e)
+	_, err := t.ScriptExecs().InsertOne(ctx, e)
 	return e, err
 }
 
-func (d *Database) UpdateExecution(ctx context.Context, id primitive.ObjectID, e ScriptExecution) error {
-	_, err := d.scriptExecutions.UpdateOne(ctx,
+func (t *TenantDB) UpdateExecution(ctx context.Context, id primitive.ObjectID, e ScriptExecution) error {
+	_, err := t.ScriptExecs().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
 			"status":       e.Status,
@@ -168,8 +168,8 @@ func (d *Database) UpdateExecution(ctx context.Context, id primitive.ObjectID, e
 	return err
 }
 
-func (d *Database) ListExecutions(ctx context.Context, scriptID primitive.ObjectID) ([]ScriptExecution, error) {
-	cursor, err := d.scriptExecutions.Find(ctx,
+func (t *TenantDB) ListExecutions(ctx context.Context, scriptID primitive.ObjectID) ([]ScriptExecution, error) {
+	cursor, err := t.ScriptExecs().Find(ctx,
 		bson.M{"script_id": scriptID},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(50))
 	if err != nil {
@@ -182,8 +182,8 @@ func (d *Database) ListExecutions(ctx context.Context, scriptID primitive.Object
 	return results, nil
 }
 
-func (d *Database) ListExecutionsByDevice(ctx context.Context, sn string) ([]ScriptExecution, error) {
-	cursor, err := d.scriptExecutions.Find(ctx,
+func (t *TenantDB) ListExecutionsByDevice(ctx context.Context, sn string) ([]ScriptExecution, error) {
+	cursor, err := t.ScriptExecs().Find(ctx,
 		bson.M{"device_sn": sn},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(50))
 	if err != nil {
@@ -196,8 +196,8 @@ func (d *Database) ListExecutionsByDevice(ctx context.Context, sn string) ([]Scr
 	return results, nil
 }
 
-func (d *Database) GetExecution(ctx context.Context, id primitive.ObjectID) (ScriptExecution, error) {
+func (t *TenantDB) GetExecution(ctx context.Context, id primitive.ObjectID) (ScriptExecution, error) {
 	var e ScriptExecution
-	err := d.scriptExecutions.FindOne(ctx, bson.M{"_id": id}).Decode(&e)
+	err := t.ScriptExecs().FindOne(ctx, bson.M{"_id": id}).Decode(&e)
 	return e, err
 }

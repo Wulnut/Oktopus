@@ -23,8 +23,8 @@ type Campaign struct {
 	UpdatedAt       time.Time          `bson:"updated_at"         json:"updated_at"`
 }
 
-func (d *Database) ListCampaigns(ctx context.Context) ([]Campaign, error) {
-	cursor, err := d.campaigns.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+func (t *TenantDB) ListCampaigns(ctx context.Context) ([]Campaign, error) {
+	cursor, err := t.Campaigns().Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
@@ -35,23 +35,23 @@ func (d *Database) ListCampaigns(ctx context.Context) ([]Campaign, error) {
 	return results, nil
 }
 
-func (d *Database) CreateCampaign(ctx context.Context, c Campaign) (Campaign, error) {
+func (t *TenantDB) CreateCampaign(ctx context.Context, c Campaign) (Campaign, error) {
 	c.ID = primitive.NewObjectID()
 	c.CreatedAt = time.Now()
 	c.UpdatedAt = time.Now()
-	_, err := d.campaigns.InsertOne(ctx, c)
+	_, err := t.Campaigns().InsertOne(ctx, c)
 	return c, err
 }
 
-func (d *Database) GetCampaign(ctx context.Context, id primitive.ObjectID) (Campaign, error) {
+func (t *TenantDB) GetCampaign(ctx context.Context, id primitive.ObjectID) (Campaign, error) {
 	var c Campaign
-	err := d.campaigns.FindOne(ctx, bson.M{"_id": id}).Decode(&c)
+	err := t.Campaigns().FindOne(ctx, bson.M{"_id": id}).Decode(&c)
 	return c, err
 }
 
-func (d *Database) GetCampaignByHardware(ctx context.Context, vendor, model, hwVersion string) (Campaign, error) {
+func (t *TenantDB) GetCampaignByHardware(ctx context.Context, vendor, model, hwVersion string) (Campaign, error) {
 	var c Campaign
-	err := d.campaigns.FindOne(ctx, bson.M{
+	err := t.Campaigns().FindOne(ctx, bson.M{
 		"vendor":     vendor,
 		"model":      model,
 		"hw_version": hwVersion,
@@ -59,8 +59,8 @@ func (d *Database) GetCampaignByHardware(ctx context.Context, vendor, model, hwV
 	return c, err
 }
 
-func (d *Database) UpdateCampaign(ctx context.Context, id primitive.ObjectID, c Campaign) (int64, error) {
-	result, err := d.campaigns.UpdateOne(ctx,
+func (t *TenantDB) UpdateCampaign(ctx context.Context, id primitive.ObjectID, c Campaign) (int64, error) {
+	result, err := t.Campaigns().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
 			"firmware_id":       c.FirmwareID,
@@ -76,14 +76,14 @@ func (d *Database) UpdateCampaign(ctx context.Context, id primitive.ObjectID, c 
 	return result.MatchedCount, nil
 }
 
-func (d *Database) DeleteCampaign(ctx context.Context, id primitive.ObjectID) error {
-	_, err := d.campaigns.DeleteOne(ctx, bson.M{"_id": id})
+func (t *TenantDB) DeleteCampaign(ctx context.Context, id primitive.ObjectID) error {
+	_, err := t.Campaigns().DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 
 // DisableCampaignsByFirmware disables all campaigns that reference the given firmware ID.
-func (d *Database) DisableCampaignsByFirmware(ctx context.Context, firmwareID primitive.ObjectID) error {
-	_, err := d.campaigns.UpdateMany(ctx,
+func (t *TenantDB) DisableCampaignsByFirmware(ctx context.Context, firmwareID primitive.ObjectID) error {
+	_, err := t.Campaigns().UpdateMany(ctx,
 		bson.M{"firmware_id": firmwareID},
 		bson.M{"$set": bson.M{"enabled": false, "updated_at": time.Now()}},
 	)

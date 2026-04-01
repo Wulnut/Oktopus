@@ -14,8 +14,8 @@ type CachedDeviceInfo struct {
 	UpdatedAt time.Time `bson:"updated_at"`
 }
 
-func (d *Database) UpsertDeviceInfo(ctx context.Context, sn string, infoJSON []byte) error {
-	_, err := d.deviceInfo.UpdateOne(ctx,
+func (t *TenantDB) UpsertDeviceInfo(ctx context.Context, sn string, infoJSON []byte) error {
+	_, err := t.DeviceInfo().UpdateOne(ctx,
 		bson.M{"device_sn": sn},
 		bson.M{"$set": bson.M{
 			"device_sn":  sn,
@@ -26,9 +26,9 @@ func (d *Database) UpsertDeviceInfo(ctx context.Context, sn string, infoJSON []b
 	return err
 }
 
-func (d *Database) GetCachedDeviceInfo(ctx context.Context, sn string) (*CachedDeviceInfo, error) {
+func (t *TenantDB) GetCachedDeviceInfo(ctx context.Context, sn string) (*CachedDeviceInfo, error) {
 	var cached CachedDeviceInfo
-	err := d.deviceInfo.FindOne(ctx, bson.M{"device_sn": sn}).Decode(&cached)
+	err := t.DeviceInfo().FindOne(ctx, bson.M{"device_sn": sn}).Decode(&cached)
 	if err != nil {
 		return nil, err
 	}

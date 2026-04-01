@@ -26,14 +26,14 @@ type FirmwareUpgradeLog struct {
 	CompletedAt      time.Time          `bson:"completed_at,omitempty"      json:"completed_at,omitempty"`
 }
 
-func (d *Database) CreateUpgradeLog(ctx context.Context, l FirmwareUpgradeLog) (FirmwareUpgradeLog, error) {
+func (t *TenantDB) CreateUpgradeLog(ctx context.Context, l FirmwareUpgradeLog) (FirmwareUpgradeLog, error) {
 	l.ID = primitive.NewObjectID()
 	l.TriggeredAt = time.Now()
-	_, err := d.upgradeLogs.InsertOne(ctx, l)
+	_, err := t.UpgradeLogs().InsertOne(ctx, l)
 	return l, err
 }
 
-func (d *Database) UpdateUpgradeLogStatus(ctx context.Context, id primitive.ObjectID, status, errMsg string) error {
+func (t *TenantDB) UpdateUpgradeLogStatus(ctx context.Context, id primitive.ObjectID, status, errMsg string) error {
 	update := bson.M{
 		"status": status,
 		"error":  errMsg,
@@ -41,26 +41,26 @@ func (d *Database) UpdateUpgradeLogStatus(ctx context.Context, id primitive.Obje
 	if status == "success" || status == "failed" {
 		update["completed_at"] = time.Now()
 	}
-	_, err := d.upgradeLogs.UpdateOne(ctx,
+	_, err := t.UpgradeLogs().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": update},
 	)
 	return err
 }
 
-func (d *Database) GetUpgradeLogByDeviceAndFirmware(ctx context.Context, deviceSN string, firmwareID primitive.ObjectID) (FirmwareUpgradeLog, error) {
+func (t *TenantDB) GetUpgradeLogByDeviceAndFirmware(ctx context.Context, deviceSN string, firmwareID primitive.ObjectID) (FirmwareUpgradeLog, error) {
 	var l FirmwareUpgradeLog
-	err := d.upgradeLogs.FindOne(ctx, bson.M{
+	err := t.UpgradeLogs().FindOne(ctx, bson.M{
 		"device_sn":   deviceSN,
 		"firmware_id": firmwareID,
 	}).Decode(&l)
 	return l, err
 }
 
-func (d *Database) ListUpgradeLogsByCampaign(ctx context.Context, campaignID primitive.ObjectID, page, pageSize int64) ([]FirmwareUpgradeLog, int64, error) {
+func (t *TenantDB) ListUpgradeLogsByCampaign(ctx context.Context, campaignID primitive.ObjectID, page, pageSize int64) ([]FirmwareUpgradeLog, int64, error) {
 	filter := bson.M{"campaign_id": campaignID}
 
-	total, err := d.upgradeLogs.CountDocuments(ctx, filter)
+	total, err := t.UpgradeLogs().CountDocuments(ctx, filter)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -70,7 +70,7 @@ func (d *Database) ListUpgradeLogsByCampaign(ctx context.Context, campaignID pri
 		SetSkip(page * pageSize).
 		SetLimit(pageSize)
 
-	cursor, err := d.upgradeLogs.Find(ctx, filter, opts)
+	cursor, err := t.UpgradeLogs().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -81,12 +81,12 @@ func (d *Database) ListUpgradeLogsByCampaign(ctx context.Context, campaignID pri
 	return results, total, nil
 }
 
-func (d *Database) ListUpgradeLogsByDevice(ctx context.Context, deviceSN string) ([]FirmwareUpgradeLog, error) {
+func (t *TenantDB) ListUpgradeLogsByDevice(ctx context.Context, deviceSN string) ([]FirmwareUpgradeLog, error) {
 	opts := options.Find().
 		SetSort(bson.D{{Key: "triggered_at", Value: -1}}).
 		SetLimit(50)
 
-	cursor, err := d.upgradeLogs.Find(ctx, bson.M{"device_sn": deviceSN}, opts)
+	cursor, err := t.UpgradeLogs().Find(ctx, bson.M{"device_sn": deviceSN}, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -97,17 +97,17 @@ func (d *Database) ListUpgradeLogsByDevice(ctx context.Context, deviceSN string)
 	return results, nil
 }
 
-func (d *Database) GetPendingUpgradeLog(ctx context.Context, deviceSN string) (FirmwareUpgradeLog, error) {
+func (t *TenantDB) GetPendingUpgradeLog(ctx context.Context, deviceSN string) (FirmwareUpgradeLog, error) {
 	var l FirmwareUpgradeLog
-	err := d.upgradeLogs.FindOne(ctx, bson.M{
+	err := t.UpgradeLogs().FindOne(ctx, bson.M{
 		"device_sn": deviceSN,
 		"status":    bson.M{"$in": []string{"pending", "downloading"}},
 	}).Decode(&l)
 	return l, err
 }
 
-func (d *Database) IncrementRetryAndResetStatus(ctx context.Context, id primitive.ObjectID) error {
-	_, err := d.upgradeLogs.UpdateOne(ctx,
+func (t *TenantDB) IncrementRetryAndResetStatus(ctx context.Context, id primitive.ObjectID) error {
+	_, err := t.UpgradeLogs().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{
 			"$inc": bson.M{"retry_count": 1},

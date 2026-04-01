@@ -18,9 +18,9 @@ type DeviceFWPolicy struct {
 	UpdatedAt        time.Time          `bson:"updated_at"                       json:"updated_at"`
 }
 
-func (d *Database) GetDeviceFWPolicy(ctx context.Context, deviceSN string) (DeviceFWPolicy, error) {
+func (t *TenantDB) GetDeviceFWPolicy(ctx context.Context, deviceSN string) (DeviceFWPolicy, error) {
 	var p DeviceFWPolicy
-	err := d.fwPolicies.FindOne(ctx, bson.M{"device_sn": deviceSN}).Decode(&p)
+	err := t.FWPolicies().FindOne(ctx, bson.M{"device_sn": deviceSN}).Decode(&p)
 	if err == mongo.ErrNoDocuments {
 		return DeviceFWPolicy{
 			DeviceSN: deviceSN,
@@ -30,9 +30,9 @@ func (d *Database) GetDeviceFWPolicy(ctx context.Context, deviceSN string) (Devi
 	return p, err
 }
 
-func (d *Database) SetDeviceFWPolicy(ctx context.Context, p DeviceFWPolicy) error {
+func (t *TenantDB) SetDeviceFWPolicy(ctx context.Context, p DeviceFWPolicy) error {
 	p.UpdatedAt = time.Now()
-	_, err := d.fwPolicies.UpdateOne(ctx,
+	_, err := t.FWPolicies().UpdateOne(ctx,
 		bson.M{"device_sn": p.DeviceSN},
 		bson.M{"$set": p},
 		options.Update().SetUpsert(true),

@@ -32,8 +32,8 @@ type Firmware struct {
 	UpdatedAt    time.Time          `bson:"updated_at"    json:"updated_at"`
 }
 
-func (d *Database) ListFirmware(ctx context.Context) ([]Firmware, error) {
-	cursor, err := d.firmware.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+func (t *TenantDB) ListFirmware(ctx context.Context) ([]Firmware, error) {
+	cursor, err := t.Firmware().Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
@@ -44,34 +44,34 @@ func (d *Database) ListFirmware(ctx context.Context) ([]Firmware, error) {
 	return results, nil
 }
 
-func (d *Database) CreateFirmware(ctx context.Context, fw Firmware) (Firmware, error) {
+func (t *TenantDB) CreateFirmware(ctx context.Context, fw Firmware) (Firmware, error) {
 	fw.ID = primitive.NewObjectID()
 	fw.CreatedAt = time.Now()
 	fw.UpdatedAt = time.Now()
-	_, err := d.firmware.InsertOne(ctx, fw)
+	_, err := t.Firmware().InsertOne(ctx, fw)
 	return fw, err
 }
 
-func (d *Database) DeleteFirmware(ctx context.Context, id primitive.ObjectID) error {
-	_, err := d.firmware.DeleteOne(ctx, bson.M{"_id": id})
+func (t *TenantDB) DeleteFirmware(ctx context.Context, id primitive.ObjectID) error {
+	_, err := t.Firmware().DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 
-func (d *Database) GetFirmware(ctx context.Context, id primitive.ObjectID) (Firmware, error) {
+func (t *TenantDB) GetFirmware(ctx context.Context, id primitive.ObjectID) (Firmware, error) {
 	var fw Firmware
-	err := d.firmware.FindOne(ctx, bson.M{"_id": id}).Decode(&fw)
+	err := t.Firmware().FindOne(ctx, bson.M{"_id": id}).Decode(&fw)
 	return fw, err
 }
 
-func (d *Database) UpdateFirmwarePhase(ctx context.Context, id primitive.ObjectID, phase FirmwarePhase) error {
-	_, err := d.firmware.UpdateOne(ctx,
+func (t *TenantDB) UpdateFirmwarePhase(ctx context.Context, id primitive.ObjectID, phase FirmwarePhase) error {
+	_, err := t.Firmware().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{"phase": phase, "updated_at": time.Now()}})
 	return err
 }
 
-func (d *Database) UpdateFirmware(ctx context.Context, id primitive.ObjectID, fw Firmware) (int64, error) {
-	result, err := d.firmware.UpdateOne(ctx,
+func (t *TenantDB) UpdateFirmware(ctx context.Context, id primitive.ObjectID, fw Firmware) (int64, error) {
+	result, err := t.Firmware().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
 			"name":          fw.Name,

@@ -21,16 +21,16 @@ type DeviceMetrics struct {
 	StorageTotal int64              `bson:"storage_total" json:"storage_total"` // KB
 }
 
-func (d *Database) StoreDeviceMetrics(ctx context.Context, m DeviceMetrics) error {
+func (t *TenantDB) StoreDeviceMetrics(ctx context.Context, m DeviceMetrics) error {
 	m.ID = primitive.NewObjectID()
 	if m.Timestamp.IsZero() {
 		m.Timestamp = time.Now()
 	}
-	_, err := d.metrics.InsertOne(ctx, m)
+	_, err := t.Metrics().InsertOne(ctx, m)
 	return err
 }
 
-func (d *Database) GetDeviceMetricsHistory(ctx context.Context, serial string, since time.Time) ([]DeviceMetrics, error) {
+func (t *TenantDB) GetDeviceMetricsHistory(ctx context.Context, serial string, since time.Time) ([]DeviceMetrics, error) {
 	filter := bson.M{
 		"device_serial": serial,
 		"timestamp":     bson.M{"$gte": since},
@@ -38,7 +38,7 @@ func (d *Database) GetDeviceMetricsHistory(ctx context.Context, serial string, s
 	opts := options.Find().
 		SetSort(bson.D{{Key: "timestamp", Value: 1}}).
 		SetLimit(500)
-	cursor, err := d.metrics.Find(ctx, filter, opts)
+	cursor, err := t.Metrics().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -49,9 +49,9 @@ func (d *Database) GetDeviceMetricsHistory(ctx context.Context, serial string, s
 	return results, nil
 }
 
-func (d *Database) GetLatestDeviceMetrics(ctx context.Context, serial string) (DeviceMetrics, error) {
+func (t *TenantDB) GetLatestDeviceMetrics(ctx context.Context, serial string) (DeviceMetrics, error) {
 	var m DeviceMetrics
 	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: -1}})
-	err := d.metrics.FindOne(ctx, bson.M{"device_serial": serial}, opts).Decode(&m)
+	err := t.Metrics().FindOne(ctx, bson.M{"device_serial": serial}, opts).Decode(&m)
 	return m, err
 }

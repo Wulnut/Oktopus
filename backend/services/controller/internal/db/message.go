@@ -59,8 +59,8 @@ func escapeRegex(s string) string {
 }
 
 // StoreUspMessage stores a USP message in the database
-func (d *Database) StoreUspMessage(ctx context.Context, msg UspMessage) error {
-	_, err := d.messages.InsertOne(ctx, msg)
+func (t *TenantDB) StoreUspMessage(ctx context.Context, msg UspMessage) error {
+	_, err := t.Messages().InsertOne(ctx, msg)
 	if err != nil {
 		log.Printf("Failed to store USP message: %v", err)
 		return err
@@ -71,7 +71,7 @@ func (d *Database) StoreUspMessage(ctx context.Context, msg UspMessage) error {
 // GetMessageHistory retrieves message history for a device using cursor-based pagination
 // fromTime and toTime are optional time filters. If nil, no time filtering is applied.
 // filters is optional. If nil, no additional filtering is applied.
-func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, limit int, cursorID string, fromTime, toTime *time.Time, filters *MessageFilters) ([]UspMessage, string, error) {
+func (t *TenantDB) GetMessageHistory(ctx context.Context, deviceSerial string, limit int, cursorID string, fromTime, toTime *time.Time, filters *MessageFilters) ([]UspMessage, string, error) {
 	filter := bson.M{"device_serial": deviceSerial}
 
 	// Add timestamp filters
@@ -200,7 +200,7 @@ func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, l
 		SetSort(bson.D{{Key: "_id", Value: -1}}). // Sort by _id descending (newest first)
 		SetLimit(int64(limit + 1))                 // Fetch one extra to check if there's more
 
-	cursor, err := d.messages.Find(ctx, filter, opts)
+	cursor, err := t.Messages().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, "", err
 	}
@@ -227,9 +227,9 @@ func (d *Database) GetMessageHistory(ctx context.Context, deviceSerial string, l
 }
 
 // GetMessageByMsgID retrieves a message by its message ID
-func (d *Database) GetMessageByMsgID(ctx context.Context, msgID string) (*UspMessage, error) {
+func (t *TenantDB) GetMessageByMsgID(ctx context.Context, msgID string) (*UspMessage, error) {
 	var result UspMessage
-	err := d.messages.FindOne(ctx, bson.M{"msg_id": msgID}).Decode(&result)
+	err := t.Messages().FindOne(ctx, bson.M{"msg_id": msgID}).Decode(&result)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, ErrorMessageNotFound
@@ -240,8 +240,8 @@ func (d *Database) GetMessageByMsgID(ctx context.Context, msgID string) (*UspMes
 }
 
 // StoreUspMessageError stores a failed message parsing/storage attempt
-func (d *Database) StoreUspMessageError(ctx context.Context, errMsg UspMessageError) error {
-	_, err := d.messagesErrors.InsertOne(ctx, errMsg)
+func (t *TenantDB) StoreUspMessageError(ctx context.Context, errMsg UspMessageError) error {
+	_, err := t.MessagesErrors().InsertOne(ctx, errMsg)
 	if err != nil {
 		log.Printf("Failed to store error message: %v", err)
 		return err
@@ -252,12 +252,13 @@ func (d *Database) StoreUspMessageError(ctx context.Context, errMsg UspMessageEr
 // DeleteMessageHistory deletes all messages and error messages for a device
 // Attempts to use MongoDB transaction if replica set is available, otherwise falls back to sequential deletes
 // Returns the count of deleted messages and errors
-func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string) (int64, int64, error) {
+func (t *TenantDB) DeleteMessageHistory(ctx context.Context, deviceSerial string) (int64, int64, error) {
 	// Try to use transaction if replica set is available
-	session, err := d.client.StartSession()
+	client := t.Usp.Client()
+	session, err := client.StartSession()
 	if err != nil {
 		log.Printf("Failed to start session: %v", err)
-		return d.deleteMessageHistoryWithoutTransaction(ctx, deviceSerial)
+		return t.deleteMessageHistoryWithoutTransaction(ctx, deviceSerial)
 	}
 	defer session.EndSession(ctx)
 
@@ -273,7 +274,7 @@ func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string
 		}
 
 		// Delete from messages collection
-		messagesResult, err := d.messages.DeleteMany(sc, bson.M{"device_serial": deviceSerial})
+		messagesResult, err := t.Messages().DeleteMany(sc, bson.M{"device_serial": deviceSerial})
 		if err != nil {
 			session.AbortTransaction(sc)
 			log.Printf("Failed to delete messages in transaction: %v", err)
@@ -282,7 +283,7 @@ func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string
 		messagesCount = messagesResult.DeletedCount
 
 		// Delete from messages_errors collection
-		errorsResult, err := d.messagesErrors.DeleteMany(sc, bson.M{"device_serial": deviceSerial})
+		errorsResult, err := t.MessagesErrors().DeleteMany(sc, bson.M{"device_serial": deviceSerial})
 		if err != nil {
 			session.AbortTransaction(sc)
 			log.Printf("Failed to delete error messages in transaction: %v", err)
@@ -302,7 +303,7 @@ func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string
 	// If transaction failed (e.g., standalone MongoDB), use fallback
 	if err != nil {
 		log.Printf("Transaction not available, using fallback method for device %s", deviceSerial)
-		return d.deleteMessageHistoryWithoutTransaction(ctx, deviceSerial)
+		return t.deleteMessageHistoryWithoutTransaction(ctx, deviceSerial)
 	}
 
 	log.Printf("Deleted %d messages and %d error messages for device %s (using transaction)",
@@ -313,9 +314,9 @@ func (d *Database) DeleteMessageHistory(ctx context.Context, deviceSerial string
 
 // deleteMessageHistoryWithoutTransaction deletes messages without using transactions
 // Used as fallback when MongoDB is not configured as a replica set
-func (d *Database) deleteMessageHistoryWithoutTransaction(ctx context.Context, deviceSerial string) (int64, int64, error) {
+func (t *TenantDB) deleteMessageHistoryWithoutTransaction(ctx context.Context, deviceSerial string) (int64, int64, error) {
 	// Delete from messages collection
-	messagesResult, err := d.messages.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	messagesResult, err := t.Messages().DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
 	if err != nil {
 		log.Printf("Failed to delete messages: %v", err)
 		return 0, 0, err
@@ -323,7 +324,7 @@ func (d *Database) deleteMessageHistoryWithoutTransaction(ctx context.Context, d
 	messagesCount := messagesResult.DeletedCount
 
 	// Delete from messages_errors collection
-	errorsResult, err := d.messagesErrors.DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
+	errorsResult, err := t.MessagesErrors().DeleteMany(ctx, bson.M{"device_serial": deviceSerial})
 	if err != nil {
 		log.Printf("Failed to delete error messages: %v", err)
 		// Return messages count even if errors deletion failed

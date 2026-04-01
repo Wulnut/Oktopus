@@ -58,21 +58,21 @@ type MassAction struct {
 	FinishedAt time.Time `bson:"finished_at"            json:"finished_at"`
 }
 
-func (d *Database) CreateMassAction(ctx context.Context, ma MassAction) (MassAction, error) {
+func (t *TenantDB) CreateMassAction(ctx context.Context, ma MassAction) (MassAction, error) {
 	ma.ID = primitive.NewObjectID()
 	ma.CreatedAt = time.Now()
-	_, err := d.massActions.InsertOne(ctx, ma)
+	_, err := t.MassActions().InsertOne(ctx, ma)
 	return ma, err
 }
 
-func (d *Database) GetMassAction(ctx context.Context, id primitive.ObjectID) (MassAction, error) {
+func (t *TenantDB) GetMassAction(ctx context.Context, id primitive.ObjectID) (MassAction, error) {
 	var ma MassAction
-	err := d.massActions.FindOne(ctx, bson.M{"_id": id}).Decode(&ma)
+	err := t.MassActions().FindOne(ctx, bson.M{"_id": id}).Decode(&ma)
 	return ma, err
 }
 
-func (d *Database) UpdateMassAction(ctx context.Context, id primitive.ObjectID, ma MassAction) error {
-	_, err := d.massActions.UpdateOne(ctx,
+func (t *TenantDB) UpdateMassAction(ctx context.Context, id primitive.ObjectID, ma MassAction) error {
+	_, err := t.MassActions().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
 			"status":         ma.Status,
@@ -85,8 +85,8 @@ func (d *Database) UpdateMassAction(ctx context.Context, id primitive.ObjectID, 
 	return err
 }
 
-func (d *Database) ListMassActions(ctx context.Context) ([]MassAction, error) {
-	cursor, err := d.massActions.Find(ctx, bson.M{},
+func (t *TenantDB) ListMassActions(ctx context.Context) ([]MassAction, error) {
+	cursor, err := t.MassActions().Find(ctx, bson.M{},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100))
 	if err != nil {
 		return nil, err
@@ -99,28 +99,28 @@ func (d *Database) ListMassActions(ctx context.Context) ([]MassAction, error) {
 }
 
 // UpdateMassActionDevice atomically updates a single device result by index
-func (d *Database) UpdateMassActionDevice(ctx context.Context, id primitive.ObjectID, idx int, result DeviceResult) error {
+func (t *TenantDB) UpdateMassActionDevice(ctx context.Context, id primitive.ObjectID, idx int, result DeviceResult) error {
 	field := fmt.Sprintf("device_results.%d", idx)
-	_, err := d.massActions.UpdateByID(ctx, id, bson.M{
+	_, err := t.MassActions().UpdateByID(ctx, id, bson.M{
 		"$set": bson.M{field: result},
 	})
 	return err
 }
 
 // IncrementMassActionProgress atomically increments progress counters
-func (d *Database) IncrementMassActionProgress(ctx context.Context, id primitive.ObjectID, success bool) error {
+func (t *TenantDB) IncrementMassActionProgress(ctx context.Context, id primitive.ObjectID, success bool) error {
 	inc := bson.M{"progress": 1}
 	if success {
 		inc["success_count"] = 1
 	} else {
 		inc["failure_count"] = 1
 	}
-	_, err := d.massActions.UpdateByID(ctx, id, bson.M{"$inc": inc})
+	_, err := t.MassActions().UpdateByID(ctx, id, bson.M{"$inc": inc})
 	return err
 }
 
-func (d *Database) CancelMassAction(ctx context.Context, id primitive.ObjectID) error {
-	_, err := d.massActions.UpdateOne(ctx,
+func (t *TenantDB) CancelMassAction(ctx context.Context, id primitive.ObjectID) error {
+	_, err := t.MassActions().UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{"status": "cancelled"}})
 	return err
