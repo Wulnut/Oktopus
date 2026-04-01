@@ -21,14 +21,28 @@ Higher level number = lower privilege. Future roles (e.g., end-user) can be adde
 ### `tenants` collection (in `account-mngr` DB)
 
 ```go
+type TenantCACert struct {
+    ID       primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+    Label    string             `bson:"label" json:"label"`           // e.g. "Primary CA 2026"
+    PEM      string             `bson:"pem" json:"pem"`               // PEM-encoded CA certificate
+    NotAfter time.Time          `bson:"not_after" json:"not_after"`   // cert expiry (extracted from PEM)
+    AddedAt  time.Time          `bson:"added_at" json:"added_at"`
+}
+
+type TenantAuthPolicy struct {
+    PasswordRequired bool `bson:"password_required" json:"password_required"` // default: true
+    CertRequired     bool `bson:"cert_required" json:"cert_required"`         // default: false
+}
+
 type Tenant struct {
-    ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-    Name      string             `bson:"name" json:"name"`           // Display name, e.g. "Acme ISP"
-    Slug      string             `bson:"slug" json:"slug"`           // URL-safe unique identifier
-    Status    string             `bson:"status" json:"status"`       // "active", "suspended", "disabled"
-    CACerts   []string           `bson:"ca_certs,omitempty" json:"ca_certs,omitempty"` // PEM-encoded trusted CA certs for device TLS auth
-    CreatedAt time.Time          `bson:"created_at" json:"created_at"`
-    UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
+    ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+    Name       string             `bson:"name" json:"name"`           // Display name, e.g. "Acme ISP"
+    Slug       string             `bson:"slug" json:"slug"`           // URL-safe unique identifier
+    Status     string             `bson:"status" json:"status"`       // "active", "suspended", "disabled"
+    AuthPolicy TenantAuthPolicy   `bson:"auth_policy" json:"auth_policy"`
+    CACerts    []TenantCACert     `bson:"ca_certs,omitempty" json:"ca_certs,omitempty"`
+    CreatedAt  time.Time          `bson:"created_at" json:"created_at"`
+    UpdatedAt  time.Time          `bson:"updated_at" json:"updated_at"`
 }
 ```
 
@@ -272,6 +286,51 @@ Uses USP trust model (TR-369 Section "Trusted Certificate Authorities"):
 
 The tenant slug in the transport path MUST match the tenant that owns the credential or issued the certificate. This prevents a device from connecting to the wrong tenant even with otherwise valid credentials.
 
+#### Device lifecycle and bootstrap
+
+New-out-of-box devices have no tenant-specific certificate. Bootstrap flow:
+
+1. Device ships with factory credentials (username/password from manufacturer or pre-provisioned)
+2. First connect uses password auth only (no cert required)
+3. Platform authenticates device, registers it to the tenant
+4. Platform pushes tenant CA trust anchor to device via USP Set on `Device.Security.Certificate.{i}.`
+5. Platform pushes device-specific cert via USP Set on `Device.LocalAgent.Certificate.{i}.`
+6. Device reconnects with TLS client cert on subsequent connections
+
+#### Per-tenant auth policy
+
+Tenants configure their auth requirements:
+
+```go
+type TenantAuthPolicy struct {
+    PasswordRequired bool // require device credentials (default: true)
+    CertRequired     bool // require TLS client cert (default: false)
+}
+```
+
+- During onboarding: `PasswordRequired: true, CertRequired: false`
+- After cert provisioning: tenant can enable `CertRequired: true`
+- Per-tenant choice — some tenants may never use certs
+
+#### CA rotation
+
+When a tenant needs to rotate their CA:
+
+1. Tenant uploads new CA cert to platform (`POST /api/tenants/:slug/ca-certs`) — platform trusts both old and new
+2. Tenant triggers mass action "Push CA Trust Anchor" — pushes new CA to all devices via USP
+3. Tenant re-provisions device certs signed by new CA (via USP Set or EST)
+4. Tenant removes old CA once all devices have migrated (`DELETE /api/tenants/:slug/ca-certs/:id`)
+
+Platform tracks which CA signed each device's cert, enabling a rotation dashboard showing migration progress.
+
+#### CA cert management API
+
+```
+GET    /api/tenants/:slug/ca-certs          # list tenant's trusted CAs
+POST   /api/tenants/:slug/ca-certs          # upload new CA (PEM)
+DELETE /api/tenants/:slug/ca-certs/:id       # remove old CA
+```
+
 #### Recommended deployment
 
 - **Minimum**: Password-based auth (extends existing `devices-auth` mechanism, no PKI needed)
@@ -323,5 +382,6 @@ NATS JetStream KeyValue bucket for device auth becomes tenant-scoped: `devices-a
 - Billing / usage metering per tenant
 - Tenant-specific branding or theming
 - Rate limiting per tenant
-- CA certificate management UI and provisioning workflow
 - Automatic CPE provisioning (zero-touch) via TR-369 OnBoardRequest
+- EST (Enrollment over Secure Transport) integration for automated cert issuance
+- E2E session context (USP sec:e2e-message-exchange) — not needed for transport-level tenant isolation; can be added later for defense-in-depth if required
