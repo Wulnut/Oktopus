@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**IMPORTANT:** When you make changes that affect project architecture, conventions, dependencies, build/test commands, or infrastructure, update the relevant sections of this file to keep it accurate. Examples: upgrading frameworks, adding/removing services, changing database schemas, modifying build pipelines, or introducing new patterns.
+
+## Working Style
+
+- Do not use emojis in code, commits, or communication.
+- Be precise and concise.
+- When in doubt, ask the user — do not make assumptions unless explicitly asked to.
+- Verify before acting: read the code, check the current state, confirm understanding.
+
 ## What is Oktopus
 
 Oktopus is an Open Source USP (User Services Platform) Controller and CWMP (CPE WAN Management Protocol) multi-vendor management platform for CPEs and IoT devices. It manages and controls network devices using multiple transport protocols.
@@ -92,7 +101,7 @@ Device auth tokens are stored in a NATS JetStream KeyValue bucket named `devices
 
 ### Frontend (Next.js)
 
-- **Framework**: Next.js 14 + React 18 + Material UI 5
+- **Framework**: Next.js 15 + React 19 + Material UI 6
 - **Real-time**: Socket.IO client connected to the `socketio` service
 - `src/pages/` — Next.js pages (devices, firmware, mass-actions, scripts, containers-store, credentials, companies, etc.)
 - `src/sections/` — heavy page-specific components
@@ -109,7 +118,7 @@ Device auth tokens are stored in a NATS JetStream KeyValue bucket named `devices
 - **Portainer** (port 9443) — container management UI
 - **container-upload** (port 8005) — custom service for uploading containers to the local registry
 
-Environment variables for each service are in `.env.<service>` files within `deploy/compose/`.
+Environment variables: `.env.<service>.example` templates are tracked in git; `generate-secrets.sh` creates actual `.env.<service>` files with generated secrets on first run. See README for details.
 
 ### MongoDB Collections
 
@@ -125,3 +134,9 @@ Environment variables for each service are in `.env.<service>` files within `dep
 - **entity.Status** is `uint8` with iota: `Offline=0`, `Associating=1`, `Online=2`
 - **Device info caching**: `deviceInfoGet` caches raw JSON in `device_info` collection; `deviceCachedInfoGet` serves it when device is offline. Raw JSON is stored as a string to avoid MongoDB BSON `primitive.D` serialization issues.
 - **Offline device access**: The Info tab falls back to cached data when the device is offline, skipping USP queries entirely. Other device tabs show a "Device is Offline" banner.
+
+### Build & Test Rules
+
+- **Always use Docker** for building and testing — never use host tools (`npx`, `npm`, `node`, `go`) directly. Use `sg docker -c "..."` if the docker group requires it.
+- **Verify frontend changes**: `sg docker -c "cd deploy/compose && docker compose -f docker-compose.yaml -f docker-compose.dev.yaml build frontend"`
+- **Run tests**: `cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm <service>` (see README for full list)
