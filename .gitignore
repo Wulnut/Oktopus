@@ -21,6 +21,7 @@ node_modules/
 .claude
 .idea
 .vscode
+.worktrees
 
 # Generated env files with secrets (use generate-secrets.sh to create)
 # .env.*.example files are tracked; actual .env.* files are ignored
