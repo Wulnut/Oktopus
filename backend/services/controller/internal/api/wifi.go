@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/cwmp"
 	"github.com/leandrofars/oktopus/internal/entity"
 	"github.com/leandrofars/oktopus/internal/utils"
@@ -203,7 +204,7 @@ func (a *Api) deviceWifi(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	sn := vars["sn"]
 
-	device, err := getDeviceInfo(w, sn, a.nc)
+	device, err := getDeviceInfo(w, sn, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -220,7 +221,7 @@ func (a *Api) deviceWifi(w http.ResponseWriter, r *http.Request) {
 
 			payload := cwmp.GetParameterNames("InternetGatewayDevice.LANDevice.", 1)
 
-			_, response, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, []byte(payload), w, a.nc)
+			_, response, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, []byte(payload), w, a.nc, middleware.GetTenantSlug(r))
 			if err != nil {
 				return
 			}
@@ -233,7 +234,7 @@ func (a *Api) deviceWifi(w http.ResponseWriter, r *http.Request) {
 
 				payload = cwmp.GetParameterNames(x.Name+"WLANConfiguration.", 1)
 
-				_, response, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, []byte(payload), w, a.nc)
+				_, response, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, []byte(payload), w, a.nc, middleware.GetTenantSlug(r))
 				if err != nil {
 					return
 				}
@@ -244,7 +245,7 @@ func (a *Api) deviceWifi(w http.ResponseWriter, r *http.Request) {
 
 					payload = cwmp.GetParameterNames(y.Name, 1)
 
-					_, response, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, []byte(payload), w, a.nc)
+					_, response, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, []byte(payload), w, a.nc, middleware.GetTenantSlug(r))
 					if err != nil {
 						return
 					}
@@ -288,7 +289,7 @@ func (a *Api) deviceWifi(w http.ResponseWriter, r *http.Request) {
 
 			payload = cwmp.GetParameterMultiValues(parameters_to_get_values)
 
-			_, parameterValuesResp, err := cwmpInteraction[cwmp.GetParameterValuesResponse](sn, []byte(payload), w, a.nc)
+			_, parameterValuesResp, err := cwmpInteraction[cwmp.GetParameterValuesResponse](sn, []byte(payload), w, a.nc, middleware.GetTenantSlug(r))
 			if err != nil {
 				return
 			}
@@ -369,7 +370,7 @@ func (a *Api) deviceWifi(w http.ResponseWriter, r *http.Request) {
 
 			payload := cwmp.SetParameterMultiValues(fmtBody)
 
-			_, setParameterValuesResp, err := cwmpInteraction[cwmp.SetParameterValuesResponse](sn, []byte(payload), w, a.nc)
+			_, setParameterValuesResp, err := cwmpInteraction[cwmp.SetParameterValuesResponse](sn, []byte(payload), w, a.nc, middleware.GetTenantSlug(r))
 			if err != nil {
 				return
 			}

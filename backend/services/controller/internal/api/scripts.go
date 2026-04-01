@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/entity"
@@ -302,7 +303,7 @@ func (a *Api) getExecution(w http.ResponseWriter, r *http.Request) {
 // --- Script Execution Engine ---
 
 // sendUspMsgDirect sends a USP message and returns the parsed response without writing to http.ResponseWriter.
-func sendUspMsgDirect(msg usp_msg.Msg, sn string, nc *nats.Conn, mtp string) (interface{}, error) {
+func sendUspMsgDirect(msg usp_msg.Msg, sn string, nc *nats.Conn, mtp, tenantSlug string) (interface{}, error) {
 	protoMsg, err := proto.Marshal(&msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal USP message: %w", err)
@@ -317,8 +318,8 @@ func sendUspMsgDirect(msg usp_msg.Msg, sn string, nc *nats.Conn, mtp string) (in
 	// Use a nil-safe ResponseWriter wrapper — NatsUspInteraction needs it for error writing
 	dummyW := &discardResponseWriter{}
 	data, err := bridge.NatsUspInteraction(
-		local.DEVICE_SUBJECT_PREFIX+sn+".api",
-		mtp+"-adapter.usp.v1."+sn+".api",
+		local.DeviceSubjectPrefix(tenantSlug)+sn+".api",
+		mtp+"-adapter.usp.v1."+tenantSlug+"."+sn+".api",
 		protoRecord,
 		dummyW,
 		nc,
@@ -421,7 +422,7 @@ func resolveStepVariables(step db.ScriptStep, vars map[string]string) db.ScriptS
 }
 
 // executeStepUSP runs a single USP step and returns the response.
-func (a *Api) executeStepUSP(step db.ScriptStep, sn, mtp string) (interface{}, error) {
+func (a *Api) executeStepUSP(step db.ScriptStep, sn, mtp, tenantSlug string) (interface{}, error) {
 	var msg usp_msg.Msg
 
 	switch step.Type {
@@ -482,7 +483,7 @@ func (a *Api) executeStepUSP(step db.ScriptStep, sn, mtp string) (interface{}, e
 		return nil, fmt.Errorf("unsupported step type for USP: %s", step.Type)
 	}
 
-	return sendUspMsgDirect(msg, sn, a.nc, mtp)
+	return sendUspMsgDirect(msg, sn, a.nc, mtp, tenantSlug)
 }
 
 // evaluateCondition checks a condition against saved results.
@@ -653,9 +654,11 @@ func (a *Api) executeScriptHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	tenantSlug := middleware.GetTenantSlug(r)
+
 	// Check device is online
 	if mtp == "" || mtp == "any" {
-		mtp, _ = deviceStateOKNoWrite(a.nc, sn)
+		mtp, _ = deviceStateOKNoWrite(a.nc, sn, tenantSlug)
 		if mtp == "" {
 			http.Error(w, "Device is offline or not found", http.StatusServiceUnavailable)
 			return
@@ -762,7 +765,7 @@ func (a *Api) executeScriptHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 
 		default:
-			response, stepErr = a.executeStepUSP(step, sn, mtp)
+			response, stepErr = a.executeStepUSP(step, sn, mtp, tenantSlug)
 		}
 
 		stepResult.FinishedAt = time.Now()
@@ -822,9 +825,9 @@ done:
 
 // deviceStateOKNoWrite checks device state without writing to http.ResponseWriter.
 // Returns the available MTP protocol name and true if the device is online.
-func deviceStateOKNoWrite(nc *nats.Conn, sn string) (string, bool) {
+func deviceStateOKNoWrite(nc *nats.Conn, sn, tenantSlug string) (string, bool) {
 	msg, err := bridge.NatsReqWithoutHttpSet[entity.Device](
-		local.NATS_ADAPTER_SUBJECT+sn+".device",
+		local.NatsAdapterSubject(tenantSlug)+sn+".device",
 		[]byte(""),
 		nc,
 	)

@@ -14,9 +14,9 @@ import (
 
 var errInvalidMtp = errors.New("Invalid MTP, valid options are: mqtt, ws, stomp")
 
-func deviceStateOK(w http.ResponseWriter, nc *nats.Conn, sn string) (string, bool) {
+func deviceStateOK(w http.ResponseWriter, nc *nats.Conn, sn, tenantSlug string) (string, bool) {
 
-	device, err := getDeviceInfo(w, sn, nc)
+	device, err := getDeviceInfo(w, sn, nc, tenantSlug)
 	if err != nil {
 		return "", false
 	}
@@ -81,9 +81,9 @@ func isDeviceOnline(w http.ResponseWriter, deviceStatus entity.Status) bool {
 	return true
 }
 
-func getDeviceInfo(w http.ResponseWriter, sn string, nc *nats.Conn) (device *entity.Device, err error) {
+func getDeviceInfo(w http.ResponseWriter, sn string, nc *nats.Conn, tenantSlug string) (device *entity.Device, err error) {
 	msg, err := bridge.NatsReq[entity.Device](
-		local.NATS_ADAPTER_SUBJECT+sn+".device",
+		local.NatsAdapterSubject(tenantSlug)+sn+".device",
 		[]byte(""),
 		w,
 		nc,
@@ -94,9 +94,9 @@ func getDeviceInfo(w http.ResponseWriter, sn string, nc *nats.Conn) (device *ent
 	return nil, err
 }
 
-func getDeviceCount(w http.ResponseWriter, nc *nats.Conn) (int64, error) {
+func getDeviceCount(w http.ResponseWriter, nc *nats.Conn, tenantSlug string) (int64, error) {
 	msg, err := bridge.NatsReq[int64](
-		local.NATS_ADAPTER_SUBJECT+"devices.count",
+		local.NatsAdapterSubject(tenantSlug)+"devices.count",
 		[]byte(""),
 		w,
 		nc,
@@ -104,9 +104,9 @@ func getDeviceCount(w http.ResponseWriter, nc *nats.Conn) (int64, error) {
 	return msg.Msg, err
 }
 
-func getDevices(w http.ResponseWriter, filter map[string]interface{}, nc *nats.Conn) (*entity.DevicesList, error) {
+func getDevices(w http.ResponseWriter, filter map[string]interface{}, nc *nats.Conn, tenantSlug string) (*entity.DevicesList, error) {
 	msg, err := bridge.NatsReq[entity.DevicesList](
-		local.NATS_ADAPTER_SUBJECT+"devices.retrieve",
+		local.NatsAdapterSubject(tenantSlug)+"devices.retrieve",
 		utils.Marshall(filter),
 		w,
 		nc,

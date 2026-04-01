@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/db"
 )
 
@@ -67,7 +68,7 @@ func (a *Api) createCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 	if created.Enabled {
 		tdb := a.tenantDB(r)
-		go a.RunCampaignBatch(tdb, created)
+		go a.RunCampaignBatch(tdb, created, middleware.GetTenantSlug(r))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -113,7 +114,7 @@ func (a *Api) updateCampaign(w http.ResponseWriter, r *http.Request) {
 		tdb := a.tenantDB(r)
 		updated, fetchErr := tdb.GetCampaign(r.Context(), id)
 		if fetchErr == nil {
-			go a.RunCampaignBatch(tdb, updated)
+			go a.RunCampaignBatch(tdb, updated, middleware.GetTenantSlug(r))
 		}
 	}
 

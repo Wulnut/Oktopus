@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
 	"github.com/leandrofars/oktopus/internal/usp/usp_utils"
 )
@@ -17,7 +18,7 @@ func (a *Api) deviceTopology(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -29,5 +30,5 @@ func (a *Api) deviceTopology(w http.ResponseWriter, r *http.Request) {
 		},
 		MaxDepth: 3,
 	})
-	sendUspMsg(msg, sn, w, a.nc, mtp)
+	sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 }

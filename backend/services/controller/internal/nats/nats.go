@@ -11,18 +11,48 @@ import (
 )
 
 const (
-	NATS_ACCOUNT_SUBJ_PREFIX          = "account-manager.v1."
-	NATS_REQUEST_TIMEOUT              = 10 * time.Second
-	NATS_MQTT_SUBJECT_PREFIX          = "mqtt.usp.v1."
-	NATS_MQTT_ADAPTER_SUBJECT_PREFIX  = "mqtt-adapter.usp.v1."
-	NATS_ADAPTER_SUBJECT              = "adapter.usp.v1."
-	NATS_WS_SUBJECT_PREFIX            = "ws.usp.v1."
-	NATS_WS_ADAPTER_SUBJECT_PREFIX    = "ws-adapter.usp.v1."
-	NATS_STOMP_ADAPTER_SUBJECT_PREFIX = "stomp-adapter.usp.v1."
-	DEVICE_SUBJECT_PREFIX             = "device.usp.v1."
-	DEVICE_CWMP_SUBJECT_PREFIX        = "device.cwmp.v1."
-	NATS_CWMP_ADAPTER_SUBJECT_PREFIX  = "cwmp-adapter.v1."
+	NATS_ACCOUNT_SUBJ_PREFIX = "account-manager.v1."
+	NATS_REQUEST_TIMEOUT     = 10 * time.Second
 )
+
+// Tenant-scoped NATS subject prefix functions.
+// Each inserts the tenant slug into the subject for message isolation between tenants.
+
+func NatsMqttSubjectPrefix(tenantSlug string) string {
+	return "mqtt.usp.v1." + tenantSlug + "."
+}
+
+func NatsMqttAdapterSubjectPrefix(tenantSlug string) string {
+	return "mqtt-adapter.usp.v1." + tenantSlug + "."
+}
+
+func NatsAdapterSubject(tenantSlug string) string {
+	return "adapter.usp.v1." + tenantSlug + "."
+}
+
+func NatsWsSubjectPrefix(tenantSlug string) string {
+	return "ws.usp.v1." + tenantSlug + "."
+}
+
+func NatsWsAdapterSubjectPrefix(tenantSlug string) string {
+	return "ws-adapter.usp.v1." + tenantSlug + "."
+}
+
+func NatsStompAdapterSubjectPrefix(tenantSlug string) string {
+	return "stomp-adapter.usp.v1." + tenantSlug + "."
+}
+
+func DeviceSubjectPrefix(tenantSlug string) string {
+	return "device.usp.v1." + tenantSlug + "."
+}
+
+func DeviceCwmpSubjectPrefix(tenantSlug string) string {
+	return "device.cwmp.v1." + tenantSlug + "."
+}
+
+func NatsCwmpAdapterSubjectPrefix(tenantSlug string) string {
+	return "cwmp-adapter.v1." + tenantSlug + "."
+}
 
 func StartNatsClient(c config.Nats) (jetstream.JetStream, *nats.Conn) {
 

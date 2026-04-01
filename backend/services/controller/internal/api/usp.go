@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/bridge"
 	local "github.com/leandrofars/oktopus/internal/nats"
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
@@ -17,7 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func sendUspMsg(msg usp_msg.Msg, sn string, w http.ResponseWriter, nc *nats.Conn, mtp string) error {
+func sendUspMsg(msg usp_msg.Msg, sn string, w http.ResponseWriter, nc *nats.Conn, mtp, tenantSlug string) error {
 
 	protoMsg, err := proto.Marshal(&msg)
 	if err != nil {
@@ -35,8 +36,8 @@ func sendUspMsg(msg usp_msg.Msg, sn string, w http.ResponseWriter, nc *nats.Conn
 	}
 
 	data, err := bridge.NatsUspInteraction(
-		local.DEVICE_SUBJECT_PREFIX+sn+".api",
-		mtp+"-adapter.usp.v1."+sn+".api",
+		local.DeviceSubjectPrefix(tenantSlug)+sn+".api",
+		mtp+"-adapter.usp.v1."+tenantSlug+"."+sn+".api",
 		protoRecord,
 		w,
 		nc,
@@ -108,7 +109,7 @@ func (a *Api) deviceGenericMessage(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -130,7 +131,7 @@ func (a *Api) deviceGenericMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -146,7 +147,7 @@ func (a *Api) deviceGetMsg(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -157,7 +158,7 @@ func (a *Api) deviceGetMsg(w http.ResponseWriter, r *http.Request) {
 	utils.MarshallDecoder(&get, r.Body)
 	msg := usp_utils.NewGetMsg(get)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -173,7 +174,7 @@ func (a *Api) deviceGetSupportedParametersMsg(w http.ResponseWriter, r *http.Req
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -184,7 +185,7 @@ func (a *Api) deviceGetSupportedParametersMsg(w http.ResponseWriter, r *http.Req
 	utils.MarshallDecoder(&getSupportedDM, r.Body)
 	msg := usp_utils.NewGetSupportedParametersMsg(getSupportedDM)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -200,7 +201,7 @@ func (a *Api) deviceOperateMsg(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -211,7 +212,7 @@ func (a *Api) deviceOperateMsg(w http.ResponseWriter, r *http.Request) {
 	utils.MarshallDecoder(&operate, r.Body)
 	msg := usp_utils.NewOperateMsg(operate)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -227,7 +228,7 @@ func (a *Api) deviceNotifyMsg(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -249,7 +250,7 @@ func (a *Api) deviceNotifyMsg(w http.ResponseWriter, r *http.Request) {
 
 	msg := usp_utils.NewNotifyMsg(notify)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -265,7 +266,7 @@ func (a *Api) deviceUpdateMsg(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -276,7 +277,7 @@ func (a *Api) deviceUpdateMsg(w http.ResponseWriter, r *http.Request) {
 	utils.MarshallDecoder(&set, r.Body)
 	msg := usp_utils.NewSetMsg(set)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -292,7 +293,7 @@ func (a *Api) deviceGetParameterInstances(w http.ResponseWriter, r *http.Request
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -303,7 +304,7 @@ func (a *Api) deviceGetParameterInstances(w http.ResponseWriter, r *http.Request
 	utils.MarshallDecoder(&getInstances, r.Body)
 	msg := usp_utils.NewGetParametersInstancesMsg(getInstances)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -319,7 +320,7 @@ func (a *Api) deviceCreateMsg(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -330,7 +331,7 @@ func (a *Api) deviceCreateMsg(w http.ResponseWriter, r *http.Request) {
 	utils.MarshallDecoder(&add, r.Body)
 	msg := usp_utils.NewCreateMsg(add)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -346,7 +347,7 @@ func (a *Api) deviceDeleteMsg(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -357,7 +358,7 @@ func (a *Api) deviceDeleteMsg(w http.ResponseWriter, r *http.Request) {
 	utils.MarshallDecoder(&del, r.Body)
 	msg := usp_utils.NewDelMsg(del)
 
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}

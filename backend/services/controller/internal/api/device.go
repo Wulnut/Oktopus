@@ -33,7 +33,7 @@ func (a *Api) retrieveDevices(w http.ResponseWriter, r *http.Request) {
 
 		ids := strings.Split(id, ",")
 
-		msg, err := bridge.NatsReq[int64](local.NATS_ADAPTER_SUBJECT+"devices.delete", utils.Marshall(ids), w, a.nc)
+		msg, err := bridge.NatsReq[int64](local.NatsAdapterSubject(middleware.GetTenantSlug(r))+"devices.delete", utils.Marshall(ids), w, a.nc)
 		if err != nil {
 			return
 		}
@@ -53,7 +53,7 @@ func (a *Api) retrieveDevices(w http.ResponseWriter, r *http.Request) {
 	// Get specific device
 	id := r.URL.Query().Get("id")
 	if id != "" {
-		device, err := getDeviceInfo(w, id, a.nc)
+		device, err := getDeviceInfo(w, id, a.nc, middleware.GetTenantSlug(r))
 		if err != nil {
 			return
 		}
@@ -161,7 +161,7 @@ func (a *Api) retrieveDevices(w http.ResponseWriter, r *http.Request) {
 		filter["status"] = fmtStatus
 	}
 
-	devices, err := getDevices(w, filter, a.nc)
+	devices, err := getDevices(w, filter, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		log.Println("Error getting devices", err)
 		return
@@ -358,7 +358,7 @@ func (a *Api) setDeviceAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = bridge.NatsReq[[]byte](local.NATS_ADAPTER_SUBJECT+id+".device.alias", payload, w, a.nc)
+	_, err = bridge.NatsReq[[]byte](local.NatsAdapterSubject(middleware.GetTenantSlug(r))+id+".device.alias", payload, w, a.nc)
 	if err != nil {
 		return
 	}
@@ -366,7 +366,7 @@ func (a *Api) setDeviceAlias(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) filterOptions(w http.ResponseWriter, r *http.Request) {
 
-	resp, err := bridge.NatsReq[entity.FilterOptions](local.NATS_ADAPTER_SUBJECT+"devices.filterOptions", nil, w, a.nc)
+	resp, err := bridge.NatsReq[entity.FilterOptions](local.NatsAdapterSubject(middleware.GetTenantSlug(r))+"devices.filterOptions", nil, w, a.nc)
 	if err != nil {
 		return
 	}

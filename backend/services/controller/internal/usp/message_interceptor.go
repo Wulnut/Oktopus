@@ -50,8 +50,9 @@ func getDeviceMTP(ctx context.Context, nc *nats.Conn, deviceSerial string) strin
 	mtpCache.mu.RUnlock()
 
 	// Query device info via NATS
+	// TODO: pass tenant slug when message interceptor becomes tenant-aware
 	msg, err := bridge.NatsReqWithoutHttpSet[entity.Device](
-		local.NATS_ADAPTER_SUBJECT+deviceSerial+".device",
+		local.NatsAdapterSubject("default")+deviceSerial+".device",
 		[]byte(""),
 		nc,
 	)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
 	"github.com/leandrofars/oktopus/internal/usp/usp_utils"
@@ -33,7 +34,7 @@ func (a *Api) deviceInfoGet(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -52,7 +53,7 @@ func (a *Api) deviceInfoGet(w http.ResponseWriter, r *http.Request) {
 	})
 
 	rec := &responseRecorder{header: make(http.Header), statusCode: http.StatusOK}
-	sendUspMsg(msg, sn, rec, a.nc, mtp)
+	sendUspMsg(msg, sn, rec, a.nc, mtp, middleware.GetTenantSlug(r))
 
 	// Cache the raw JSON response in the background
 	if rec.statusCode == http.StatusOK && len(rec.body) > 0 {
@@ -100,7 +101,7 @@ func (a *Api) deviceWifiUspGet(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -114,7 +115,7 @@ func (a *Api) deviceWifiUspGet(w http.ResponseWriter, r *http.Request) {
 		},
 		MaxDepth: 4,
 	})
-	sendUspMsg(msg, sn, w, a.nc, mtp)
+	sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 }
 
 // GET /api/device/{sn}/{mtp}/interfaces
@@ -127,7 +128,7 @@ func (a *Api) deviceInterfacesGet(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -139,7 +140,7 @@ func (a *Api) deviceInterfacesGet(w http.ResponseWriter, r *http.Request) {
 		},
 		MaxDepth: 3,
 	})
-	sendUspMsg(msg, sn, w, a.nc, mtp)
+	sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 }
 
 // responseRecorder captures the response body for dual-use (store + forward)
@@ -170,7 +171,7 @@ func (a *Api) devicePerformanceGet(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -186,7 +187,7 @@ func (a *Api) devicePerformanceGet(w http.ResponseWriter, r *http.Request) {
 	})
 
 	rec := &responseRecorder{header: make(http.Header), statusCode: http.StatusOK}
-	sendUspMsg(msg, sn, rec, a.nc, mtp)
+	sendUspMsg(msg, sn, rec, a.nc, mtp, middleware.GetTenantSlug(r))
 
 	if rec.statusCode == http.StatusOK {
 		tdb := a.tenantDB(r)
@@ -274,7 +275,7 @@ func (a *Api) deviceReboot(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -288,7 +289,7 @@ func (a *Api) deviceReboot(w http.ResponseWriter, r *http.Request) {
 			"Reason": "Manual Reboot",
 		},
 	})
-	sendUspMsg(msg, sn, w, a.nc, mtp)
+	sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 }
 
 // PUT /api/device/{sn}/{mtp}/factory-reset
@@ -300,7 +301,7 @@ func (a *Api) deviceFactoryReset(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -310,7 +311,7 @@ func (a *Api) deviceFactoryReset(w http.ResponseWriter, r *http.Request) {
 		CommandKey: newCommandKey(),
 		SendResp:   true,
 	})
-	sendUspMsg(msg, sn, w, a.nc, mtp)
+	sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 }
 
 // PUT /api/device/{sn}/{mtp}/restart-agent
@@ -322,7 +323,7 @@ func (a *Api) deviceRestartAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -332,5 +333,5 @@ func (a *Api) deviceRestartAgent(w http.ResponseWriter, r *http.Request) {
 		CommandKey: newCommandKey(),
 		SendResp:   true,
 	})
-	sendUspMsg(msg, sn, w, a.nc, mtp)
+	sendUspMsg(msg, sn, w, a.nc, mtp, middleware.GetTenantSlug(r))
 }

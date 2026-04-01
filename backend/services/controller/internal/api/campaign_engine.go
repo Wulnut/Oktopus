@@ -25,7 +25,8 @@ var onConnectSem = make(chan struct{}, 50)
 // StartCampaignEngine subscribes to device.v1.online events and runs campaign checks.
 // NOTE: Until tenant-scoped NATS subjects are implemented, this uses a default tenant DB.
 func (a *Api) StartCampaignEngine() {
-	defaultTDB := a.db.ForTenant("default")
+	const defaultTenantSlug = "default"
+	defaultTDB := a.db.ForTenant(defaultTenantSlug)
 
 	sub, err := a.nc.Subscribe("device.v1.online", func(msg *nats.Msg) {
 		var device entity.Device
@@ -37,7 +38,7 @@ func (a *Api) StartCampaignEngine() {
 		case onConnectSem <- struct{}{}:
 			go func() {
 				defer func() { <-onConnectSem }()
-				a.handleDeviceOnline(defaultTDB, device)
+				a.handleDeviceOnline(defaultTDB, device, defaultTenantSlug)
 			}()
 		default:
 			log.Printf("campaign_engine: too many concurrent checks, skipping device %s", device.SN)
@@ -51,7 +52,7 @@ func (a *Api) StartCampaignEngine() {
 }
 
 // handleDeviceOnline checks for pending upgrade completions and new campaign upgrades.
-func (a *Api) handleDeviceOnline(tdb *db.TenantDB, device entity.Device) {
+func (a *Api) handleDeviceOnline(tdb *db.TenantDB, device entity.Device, tenantSlug string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -59,7 +60,7 @@ func (a *Api) handleDeviceOnline(tdb *db.TenantDB, device entity.Device) {
 	a.checkUpgradeCompletion(ctx, tdb, device)
 
 	// Step 2: Check if a new upgrade is needed
-	a.checkCampaignUpgrade(ctx, tdb, device)
+	a.checkCampaignUpgrade(ctx, tdb, device, tenantSlug)
 }
 
 // checkUpgradeCompletion verifies if a pending/downloading upgrade succeeded after reboot.
@@ -83,7 +84,7 @@ func (a *Api) checkUpgradeCompletion(ctx context.Context, tdb *db.TenantDB, devi
 }
 
 // checkCampaignUpgrade checks if a device needs a firmware upgrade based on its policy and campaign.
-func (a *Api) checkCampaignUpgrade(ctx context.Context, tdb *db.TenantDB, device entity.Device) {
+func (a *Api) checkCampaignUpgrade(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug string) {
 	policy, err := tdb.GetDeviceFWPolicy(ctx, device.SN)
 	if err != nil {
 		log.Printf("campaign_engine: failed to get FW policy for %s: %v", device.SN, err)
@@ -94,13 +95,13 @@ func (a *Api) checkCampaignUpgrade(ctx context.Context, tdb *db.TenantDB, device
 	case "skip":
 		return
 	case "manual":
-		a.handleManualPolicy(ctx, tdb, device, policy)
+		a.handleManualPolicy(ctx, tdb, device, policy, tenantSlug)
 	default: // "campaign"
-		a.handleCampaignPolicy(ctx, tdb, device)
+		a.handleCampaignPolicy(ctx, tdb, device, tenantSlug)
 	}
 }
 
-func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device entity.Device, policy db.DeviceFWPolicy) {
+func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device entity.Device, policy db.DeviceFWPolicy, tenantSlug string) {
 	if policy.ManualFirmwareID.IsZero() {
 		return
 	}
@@ -115,10 +116,10 @@ func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device e
 		return
 	}
 
-	a.triggerUpgrade(ctx, tdb, device, fw, primitive.NilObjectID, "manual")
+	a.triggerUpgrade(ctx, tdb, device, fw, primitive.NilObjectID, "manual", tenantSlug)
 }
 
-func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device entity.Device) {
+func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug string) {
 	campaign, err := tdb.GetCampaignByHardware(ctx, device.Vendor, device.Model, device.HWVersion)
 	if err != nil {
 		return // No campaign for this hardware
@@ -153,15 +154,15 @@ func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device
 				return
 			}
 			tdb.IncrementRetryAndResetStatus(ctx, existingLog.ID)
-			a.executeFirmwareUpgrade(tdb, device.SN, fw, existingLog.ID)
+			a.executeFirmwareUpgrade(tdb, device.SN, fw, existingLog.ID, tenantSlug)
 			return
 		}
 	}
 
-	a.triggerUpgrade(ctx, tdb, device, fw, campaign.ID, "on_connect")
+	a.triggerUpgrade(ctx, tdb, device, fw, campaign.ID, "on_connect", tenantSlug)
 }
 
-func (a *Api) triggerUpgrade(ctx context.Context, tdb *db.TenantDB, device entity.Device, fw db.Firmware, campaignID primitive.ObjectID, triggerType string) {
+func (a *Api) triggerUpgrade(ctx context.Context, tdb *db.TenantDB, device entity.Device, fw db.Firmware, campaignID primitive.ObjectID, triggerType, tenantSlug string) {
 	logEntry := db.FirmwareUpgradeLog{
 		DeviceSN:         device.SN,
 		DeviceAlias:      device.Alias,
@@ -182,11 +183,11 @@ func (a *Api) triggerUpgrade(ctx context.Context, tdb *db.TenantDB, device entit
 		return
 	}
 
-	a.executeFirmwareUpgrade(tdb, device.SN, fw, created.ID)
+	a.executeFirmwareUpgrade(tdb, device.SN, fw, created.ID, tenantSlug)
 }
 
-func (a *Api) executeFirmwareUpgrade(tdb *db.TenantDB, sn string, fw db.Firmware, logID primitive.ObjectID) {
-	mtp, online := deviceStateOKNoWrite(a.nc, sn)
+func (a *Api) executeFirmwareUpgrade(tdb *db.TenantDB, sn string, fw db.Firmware, logID primitive.ObjectID, tenantSlug string) {
+	mtp, online := deviceStateOKNoWrite(a.nc, sn, tenantSlug)
 	if !online {
 		log.Printf("campaign_engine: device %s not online, skipping upgrade", sn)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -197,7 +198,7 @@ func (a *Api) executeFirmwareUpgrade(tdb *db.TenantDB, sn string, fw db.Firmware
 
 	log.Printf("campaign_engine: triggering firmware upgrade for device %s to %s v%s", sn, fw.Name, fw.BuildVersion)
 
-	fwErr := performFirmwareUpdate(sn, mtp, fw, a.nc)
+	fwErr := performFirmwareUpdate(sn, mtp, fw, a.nc, tenantSlug)
 	if fwErr != nil {
 		log.Printf("campaign_engine: firmware upgrade failed for %s: %v", sn, fwErr)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -212,7 +213,7 @@ func (a *Api) executeFirmwareUpgrade(tdb *db.TenantDB, sn string, fw db.Firmware
 }
 
 // RunCampaignBatch scans online devices matching a campaign and triggers upgrades.
-func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign) {
+func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlug string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -222,7 +223,7 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign) {
 		return
 	}
 
-	devices, err := a.getMatchingOnlineDevices(campaign)
+	devices, err := a.getMatchingOnlineDevices(campaign, tenantSlug)
 	if err != nil {
 		log.Printf("campaign_engine: failed to query devices for campaign %s: %v", campaign.ID.Hex(), err)
 		return
@@ -276,7 +277,7 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign) {
 			defer func() { <-sem }()
 			deviceCtx, deviceCancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer deviceCancel()
-			a.triggerUpgrade(deviceCtx, tdb, device, fw, campaign.ID, "campaign_start")
+			a.triggerUpgrade(deviceCtx, tdb, device, fw, campaign.ID, "campaign_start", tenantSlug)
 		}(d)
 	}
 
@@ -284,9 +285,9 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign) {
 	log.Printf("campaign_engine: batch upgrade completed for campaign %s", campaign.ID.Hex())
 }
 
-func (a *Api) getMatchingOnlineDevices(campaign db.Campaign) ([]entity.Device, error) {
+func (a *Api) getMatchingOnlineDevices(campaign db.Campaign, tenantSlug string) ([]entity.Device, error) {
 	msg, err := bridge.NatsReqWithoutHttpSet[entity.DevicesList](
-		local.NATS_ADAPTER_SUBJECT+"devices",
+		local.NatsAdapterSubject(tenantSlug)+"devices",
 		[]byte(""),
 		a.nc,
 	)

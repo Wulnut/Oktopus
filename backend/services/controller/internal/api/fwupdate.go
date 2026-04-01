@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/bridge"
 	local "github.com/leandrofars/oktopus/internal/nats"
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
@@ -27,7 +28,7 @@ func (a *Api) deviceFwUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if mtp == "" {
 		var ok bool
-		mtp, ok = deviceStateOK(w, a.nc, sn)
+		mtp, ok = deviceStateOK(w, a.nc, sn, middleware.GetTenantSlug(r))
 		if !ok {
 			return
 		}
@@ -57,9 +58,10 @@ func (a *Api) deviceFwUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantSlug := middleware.GetTenantSlug(r)
 	data, err := bridge.NatsUspInteraction(
-		local.DEVICE_SUBJECT_PREFIX+sn+".api",
-		mtp+"-adapter.usp.v1."+sn+".api",
+		local.DeviceSubjectPrefix(tenantSlug)+sn+".api",
+		mtp+"-adapter.usp.v1."+tenantSlug+"."+sn+".api",
 		protoRecord,
 		w,
 		a.nc,
@@ -112,7 +114,7 @@ func (a *Api) deviceFwUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg = usp_utils.NewOperateMsg(receiver)
-	err = sendUspMsg(msg, sn, w, a.nc, mtp)
+	err = sendUspMsg(msg, sn, w, a.nc, mtp, tenantSlug)
 }
 
 // Check which fw image is activated

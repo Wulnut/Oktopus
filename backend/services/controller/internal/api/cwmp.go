@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/cwmp"
 	"github.com/leandrofars/oktopus/internal/entity"
@@ -34,7 +35,7 @@ func (a *Api) cwmpGenericMsg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, _, err := cwmpInteraction[cwmp.SoapEnvelope](sn, payload, w, a.nc)
+	data, _, err := cwmpInteraction[cwmp.SoapEnvelope](sn, payload, w, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -52,7 +53,7 @@ func (a *Api) cwmpGetParameterNamesMsg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, _, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, payload, w, a.nc)
+	data, _, err := cwmpInteraction[cwmp.GetParameterNamesResponse](sn, payload, w, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -70,7 +71,7 @@ func (a *Api) cwmpGetParameterAttributesMsg(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	data, _, err := cwmpInteraction[cwmp.GetParameterAttributesResponse](sn, payload, w, a.nc)
+	data, _, err := cwmpInteraction[cwmp.GetParameterAttributesResponse](sn, payload, w, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -88,7 +89,7 @@ func (a *Api) cwmpGetParameterValuesMsg(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	data, _, err := cwmpInteraction[cwmp.GetParameterValuesResponse](sn, payload, w, a.nc)
+	data, _, err := cwmpInteraction[cwmp.GetParameterValuesResponse](sn, payload, w, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -106,7 +107,7 @@ func (a *Api) cwmpSetParameterValuesMsg(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	data, _, err := cwmpInteraction[cwmp.SetParameterValuesResponse](sn, payload, w, a.nc)
+	data, _, err := cwmpInteraction[cwmp.SetParameterValuesResponse](sn, payload, w, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -124,7 +125,7 @@ func (a *Api) cwmpAddObjectMsg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, _, err := cwmpInteraction[cwmp.AddObjectResponse](sn, payload, w, a.nc)
+	data, _, err := cwmpInteraction[cwmp.AddObjectResponse](sn, payload, w, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -142,7 +143,7 @@ func (a *Api) cwmpDeleteObjectMsg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, _, err := cwmpInteraction[cwmp.DeleteObjectResponse](sn, payload, w, a.nc)
+	data, _, err := cwmpInteraction[cwmp.DeleteObjectResponse](sn, payload, w, a.nc, middleware.GetTenantSlug(r))
 	if err != nil {
 		return
 	}
@@ -151,13 +152,13 @@ func (a *Api) cwmpDeleteObjectMsg(w http.ResponseWriter, r *http.Request) {
 }
 
 func cwmpInteraction[T cwmp.SetParameterValuesResponse | cwmp.SoapEnvelope | cwmp.DeleteObjectResponse | cwmp.GetParameterAttributesResponse | cwmp.GetParameterNamesResponse | cwmp.GetParameterValuesResponse | cwmp.AddObjectResponse](
-	sn string, payload []byte, w http.ResponseWriter, nc *nats.Conn,
+	sn string, payload []byte, w http.ResponseWriter, nc *nats.Conn, tenantSlug string,
 ) ([]byte, T, error) {
 
 	var response T
 
 	data, err := bridge.NatsCwmpInteraction(
-		n.NATS_CWMP_ADAPTER_SUBJECT_PREFIX+sn+".api",
+		n.NatsCwmpAdapterSubjectPrefix(tenantSlug)+sn+".api",
 		payload,
 		w,
 		nc,

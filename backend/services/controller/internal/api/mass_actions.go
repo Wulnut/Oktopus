@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/db"
 	local "github.com/leandrofars/oktopus/internal/nats"
@@ -25,14 +26,14 @@ import (
 const maxDevices = 500
 
 // performFirmwareUpdate executes firmware update on a single device without http.ResponseWriter.
-func performFirmwareUpdate(sn, mtp string, fw db.Firmware, nc *nats.Conn) error {
+func performFirmwareUpdate(sn, mtp string, fw db.Firmware, nc *nats.Conn, tenantSlug string) error {
 	// Query firmware partitions
 	getMsg := usp_utils.NewGetMsg(usp_msg.Get{
 		ParamPaths: []string{"Device.DeviceInfo.FirmwareImage.*.Status"},
 		MaxDepth:   1,
 	})
 
-	resp, err := sendUspMsgDirect(getMsg, sn, nc, mtp)
+	resp, err := sendUspMsgDirect(getMsg, sn, nc, mtp, tenantSlug)
 	if err != nil {
 		return fmt.Errorf("failed to query firmware partitions: %w", err)
 	}
@@ -70,8 +71,8 @@ func performFirmwareUpdate(sn, mtp string, fw db.Firmware, nc *nats.Conn) error 
 
 	dummyW := &discardResponseWriter{}
 	respData, err := bridge.NatsUspInteraction(
-		local.DEVICE_SUBJECT_PREFIX+sn+".api",
-		mtp+"-adapter.usp.v1."+sn+".api",
+		local.DeviceSubjectPrefix(tenantSlug)+sn+".api",
+		mtp+"-adapter.usp.v1."+tenantSlug+"."+sn+".api",
 		protoRecord,
 		dummyW,
 		nc,
@@ -253,14 +254,14 @@ func (a *Api) massScriptExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go a.runMassScriptExecution(tdb, ma, script, req.Variables)
+	go a.runMassScriptExecution(tdb, ma, script, req.Variables, middleware.GetTenantSlug(r))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(ma)
 }
 
-func (a *Api) runMassScriptExecution(tdb *db.TenantDB, ma db.MassAction, script db.Script, variables map[string]string) {
+func (a *Api) runMassScriptExecution(tdb *db.TenantDB, ma db.MassAction, script db.Script, variables map[string]string, tenantSlug string) {
 	sem := make(chan struct{}, ma.Concurrency)
 	var wg sync.WaitGroup
 
@@ -291,7 +292,7 @@ func (a *Api) runMassScriptExecution(tdb *db.TenantDB, ma db.MassAction, script 
 			}
 			tdb.UpdateMassActionDevice(context.Background(), ma.ID, idx, result)
 
-			mtp, online := deviceStateOKNoWrite(a.nc, sn)
+			mtp, online := deviceStateOKNoWrite(a.nc, sn, tenantSlug)
 			if !online {
 				result.Status = "skipped"
 				result.Error = "device offline"
@@ -302,7 +303,7 @@ func (a *Api) runMassScriptExecution(tdb *db.TenantDB, ma db.MassAction, script 
 			}
 
 			result.MTP = mtp
-			execution, execErr := a.executeScriptForDevice(tdb, script, sn, mtp, variables)
+			execution, execErr := a.executeScriptForDevice(tdb, script, sn, mtp, variables, tenantSlug)
 
 			success := true
 			if execErr != nil || execution.Status == "failed" {
@@ -348,7 +349,7 @@ func (a *Api) runMassScriptExecution(tdb *db.TenantDB, ma db.MassAction, script 
 }
 
 // executeScriptForDevice runs a script on a single device and returns the execution record.
-func (a *Api) executeScriptForDevice(tdb *db.TenantDB, script db.Script, sn, mtp string, variables map[string]string) (db.ScriptExecution, error) {
+func (a *Api) executeScriptForDevice(tdb *db.TenantDB, script db.Script, sn, mtp string, variables map[string]string, tenantSlug string) (db.ScriptExecution, error) {
 	execution := db.ScriptExecution{
 		ScriptID:   script.ID,
 		ScriptName: script.Name,
@@ -444,7 +445,7 @@ func (a *Api) executeScriptForDevice(tdb *db.TenantDB, script db.Script, sn, mtp
 			continue
 
 		default:
-			response, stepErr = a.executeStepUSP(step, sn, mtp)
+			response, stepErr = a.executeStepUSP(step, sn, mtp, tenantSlug)
 		}
 
 		stepResult.FinishedAt = time.Now()

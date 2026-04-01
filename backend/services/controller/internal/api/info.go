@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/entity"
 	local "github.com/leandrofars/oktopus/internal/nats"
@@ -30,9 +31,10 @@ type GeneralInfo struct {
 func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 
 	var result GeneralInfo
+	tenantSlug := middleware.GetTenantSlug(r)
 
 	productclasscount, err := bridge.NatsReq[[]entity.ProductClassCount](
-		local.NATS_ADAPTER_SUBJECT+"devices.class",
+		local.NatsAdapterSubject(tenantSlug)+"devices.class",
 		[]byte(""),
 		w,
 		a.nc,
@@ -42,7 +44,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vendorcount, err := bridge.NatsReq[[]entity.VendorsCount](
-		local.NATS_ADAPTER_SUBJECT+"devices.vendors",
+		local.NatsAdapterSubject(tenantSlug)+"devices.vendors",
 		[]byte(""),
 		w,
 		a.nc,
@@ -52,7 +54,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	statusCount, err := bridge.NatsReq[[]entity.StatusCount](
-		local.NATS_ADAPTER_SUBJECT+"devices.status",
+		local.NatsAdapterSubject(tenantSlug)+"devices.status",
 		[]byte(""),
 		w,
 		a.nc,
@@ -75,7 +77,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NATS_WS_ADAPTER_SUBJECT_PREFIX+"rtt",
+		local.NatsWsAdapterSubjectPrefix(tenantSlug)+"rtt",
 		[]byte(""),
 		a.nc,
 	)
@@ -85,7 +87,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 
 	now = time.Now()
 	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NATS_CWMP_ADAPTER_SUBJECT_PREFIX+"rtt",
+		local.NatsCwmpAdapterSubjectPrefix(tenantSlug)+"rtt",
 		[]byte(""),
 		a.nc,
 	)
@@ -95,7 +97,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 
 	now = time.Now()
 	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"rtt",
+		local.NatsStompAdapterSubjectPrefix(tenantSlug)+"rtt",
 		[]byte(""),
 		a.nc,
 	)
@@ -105,7 +107,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 
 	now = time.Now()
 	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"rtt",
+		local.NatsMqttAdapterSubjectPrefix(tenantSlug)+"rtt",
 		[]byte(""),
 		a.nc,
 	)
@@ -121,7 +123,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) vendorsInfo(w http.ResponseWriter, r *http.Request) {
 	vendors, err := bridge.NatsReq[[]entity.VendorsCount](
-		local.NATS_ADAPTER_SUBJECT+"devices.vendors",
+		local.NatsAdapterSubject(middleware.GetTenantSlug(r))+"devices.vendors",
 		[]byte(""),
 		w,
 		a.nc,
@@ -134,7 +136,7 @@ func (a *Api) vendorsInfo(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) productClassInfo(w http.ResponseWriter, r *http.Request) {
 	vendors, err := bridge.NatsReq[[]entity.ProductClassCount](
-		local.NATS_ADAPTER_SUBJECT+"devices.class",
+		local.NatsAdapterSubject(middleware.GetTenantSlug(r))+"devices.class",
 		[]byte(""),
 		w,
 		a.nc,
@@ -147,7 +149,7 @@ func (a *Api) productClassInfo(w http.ResponseWriter, r *http.Request) {
 
 func (a *Api) statusInfo(w http.ResponseWriter, r *http.Request) {
 	vendors, err := bridge.NatsReq[[]entity.StatusCount](
-		local.NATS_ADAPTER_SUBJECT+"devices.status",
+		local.NatsAdapterSubject(middleware.GetTenantSlug(r))+"devices.status",
 		[]byte(""),
 		w,
 		a.nc,
