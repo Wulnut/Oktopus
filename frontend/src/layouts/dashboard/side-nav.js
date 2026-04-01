@@ -21,13 +21,20 @@ import { Scrollbar } from 'src/components/scrollbar';
 import { items, getDeviceSubItems } from './config';
 import { SideNavItem } from './side-nav-item';
 import { useTheme } from '@mui/material';
+import { useTenant } from 'src/contexts/tenant-context';
 
 export const SideNav = (props) => {
   const { open, onClose } = props;
   const pathname = usePathname();
   const lgUp = useMediaQuery((theme) => theme.breakpoints.up('lg'));
+  const { isSuperAdmin } = useTenant();
 
   const theme = useTheme();
+
+  const filteredItems = items.filter((item) => {
+    if (item.superAdminOnly && !isSuperAdmin) return false;
+    return true;
+  });
 
   const isItemActive = (currentPath, itemPath) => {
     if (currentPath === itemPath) {
@@ -106,7 +113,7 @@ export const SideNav = (props) => {
               m: 0
             }}
           >
-            {items.map((item) => {
+            {filteredItems.map((item) => {
               const active = isItemActive(pathname, item.path);
               // Inject device sub-items as children of the Devices item
               const itemChildren = item.path === '/devices' && deviceSubItems.length > 0

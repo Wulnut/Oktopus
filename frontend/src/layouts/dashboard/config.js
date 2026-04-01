@@ -19,6 +19,7 @@ import MagnifyingGlassIcon from '@heroicons/react/24/solid/MagnifyingGlassIcon';
 import CubeTransparentIcon from '@heroicons/react/24/outline/CubeTransparentIcon';
 import EnvelopeIconOutline from '@heroicons/react/24/outline/EnvelopeIcon';
 import ClockIcon from '@heroicons/react/24/outline/ClockIcon';
+import BuildingOfficeIcon from '@heroicons/react/24/solid/BuildingOfficeIcon';
 
 export const getDeviceSubItems = (protocol, deviceID) => [
   {
@@ -69,6 +70,16 @@ export const getDeviceSubItems = (protocol, deviceID) => [
 ];
 
 export const items = [
+  {
+    title: 'Tenants',
+    path: '/tenants',
+    icon: (
+      <SvgIcon fontSize="small">
+        <BuildingOfficeIcon />
+      </SvgIcon>
+    ),
+    superAdminOnly: true,
+  },
   {
     title: 'Overview',
     path: '/',

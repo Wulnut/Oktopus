@@ -8,10 +8,16 @@ import {
   Avatar,
   Badge,
   Box,
+  Chip,
+  FormControl,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   SvgIcon,
   Tooltip,
+  Typography,
   useMediaQuery,
   Dialog,
   DialogTitle,
@@ -26,8 +32,9 @@ import { alpha } from '@mui/material/styles';
 import { usePopover } from 'src/hooks/use-popover';
 import { AccountPopover } from './account-popover';
 import { useAuth } from 'src/hooks/use-auth';
+import { useTenant } from 'src/contexts/tenant-context';
 import { WsContext } from 'src/contexts/socketio-context';
-import { useContext, useEffect } from 'react';
+import { useContext, useEffect, useState } from 'react';
 
 const SIDE_NAV_WIDTH = 280;
 const TOP_NAV_HEIGHT = 64;
@@ -37,7 +44,24 @@ export const TopNav = (props) => {
   const lgUp = useMediaQuery((theme) => theme.breakpoints.up('lg'));
   const accountPopover = usePopover();
   const auth = useAuth();
+  const { isSuperAdmin, tenantSlug, setActiveTenant } = useTenant();
   const { answerCall, call, callAccepted } = useContext(WsContext);
+  const [tenantList, setTenantList] = useState([]);
+
+  useEffect(() => {
+    if (!isSuperAdmin || !auth.user?.token) return;
+    const h = new Headers();
+    h.append('Content-Type', 'application/json');
+    h.append('Authorization', auth.user.token);
+    fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ''}/api/tenants`, {
+      method: 'GET',
+      headers: h,
+      redirect: 'follow',
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setTenantList(data || []))
+      .catch(() => {});
+  }, [isSuperAdmin, auth.user?.token]);
 
   return ( auth.user &&
     <>
@@ -79,13 +103,27 @@ export const TopNav = (props) => {
                 </SvgIcon>
               </IconButton>
             )}
-            {/* <Tooltip title="Search">
-              <IconButton>
-                <SvgIcon fontSize="small">
-                  <MagnifyingGlassIcon />
-                </SvgIcon>
-              </IconButton>
-            </Tooltip> */}
+            {isSuperAdmin && (
+              <FormControl size="small" sx={{ minWidth: 200 }}>
+                <InputLabel id="tenant-selector-label">Active Tenant</InputLabel>
+                <Select
+                  labelId="tenant-selector-label"
+                  value={tenantSlug}
+                  label="Active Tenant"
+                  onChange={(e) => setActiveTenant(e.target.value)}
+                  displayEmpty
+                >
+                  <MenuItem value="">
+                    <em>None (Provider view)</em>
+                  </MenuItem>
+                  {tenantList.map((t) => (
+                    <MenuItem key={t.slug} value={t.slug}>
+                      {t.name} ({t.slug})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
           </Stack>
           <Stack
             alignItems="center"
