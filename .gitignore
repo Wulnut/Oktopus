@@ -3,18 +3,21 @@
 *.dll
 *.so
 *.dylib
-main
 *.test
 *.out
-go.work
 *.log
 *.db
+*.db.new
 *.crt
 *.key
 *.csr
-*.db.new
 *.pwd
 *.acl
+*.swp
+main
+mochi
+go.work
+node_modules/
 .claude
 .idea
 .vscode
@@ -23,5 +26,3 @@ go.work
 # .env.*.example files are tracked; actual .env.* files are ignored
 deploy/compose/.env.*
 !deploy/compose/.env.*.example
-main
-mochi
