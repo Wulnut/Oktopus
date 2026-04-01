@@ -61,21 +61,26 @@ To regenerate secrets, delete the `.env.*` files and re-run `./run.sh`.
 
 ### Running Tests
 
-Unit tests (no external dependencies):
-
-```bash
-cd backend/services/controller
-go test ./...
-```
-
-Integration tests (require MongoDB and NATS — use the test compose file):
+All tests use `deploy/compose/docker-compose.test.yaml` with Docker profiles.
 
 ```bash
 cd deploy/compose
-docker compose -f docker-compose.test.yaml up --abort-on-container-exit
-```
 
-Integration test files use the `//go:build integration` build tag and are skipped by default `go test` runs.
+# Unit tests
+docker compose -f docker-compose.test.yaml --profile unit run --rm test-controller-unit
+docker compose -f docker-compose.test.yaml --profile unit run --rm test-acs
+docker compose -f docker-compose.test.yaml --profile unit run --rm test-adapter
+docker compose -f docker-compose.test.yaml --profile unit run --rm test-infra
+docker compose -f docker-compose.test.yaml --profile unit run --rm test-frontend
+
+# Integration tests (spins up MongoDB + NATS automatically)
+docker compose -f docker-compose.test.yaml --profile integration run --rm test-db
+docker compose -f docker-compose.test.yaml --profile integration run --rm test-bridge
+docker compose -f docker-compose.test.yaml --profile integration run --rm test-handlers
+
+# Clean up
+docker compose -f docker-compose.test.yaml --profile unit --profile integration down
+```
 
 ### Certificates
 

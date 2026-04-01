@@ -10,12 +10,14 @@ services:
       interval: 2s
       timeout: 5s
       retries: 10
+    profiles: [integration]
 
   nats_test:
     image: nats:2.10
     command: ["--js"]
     networks:
       - test_network
+    profiles: [integration]
 
   test-controller-unit:
     image: golang:1.23

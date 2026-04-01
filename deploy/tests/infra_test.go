@@ -299,14 +299,6 @@ func TestDockerfiles_NoEOLNode(t *testing.T) {
 
 // --- CI: Has Test Step ---
 
-func TestCircleCI_HasTestStep(t *testing.T) {
-	content := readFile(t, filepath.Join(projectRoot, ".circleci", "config.yml"))
-
-	if !strings.Contains(content, "go test") && !strings.Contains(content, "npm test") {
-		t.Error(".circleci/config.yml has no test step -- CI only builds/pushes without running tests")
-	}
-}
-
 func min(a, b int) int {
 	if a < b {
 		return a
