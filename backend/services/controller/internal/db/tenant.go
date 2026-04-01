@@ -51,7 +51,6 @@ type Tenant struct {
 type TenantDB struct {
 	General *mongo.Database
 	Usp     *mongo.Database
-	ctx     context.Context
 }
 
 // --- Collection accessors ---
@@ -77,7 +76,6 @@ func (d *Database) ForTenant(slug string) *TenantDB {
 	return &TenantDB{
 		General: d.client.Database(generalName),
 		Usp:     d.client.Database(uspName),
-		ctx:     d.ctx,
 	}
 }
 
@@ -97,9 +95,9 @@ func (d *Database) CreateTenant(ctx context.Context, t Tenant) (Tenant, error) {
 	return t, err
 }
 
-func (d *Database) FindTenant(slug string) (Tenant, error) {
+func (d *Database) FindTenant(ctx context.Context, slug string) (Tenant, error) {
 	var t Tenant
-	err := d.tenants.FindOne(d.ctx, bson.M{"slug": slug}).Decode(&t)
+	err := d.tenants.FindOne(ctx, bson.M{"slug": slug}).Decode(&t)
 	return t, err
 }
 
@@ -166,15 +164,14 @@ func (d *Database) RemoveCACert(ctx context.Context, tenantID, certID primitive.
 // --- Tenant database provisioning ---
 
 // ProvisionTenantDBs creates all collection indexes for a tenant's databases.
-func (d *Database) ProvisionTenantDBs(slug string) error {
+func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 	tdb := d.ForTenant(slug)
-	ctx := d.ctx
 
 	// --- general database collections ---
 
 	// templates: unique name
 	_, err := tdb.Templates().Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys:    bson.M{"name": 1},
+		Keys:    bson.D{{Key: "name", Value: 1}},
 		Options: options.Index().SetUnique(true),
 	})
 	if err != nil {
@@ -314,8 +311,7 @@ func (d *Database) ProvisionTenantDBs(slug string) error {
 }
 
 // DropTenantDBs drops all databases for a tenant.
-func (d *Database) DropTenantDBs(slug string) error {
-	ctx := d.ctx
+func (d *Database) DropTenantDBs(ctx context.Context, slug string) error {
 	generalName := fmt.Sprintf("tenant_%s_general", slug)
 	uspName := fmt.Sprintf("tenant_%s_usp", slug)
 

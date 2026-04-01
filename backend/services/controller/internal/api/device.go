@@ -392,7 +392,7 @@ func (a *Api) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = a.db.UpdateTemplate(name, string(payload))
+	err = a.db.UpdateTemplate(r.Context(), name, string(payload))
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(err.Error())
@@ -428,7 +428,7 @@ func (a *Api) addTemplate(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	switch vars["type"] {
 	case "cwmp":
-		err = a.db.AddTemplate(name, "cwmp", string(payload))
+		err = a.db.AddTemplate(r.Context(), name, "cwmp", string(payload))
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(err.Error())
@@ -437,7 +437,7 @@ func (a *Api) addTemplate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	case "usp":
-		err = a.db.AddTemplate(name, "usp", string(payload))
+		err = a.db.AddTemplate(r.Context(), name, "usp", string(payload))
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(err.Error())
@@ -466,7 +466,7 @@ func (a *Api) getTemplate(w http.ResponseWriter, r *http.Request) {
 			filter = bson.D{{"type", msgType}}
 		}
 
-		result, err := a.db.AllTemplates(filter)
+		result, err := a.db.AllTemplates(r.Context(), filter)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode("Error to get all templates: " + err.Error())
@@ -476,7 +476,7 @@ func (a *Api) getTemplate(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(result)
 		return
 	} else {
-		t, err := a.db.FindTemplate(bson.D{{"name", name}})
+		t, err := a.db.FindTemplate(r.Context(), bson.D{{"name", name}})
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode("error to find message: " + err.Error())
@@ -497,7 +497,7 @@ func (a *Api) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode("needs template name!")
 		return
 	} else {
-		err := a.db.DeleteTemplate(name)
+		err := a.db.DeleteTemplate(r.Context(), name)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode("error to delete template: " + err.Error())

@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 
 	// Provision a test tenant
 	testTenantSlug := fmt.Sprintf("test_%d", time.Now().UnixNano())
-	if err := testDB.ProvisionTenantDBs(testTenantSlug); err != nil {
+	if err := testDB.ProvisionTenantDBs(ctx, testTenantSlug); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to provision tenant DBs: %v\n", err)
 		os.Exit(1)
 	}
@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 
 	// Cleanup: drop test databases
 	testDB.client.Database("account-mngr").Drop(ctx)
-	_ = testDB.DropTenantDBs(testTenantSlug)
+	_ = testDB.DropTenantDBs(ctx, testTenantSlug)
 
 	os.Exit(code)
 }
@@ -364,10 +364,11 @@ func TestFindAllUsers_ReturnsUsers(t *testing.T) {
 
 func TestAddAndFindTemplate(t *testing.T) {
 	name := fmt.Sprintf("tmpl-%d", time.Now().UnixNano())
-	if err := testTDB.AddTemplate(name, "tr-181", "template-content"); err != nil {
+	ctx := context.Background()
+	if err := testTDB.AddTemplate(ctx, name, "tr-181", "template-content"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := testTDB.FindTemplate(map[string]string{"name": name})
+	got, err := testTDB.FindTemplate(ctx, map[string]string{"name": name})
 	if err != nil {
 		t.Fatal(err)
 	}
