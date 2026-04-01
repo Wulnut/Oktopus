@@ -199,7 +199,7 @@ const isAllErrors = (data) => {
 };
 
 export const DevicesNetwork = ({ sn, mtp }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
 
   const [wifiData, setWifiData] = useState(null);
   const [wifiLoading, setWifiLoading] = useState(false);
@@ -210,7 +210,7 @@ export const DevicesNetwork = ({ sn, mtp }) => {
     if (!sn) return;
     setWifiLoading(true);
     try {
-      const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/wifi-usp`, 'GET', null, null);
+      const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/wifi-usp`, 'GET', null, null);
       if (status === 200 && result) setWifiData(result);
     } finally {
       setWifiLoading(false);
@@ -221,7 +221,7 @@ export const DevicesNetwork = ({ sn, mtp }) => {
     if (!sn) return;
     setIfaceLoading(true);
     try {
-      const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/interfaces`, 'GET', null, null);
+      const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/interfaces`, 'GET', null, null);
       if (status === 200 && result) setIfaceData(result);
     } finally {
       setIfaceLoading(false);

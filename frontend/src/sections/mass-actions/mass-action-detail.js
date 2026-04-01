@@ -33,12 +33,12 @@ const formatDuration = (start, end) => {
 };
 
 export const MassActionDetail = ({ actionId, onCancel }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const [action, setAction] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchAction = async () => {
-    const { status, result } = await httpRequest(`/api/mass-actions/${actionId}`, 'GET');
+    const { status, result } = await httpRequest(`${apiPrefix}/mass-actions/${actionId}`, 'GET');
     if (status === 200 && result) {
       setAction(result);
     }

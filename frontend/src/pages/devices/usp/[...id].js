@@ -16,7 +16,7 @@ import { DevicesTopology } from 'src/sections/devices/usp/devices-topology';
 
 const Page = () => {
     const router = useRouter();
-    const { httpRequest } = useBackendContext();
+    const { httpRequest, apiPrefix } = useBackendContext();
 
     const deviceID = router.query.id[0];
     const section = router.query.id[1];
@@ -27,7 +27,7 @@ const Page = () => {
         const fetchStatus = async () => {
             try {
                 const { status, result } = await httpRequest(
-                    `/api/device?id=${encodeURIComponent(deviceID)}`,
+                    `${apiPrefix}/device?id=${encodeURIComponent(deviceID)}`,
                     'GET'
                 );
                 if (status === 200 && result) {

@@ -225,7 +225,7 @@ const formatUptime = (seconds) => {
 
 export const DevicesLCM = () => {
   const router = useRouter();
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const deviceID = router.query.id[0];
 
   const [deploymentUnits, setDeploymentUnits] = useState([]);
@@ -306,7 +306,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(getSupportedDMCommand),
         null
@@ -368,7 +368,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(getCommand),
         null
@@ -560,7 +560,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(getCommand),
         null
@@ -675,7 +675,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(getCommand),
         null
@@ -752,7 +752,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(getCommand),
         null
@@ -1096,7 +1096,7 @@ export const DevicesLCM = () => {
     };
 
     const { result: checkResult, status: checkStatus } = await httpRequest(
-      `/api/device/${deviceID}/any/generic`,
+      `${apiPrefix}/device/${deviceID}/any/generic`,
       'PUT',
       JSON.stringify(checkSubscriptionCommand),
       null
@@ -1151,7 +1151,7 @@ export const DevicesLCM = () => {
       };
 
       const { result: addResult, status: addStatus } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(subscriptionAddCommand),
         null
@@ -1339,7 +1339,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(installCommand),
         null
@@ -1502,7 +1502,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(updateCommand),
         null
@@ -1595,7 +1595,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(uninstallCommand),
         null
@@ -1695,7 +1695,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(operateCommand),
         null
@@ -1783,7 +1783,7 @@ export const DevicesLCM = () => {
       };
 
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/any/generic`,
+        `${apiPrefix}/device/${deviceID}/any/generic`,
         'PUT',
         JSON.stringify(setCommand),
         null

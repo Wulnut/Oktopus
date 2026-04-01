@@ -13,6 +13,7 @@ import '../utils/map.css';
 import { useEffect, useState } from 'react';
 import { BackendProvider } from 'src/contexts/backend-context';
 import { AlertProvider } from 'src/contexts/error-context';
+import { TenantProvider } from 'src/contexts/tenant-context';
 
 const clientSideEmotionCache = createEmotionCache();
 
@@ -43,6 +44,7 @@ const App = (props) => {
       </Head>
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <AuthProvider>
+          <TenantProvider>
           {/* <WsProvider> */}
           <AlertProvider>
             <BackendProvider>
@@ -59,6 +61,7 @@ const App = (props) => {
             </BackendProvider>
           </AlertProvider>
           {/* </WsProvider> */}
+          </TenantProvider>
         </AuthProvider>
       </LocalizationProvider>
     </CacheProvider>

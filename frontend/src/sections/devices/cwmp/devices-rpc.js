@@ -38,7 +38,7 @@ import CheckIcon from '@heroicons/react/24/outline/CheckIcon';
 export const DevicesRPC = () => {
 
 const router = useRouter()
-let { httpRequest } = useBackendContext()
+let { httpRequest, apiPrefix } = useBackendContext()
 
 var prettifyXml = function(sourceXml)
 {
@@ -174,7 +174,7 @@ const handleCancelNewMsgTemplate = () => {
 
 const saveMsg = async () => {
   let {status} = await httpRequest(
-    `/api/device/message?name=`+message[currentMsg].name,
+    `${apiPrefix}/device/message?name=`+message[currentMsg].name,
     "PUT", 
     value,
     null,
@@ -194,7 +194,7 @@ const saveMsg = async () => {
 const createNewMsg = async () => {
   setLoading(true)
   let {status} = await httpRequest(
-    `/api/device/message/cwmp?name=`+newMsgName,
+    `${apiPrefix}/device/message/cwmp?name=`+newMsgName,
     "POST", 
     newMsgValue,
     null,
@@ -220,7 +220,7 @@ const handleChangeMessage = (event) => {
 
 const handleDeleteMessage = async () => {
   let {status} = await httpRequest(
-    `/api/device/message?name=`+message[currentMsg].name.replace(" ", '+'),
+    `${apiPrefix}/device/message?name=`+message[currentMsg].name.replace(" ", '+'),
     "DELETE", 
   )
   if ( status === 204){
@@ -234,7 +234,7 @@ const handleOpen = async () => {
   setOpen(true);
 
   let {result, status} = await httpRequest(
-    `/api/device/cwmp/${router.query.id[0]}/generic`,
+    `${apiPrefix}/device/cwmp/${router.query.id[0]}/generic`,
     "PUT", 
     value, 
     null,
@@ -256,7 +256,7 @@ const handleOpen = async () => {
 
 const fetchMessages = async () => {
   let {result, status} = await httpRequest(
-    `/api/device/message?type=cwmp`,
+    `${apiPrefix}/device/message?type=cwmp`,
     "GET", 
     null, 
     null,

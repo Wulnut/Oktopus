@@ -148,7 +148,7 @@ const collectUsedInterfaces = (bridges) => {
 };
 
 export const DevicesBridging = ({ sn, mtp }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   const [bridgeData, setBridgeData] = useState(null);
@@ -164,7 +164,7 @@ export const DevicesBridging = ({ sn, mtp }) => {
 
   const uspGet = useCallback(async (paramPaths, maxDepth = 3) => {
     const body = JSON.stringify({ param_paths: paramPaths, max_depth: maxDepth });
-    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/get`, 'PUT', body);
+    const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/get`, 'PUT', body);
     return status === 200 ? result : null;
   }, [sn, mtp]);
 
@@ -173,7 +173,7 @@ export const DevicesBridging = ({ sn, mtp }) => {
       allow_partial: true,
       update_objs: [{ obj_path: objPath, param_settings: paramSettings }],
     });
-    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/set`, 'PUT', body);
+    const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/set`, 'PUT', body);
     return status === 200 ? result : null;
   }, [sn, mtp]);
 
@@ -182,7 +182,7 @@ export const DevicesBridging = ({ sn, mtp }) => {
       allow_partial: true,
       create_objs: [{ obj_path: objPath, param_settings: paramSettings || [] }],
     });
-    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/add`, 'PUT', body);
+    const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/add`, 'PUT', body);
     return status === 200 ? result : null;
   }, [sn, mtp]);
 
@@ -191,7 +191,7 @@ export const DevicesBridging = ({ sn, mtp }) => {
       allow_partial: true,
       obj_paths: objPaths,
     });
-    const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/del`, 'PUT', body);
+    const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/del`, 'PUT', body);
     return status === 200 ? result : null;
   }, [sn, mtp]);
 

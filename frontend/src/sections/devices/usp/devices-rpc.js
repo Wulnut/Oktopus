@@ -38,7 +38,7 @@ import CheckIcon from '@heroicons/react/24/outline/CheckIcon';
 export const DevicesRPC = () => {
 
 const router = useRouter()
-let { httpRequest } = useBackendContext()
+let { httpRequest, apiPrefix } = useBackendContext()
 
 const [open, setOpen] = useState(false);
 const [scroll, setScroll] = useState('paper');
@@ -205,7 +205,7 @@ const handleCancelNewMsgTemplate = () => {
 
 const saveMsg = async () => {
   let {status} = await httpRequest(
-    `/api/device/message?name=`+message[currentMsg].name,
+    `${apiPrefix}/device/message?name=`+message[currentMsg].name,
     "PUT", 
     value,
     null,
@@ -225,7 +225,7 @@ const saveMsg = async () => {
 const createNewMsg = async () => {
   setLoading(true)
   let {status} = await httpRequest(
-    `/api/device/message/usp?name=`+newMsgName,
+    `${apiPrefix}/device/message/usp?name=`+newMsgName,
     "POST", 
     newMsgValue,
     null,
@@ -251,7 +251,7 @@ const handleChangeMessage = (event) => {
 
 const handleDeleteMessage = async () => {
   let {status} = await httpRequest(
-    `/api/device/message?name=`+message[currentMsg].name.replace(" ", '+'),
+    `${apiPrefix}/device/message?name=`+message[currentMsg].name.replace(" ", '+'),
     "DELETE", 
   )
   if ( status === 204){
@@ -265,7 +265,7 @@ const handleOpen = async () => {
   setOpen(true);
 
   let {result, status} = await httpRequest(
-    `/api/device/${router.query.id[0]}/any/generic`,
+    `${apiPrefix}/device/${router.query.id[0]}/any/generic`,
     "PUT", 
     value, 
     null,
@@ -286,7 +286,7 @@ const handleOpen = async () => {
 
 const fetchMessages = async () => {
   let {result, status} = await httpRequest(
-    `/api/device/message?type=usp`,
+    `${apiPrefix}/device/message?type=usp`,
     "GET", 
     null, 
     null,

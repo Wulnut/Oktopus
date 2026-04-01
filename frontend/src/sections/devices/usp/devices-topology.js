@@ -62,7 +62,7 @@ const StatusChip = ({ value }) => {
 };
 
 export const DevicesTopology = ({ sn, mtp }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -71,7 +71,7 @@ export const DevicesTopology = ({ sn, mtp }) => {
     if (!sn) return;
     setLoading(true);
     try {
-      const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/topology`, 'GET', null, null);
+      const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/topology`, 'GET', null, null);
       if (status === 200 && result) setData(result);
     } finally {
       setLoading(false);

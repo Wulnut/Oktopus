@@ -2,6 +2,16 @@ import { createContext, useContext, useEffect, useReducer, useRef } from 'react'
 import PropTypes from 'prop-types';
 import { useRouter } from 'next/router';
 
+function parseJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(window.atob(base64));
+  } catch {
+    return null;
+  }
+}
+
 const HANDLERS = {
   INITIALIZE: 'INITIALIZE',
   SIGN_IN: 'SIGN_IN',
@@ -84,10 +94,16 @@ export const AuthProvider = (props) => {
 
     if (isAuthenticated) {
       const email = window.sessionStorage.getItem('email') || '';
+      const tenantId = window.sessionStorage.getItem('tenantId') || '';
+      const tenantSlug = window.sessionStorage.getItem('tenantSlug') || '';
+      const level = parseInt(window.sessionStorage.getItem('level') || '0', 10);
       const user = {
         avatar: '/assets/avatars/default-avatar.png',
         name: email,
         email: email,
+        tenantId,
+        tenantSlug,
+        level,
       };
 
       dispatch({
@@ -153,19 +169,26 @@ export const AuthProvider = (props) => {
     }
 
     const token = await result.json()
-    
+
+    const claims = parseJwt(token);
 
     try {
       window.sessionStorage.setItem('authenticated', 'true');
-      window.sessionStorage.setItem('email',email)
+      window.sessionStorage.setItem('email', email);
+      window.sessionStorage.setItem('tenantSlug', claims?.tenant_slug || '');
+      window.sessionStorage.setItem('tenantId', claims?.tenant_id || '');
+      window.sessionStorage.setItem('level', String(claims?.level ?? 0));
     } catch (err) {
       console.error(err);
     }
 
     const user = {
       avatar: '/assets/avatars/default-avatar.png',
-      name: email,
+      name: claims?.username || email,
       email: email,
+      tenantId: claims?.tenant_id || '',
+      tenantSlug: claims?.tenant_slug || '',
+      level: claims?.level ?? 0,
     };
 
     localStorage.setItem("token", token)
@@ -207,6 +230,10 @@ export const AuthProvider = (props) => {
   const signOut = () => {
     router.push("/auth/login")
     localStorage.removeItem("token")
+    window.sessionStorage.removeItem('tenantSlug');
+    window.sessionStorage.removeItem('tenantId');
+    window.sessionStorage.removeItem('level');
+    window.sessionStorage.removeItem('activeTenantSlug');
     dispatch({
       type: HANDLERS.SIGN_OUT
     });

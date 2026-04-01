@@ -147,7 +147,7 @@ const ExecutionRow = ({ execution }) => {
 };
 
 export const ScriptHistoryDialog = ({ open, onClose, script }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -155,7 +155,7 @@ export const ScriptHistoryDialog = ({ open, onClose, script }) => {
     if (!script?.id) return;
     setLoading(true);
     try {
-      const { status, result } = await httpRequest(`/api/scripts/${script.id}/executions`, 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/scripts/${script.id}/executions`, 'GET');
       if (status === 200 && Array.isArray(result)) {
         setExecutions(result);
       }

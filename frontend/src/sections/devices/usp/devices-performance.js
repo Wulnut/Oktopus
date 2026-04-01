@@ -107,7 +107,7 @@ const buildChartOptions = (theme, title, yFormatter) => ({
 
 export const DevicesPerformance = ({ sn, mtp }) => {
   const theme = useTheme();
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
 
   const [latestMetrics, setLatestMetrics] = useState(null);
   const [historyMetrics, setHistoryMetrics] = useState([]);
@@ -120,11 +120,11 @@ export const DevicesPerformance = ({ sn, mtp }) => {
     setLoading(true);
     try {
       // Collect a fresh data point from the device (also stores it in DB)
-      await httpRequest(`/api/device/${sn}/${mtp}/performance`, 'GET', null, null);
+      await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/performance`, 'GET', null, null);
 
       const [shortRes, longRes] = await Promise.all([
-        httpRequest(`/api/device/${sn}/metrics?since=1`, 'GET', null, null),
-        httpRequest(`/api/device/${sn}/metrics?since=24`, 'GET', null, null),
+        httpRequest(`${apiPrefix}/device/${sn}/metrics?since=1`, 'GET', null, null),
+        httpRequest(`${apiPrefix}/device/${sn}/metrics?since=24`, 'GET', null, null),
       ]);
 
       if (shortRes.status === 200 && Array.isArray(shortRes.result) && shortRes.result.length > 0) {

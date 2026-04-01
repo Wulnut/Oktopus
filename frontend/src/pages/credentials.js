@@ -20,10 +20,12 @@ import { CredentialsTable } from 'src/sections/credentials/credentials-table';
 import InformactionCircleIcon from '@heroicons/react/24/outline/InformationCircleIcon';
 import { useAuth } from 'src/hooks/use-auth';
 import { useRouter } from 'next/router';
+import { useTenant } from 'src/contexts/tenant-context';
 
 const Page = () => {
   const auth = useAuth();
   const router = useRouter();
+  const { apiPrefix } = useTenant();
 
   const [page, setPage] = useState(0);
   const [devices, setDevices] = useState({});
@@ -49,7 +51,7 @@ const Page = () => {
       redirect: 'follow'
     }
 
-    return fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/auth?id=${id}`, requestOptions)
+    return fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/device/auth?id=${id}`, requestOptions)
       .then(response => {
         if (response.status === 401) {
           router.push("/auth/login")
@@ -81,7 +83,7 @@ const Page = () => {
       redirect: 'follow'
     };
 
-    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/auth`, requestOptions)
+    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/device/auth`, requestOptions)
 
     if (result.status == 200) {
       console.log("user created: deu boa raça !!")
@@ -134,7 +136,7 @@ const Page = () => {
       redirect: 'follow'
     }
 
-    let url = `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/auth`
+    let url = `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/device/auth`
     if (id !== undefined && id !== "") {
       url += "?id="+id
     }

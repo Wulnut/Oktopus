@@ -33,12 +33,14 @@ import Check from '@heroicons/react/24/outline/CheckIcon';
 import CircularProgress from '@mui/material/CircularProgress';
 import Backdrop from '@mui/material/Backdrop';
 import { useRouter } from 'next/router';
+import { useTenant } from 'src/contexts/tenant-context';
 import GlobeAltIcon from '@heroicons/react/24/outline/GlobeAltIcon';
 
 export const DevicesWiFi = () => {
 
     const theme = useTheme();
     const router = useRouter()
+    const { apiPrefix } = useTenant();
 
     const [content, setContent] = useState([])
     const [applyContent, setApplyContent] = useState([])
@@ -59,7 +61,7 @@ export const DevicesWiFi = () => {
             redirect: 'follow'
         };
 
-        fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/wifi`, requestOptions)
+        fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/device/${router.query.id[0]}/wifi`, requestOptions)
             .then(response => {
                 if (response.status === 401) {
                     router.push("/auth/login")
@@ -221,7 +223,7 @@ export const DevicesWiFi = () => {
                                                     body: data,
                                                     redirect: 'follow'
                                                 };
-                                                fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${router.query.id[0]}/wifi`, requestOptions)
+                                                fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/device/${router.query.id[0]}/wifi`, requestOptions)
                                                     .then(response => {
                                                         if (response.status === 401) {
                                                             router.push("/auth/login")

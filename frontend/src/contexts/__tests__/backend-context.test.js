@@ -19,6 +19,11 @@ jest.mock('src/contexts/error-context', () => ({
   useAlertContext: () => ({ setAlert: mockSetAlert }),
 }));
 
+// Mock tenant context
+jest.mock('src/contexts/tenant-context', () => ({
+  useTenant: () => ({ apiPrefix: '/api', tenantSlug: '', level: 0, isSuperAdmin: true, setActiveTenant: () => {} }),
+}));
+
 import React from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { BackendProvider, useBackendContext } from '../backend-context';

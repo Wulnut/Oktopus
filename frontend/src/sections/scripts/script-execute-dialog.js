@@ -20,7 +20,7 @@ import { useBackendContext } from 'src/contexts/backend-context';
 import { useAlertContext } from 'src/contexts/error-context';
 
 export const ScriptExecuteDialog = ({ open, onClose, script }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   const [deviceSN, setDeviceSN] = useState('');
@@ -53,7 +53,7 @@ export const ScriptExecuteDialog = ({ open, onClose, script }) => {
     setResult(null);
     try {
       const { status, result: execResult } = await httpRequest(
-        `/api/scripts/${script.id}/execute/${encodeURIComponent(deviceSN)}/${mtp}`,
+        `${apiPrefix}/scripts/${script.id}/execute/${encodeURIComponent(deviceSN)}/${mtp}`,
         'POST',
         JSON.stringify({ variables })
       );

@@ -11,12 +11,14 @@ import { OverviewTasksProgress } from 'src/sections/overview/overview-tasks-prog
 import { OverviewTotalCustomers } from 'src/sections/overview/overview-total-customers';
 import { OverviewTraffic } from 'src/sections/overview/overview-traffic';
 import { useRouter } from 'next/router';
+import { useTenant } from 'src/contexts/tenant-context';
 
 const now = new Date();
 
 const Page = () => {
 
   const router = useRouter()
+  const { apiPrefix } = useTenant();
 
   const [generalInfo, setGeneralInfo] = useState(null)
   const [devicesStatus, setDevicesStatus] = useState([0,0])
@@ -38,7 +40,7 @@ const Page = () => {
         redirect: 'follow',
     };
 
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/info/general`, requestOptions))
+    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/info/general`, requestOptions))
     if (result.status === 401){
     router.push("/auth/login")
     }else if (result.status != 200){

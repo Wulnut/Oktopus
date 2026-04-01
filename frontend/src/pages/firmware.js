@@ -21,7 +21,7 @@ import { useBackendContext } from 'src/contexts/backend-context';
 import { useAlertContext } from 'src/contexts/error-context';
 
 const Page = () => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   const [firmware, setFirmware] = useState([]);
@@ -40,7 +40,7 @@ const Page = () => {
   const fetchFirmware = useCallback(async () => {
     setLoading(true);
     try {
-      const { status, result } = await httpRequest('/api/firmware', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/firmware`, 'GET');
       if (status === 200 && Array.isArray(result)) {
         setFirmware(result);
       }
@@ -62,7 +62,7 @@ const Page = () => {
     if (!firmwareToDelete) return;
     setDeleting(true);
     try {
-      const { status } = await httpRequest(`/api/firmware/${firmwareToDelete}`, 'DELETE');
+      const { status } = await httpRequest(`${apiPrefix}/firmware/${firmwareToDelete}`, 'DELETE');
       if (status === 204 || status === 200) {
         setFirmware((prev) => prev.filter((fw) => fw.id !== firmwareToDelete));
         setAlert({ severity: 'success', message: 'Firmware deleted successfully.' });
@@ -80,7 +80,7 @@ const Page = () => {
     headers.append('Content-Type', 'application/json');
     headers.append('Authorization', localStorage.getItem('token'));
 
-    const { status } = await httpRequest(`/api/firmware/${id}/phase`, 'PUT', body, headers);
+    const { status } = await httpRequest(`${apiPrefix}/firmware/${id}/phase`, 'PUT', body, headers);
     if (status === 204 || status === 200) {
       setFirmware((prev) =>
         prev.map((fw) => (fw.id === id ? { ...fw, phase: newPhase } : fw))
@@ -98,7 +98,7 @@ const Page = () => {
   };
 
   const handleEditSave = async (id, data) => {
-    const { status } = await httpRequest(`/api/firmware/${id}`, 'PUT', JSON.stringify(data));
+    const { status } = await httpRequest(`${apiPrefix}/firmware/${id}`, 'PUT', JSON.stringify(data));
     if (status === 204 || status === 200) {
       setEditDialogOpen(false);
       setEditingFirmware(null);

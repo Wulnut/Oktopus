@@ -67,7 +67,7 @@ const Page = () => {
   const theme = useTheme();
   const router = useRouter()
   const auth = useAuth();
-  const { httpRequest, setAlert } = useBackendContext();
+  const { httpRequest, setAlert, apiPrefix } = useBackendContext();
 
   const [devices, setDevices] = useState([]);
   const [total, setTotal] = useState(null);
@@ -213,7 +213,7 @@ const Page = () => {
 
     try {
       const { status, result } = await httpRequest(
-        `/api/device?statusOrder=${statusOrder}&page_number=${page}&page_size=${rowsPerPage}&vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
+        `${apiPrefix}/device?statusOrder=${statusOrder}&page_number=${page}&page_size=${rowsPerPage}&vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
         'GET'
       );
       if (status == 404) {
@@ -236,7 +236,7 @@ const Page = () => {
     }
 
     try {
-      const { status, result } = await httpRequest('/api/device/filterOptions', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/device/filterOptions`, 'GET');
       if (status == 200 && result) {
         setFilterOptions(result);
       }
@@ -249,7 +249,7 @@ const Page = () => {
 
   const removeDevice = async (sn) => {
     try {
-      const { status } = await httpRequest(`/api/device?id=${sn}`, 'DELETE');
+      const { status } = await httpRequest(`${apiPrefix}/device?id=${sn}`, 'DELETE');
       setShowSetDeviceToBeRemoved(false);
       setDeviceToBeRemoved(null);
       if (status == 200) {
@@ -265,7 +265,7 @@ const Page = () => {
 
   const setNewDeviceAlias = async (alias, sn) => {
     try {
-      const { status } = await httpRequest(`/api/device/alias?id=${sn}`, 'PUT', alias);
+      const { status } = await httpRequest(`${apiPrefix}/device/alias?id=${sn}`, 'PUT', alias);
       setShowSetDeviceAlias(false);
       setDeviceAlias(null);
       if (status == 200) {
@@ -295,7 +295,7 @@ const Page = () => {
 
     try {
       const { status, result } = await httpRequest(
-        `/api/device?page_number=${p}&page_size=${page_size}&statusOrder=${s}&vendor=${localFilterList["vendor"]}&version=${localFilterList["version"]}&alias=${localFilterList["alias"]}&type=${localFilterList["type"]}&status=${localFilterList["status"]}&model=${localFilterList["model"]}`,
+        `${apiPrefix}/device?page_number=${p}&page_size=${page_size}&statusOrder=${s}&vendor=${localFilterList["vendor"]}&version=${localFilterList["version"]}&alias=${localFilterList["alias"]}&type=${localFilterList["type"]}&status=${localFilterList["status"]}&model=${localFilterList["model"]}`,
         'GET'
       );
       if (status == 200 && result) {
@@ -316,7 +316,7 @@ const Page = () => {
     try {
       if (id == "") {
         const { status, result } = await httpRequest(
-          `/api/device?vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
+          `${apiPrefix}/device?vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
           'GET'
         );
         if (status == 200 && result) {
@@ -330,7 +330,7 @@ const Page = () => {
         return;
       }
 
-      const { status, result } = await httpRequest(`/api/device?id=${id}`, 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/device?id=${id}`, 'GET');
       if (status == 200 && result && result.SN != undefined) {
         setDevices([result]);
         setTotal(1);

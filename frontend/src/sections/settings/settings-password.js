@@ -14,7 +14,7 @@ import { useAlertContext } from 'src/contexts/error-context';
 
 export const SettingsPassword = () => {
 
-  let {httpRequest} = useBackendContext();
+  let {httpRequest, apiPrefix} = useBackendContext();
   let {setAlert} = useAlertContext();
 
   const [values, setValues] = useState({
@@ -75,7 +75,7 @@ export const SettingsPassword = () => {
                 });
                 return
               }
-              let {status} = await httpRequest('/api/auth/password', 'PUT', JSON.stringify({"password": values.password}))
+              let {status} = await httpRequest(`${apiPrefix}/users/password`, 'PUT', JSON.stringify({"password": values.password}))
               if (status === 204) {
                 console.log("Password updated")
                 setAlert({

@@ -31,7 +31,7 @@ const PHASES = [
 ];
 
 export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const fileInputRef = useRef(null);
 
   const [tab, setTab] = useState(0); // 0 = Upload File, 1 = External URL
@@ -125,7 +125,7 @@ export const FirmwareUploadDialog = ({ open, onClose, onSuccess }) => {
       const headers = new Headers();
       headers.append('Authorization', localStorage.getItem('token'));
 
-      const { status } = await httpRequest('/api/firmware', 'POST', formData, headers);
+      const { status } = await httpRequest(`${apiPrefix}/firmware`, 'POST', formData, headers);
 
       if (status === 200 || status === 201) {
         resetForm();

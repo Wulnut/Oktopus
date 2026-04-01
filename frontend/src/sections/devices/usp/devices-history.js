@@ -151,7 +151,7 @@ const MTPS = [
 
 export const DevicesHistory = () => {
   const router = useRouter();
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const deviceID = router.query.id?.[0];
 
   const [messages, setMessages] = useState([]);
@@ -446,7 +446,7 @@ export const DevicesHistory = () => {
       }
       
       const { result, status } = await httpRequest(
-        `/api/device/${deviceID}/history?${params.toString()}`,
+        `${apiPrefix}/device/${deviceID}/history?${params.toString()}`,
         'GET'
       );
       if (status === 200 && result) {
@@ -669,7 +669,7 @@ export const DevicesHistory = () => {
       // Make the request directly without using fetchMessages to avoid dependency issues
       try {
         const { result, status } = await httpRequest(
-          `/api/device/${deviceID}/history?${params.toString()}`,
+          `${apiPrefix}/device/${deviceID}/history?${params.toString()}`,
           'GET'
         );
         if (status === 200 && result) {
@@ -847,7 +847,7 @@ export const DevicesHistory = () => {
     setClearingHistory(true);
     try {
       const { status } = await httpRequest(
-        `/api/device/${deviceID}/history`,
+        `${apiPrefix}/device/${deviceID}/history`,
         'DELETE'
       );
       if (status === 200) {

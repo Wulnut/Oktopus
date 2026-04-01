@@ -37,7 +37,7 @@ import { useBackendContext } from 'src/contexts/backend-context';
 import { useAlertContext } from 'src/contexts/error-context';
 
 const Page = () => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   // Script selection
@@ -65,7 +65,7 @@ const Page = () => {
   const fetchScripts = useCallback(async () => {
     setScriptsLoading(true);
     try {
-      const { status, result } = await httpRequest('/api/scripts', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/scripts`, 'GET');
       if (status === 200 && Array.isArray(result)) setScripts(result);
     } finally {
       setScriptsLoading(false);
@@ -75,7 +75,7 @@ const Page = () => {
   const fetchJobs = useCallback(async () => {
     setJobsLoading(true);
     try {
-      const { status, result } = await httpRequest('/api/mass-actions', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/mass-actions`, 'GET');
       if (status === 200 && Array.isArray(result)) {
         setJobs(result.filter((j) => j.type === 'script'));
       }
@@ -122,7 +122,7 @@ const Page = () => {
         device_sns: selectedSNs,
         concurrency,
       });
-      const { status } = await httpRequest('/api/mass-actions/script', 'POST', body);
+      const { status } = await httpRequest(`${apiPrefix}/mass-actions/script`, 'POST', body);
       if (status === 202 || status === 200) {
         setAlert({ severity: 'success', message: 'Mass script execution started.' });
         setSelectedSNs([]);
@@ -134,7 +134,7 @@ const Page = () => {
   };
 
   const handleCancel = async (id) => {
-    const { status } = await httpRequest(`/api/mass-actions/${id}/cancel`, 'POST');
+    const { status } = await httpRequest(`${apiPrefix}/mass-actions/${id}/cancel`, 'POST');
     if (status === 204 || status === 200) {
       setAlert({ severity: 'info', message: 'Mass action cancelled.' });
       fetchJobs();

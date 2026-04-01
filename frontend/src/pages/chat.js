@@ -14,15 +14,17 @@ import {
 } from "@mui/material";
 import { WsContext } from "src/contexts/socketio-context";
 import { useRouter } from "next/router";
+import { useTenant } from 'src/contexts/tenant-context';
 
 const Page = () => {
 
     //const [isConnected, setIsConnected] = useState(socket.connected);
-    const [users, setUsers] = useState([]) 
+    const [users, setUsers] = useState([])
     //const [onlineUsers, setOnlineUsers] = useState([])
 
     const ws = useContext(WsContext)
     const router = useRouter()
+    const { apiPrefix } = useTenant();
 
     useEffect(()=>{
         var myHeaders = new Headers();
@@ -35,7 +37,7 @@ const Page = () => {
             redirect: 'follow'
         };
 
-        fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/users`,requestOptions)
+        fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/users`,requestOptions)
         .then(response => response.json())
         .then(result => {
             // let teste =  JSON.stringify(JSON.parse(result), null, 2)

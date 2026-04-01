@@ -34,6 +34,7 @@ import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import PlayCircleIcon from '@heroicons/react/24/outline/PlayCircleIcon';
 import { useRouter } from 'next/router';
+import { useTenant } from 'src/contexts/tenant-context';
 
 const ObjAccessType = {
   ReadOnly: 0,
@@ -175,6 +176,7 @@ const ValueDisplay = ({ value }) => {
 
 export const DevicesDiscovery = () => {
   const router = useRouter();
+  const { apiPrefix } = useTenant();
 
   // Derive device ID and current TR-181 path from URL
   const deviceID = router.query.id?.[0];
@@ -237,7 +239,7 @@ export const DevicesDiscovery = () => {
   // API helpers
   const fetchWithAuth = useCallback(async (endpoint, body) => {
     const result = await fetch(
-      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/${deviceID}/any/${endpoint}`,
+      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/device/${deviceID}/any/${endpoint}`,
       { method: 'PUT', headers: getAuthHeaders(), redirect: 'follow', body: JSON.stringify(body) }
     );
     if (result.status === 401) {

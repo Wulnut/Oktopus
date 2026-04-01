@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useAlertContext } from './error-context';
+import { useTenant } from './tenant-context';
 
 export const BackendContext = createContext({ undefined });
 
@@ -8,6 +9,7 @@ export const BackendProvider = (props) => {
     const { children } = props;
 
     const { setAlert } = useAlertContext();
+    const { apiPrefix } = useTenant();
 
     const router = useRouter();
 
@@ -73,6 +75,7 @@ export const BackendProvider = (props) => {
         value={{
             httpRequest,
             setAlert,
+            apiPrefix,
         }}
         >
         {children}

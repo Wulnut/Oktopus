@@ -75,7 +75,7 @@ const parseUspFlat = (data) => {
 };
 
 export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   const [info, setInfo] = useState(null);
@@ -103,7 +103,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
     if (!sn) return;
     setLoading(true);
     try {
-      const { status, result } = await httpRequest(`/api/device/${sn}/cached-info`, 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/cached-info`, 'GET');
       if (status === 200 && result && result.info) {
         setInfo(result.info);
         setIsCached(true);
@@ -120,7 +120,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
     setLoading(true);
     setIsCached(false);
     try {
-      const { status, result } = await httpRequest(`/api/device/${sn}/${mtp}/info`, 'GET', null, null);
+      const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/info`, 'GET', null, null);
       if (status === 200 && result) {
         setInfo(result);
         setIsCached(false);
@@ -150,7 +150,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
     if (!sn) return;
     const fetchPolicy = async () => {
       try {
-        const { status, result } = await httpRequest(`/api/device/${sn}/fw-policy`, 'GET');
+        const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/fw-policy`, 'GET');
         if (status === 200 && result) {
           if (result.policy === 'manual' && result.manual_firmware_id) {
             setFwPolicy(result.manual_firmware_id);
@@ -165,7 +165,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
     };
     const fetchFwList = async () => {
       try {
-        const { status, result } = await httpRequest('/api/firmware', 'GET');
+        const { status, result } = await httpRequest(`${apiPrefix}/firmware`, 'GET');
         if (status === 200 && Array.isArray(result)) {
           setAvailableFirmware(result);
         }
@@ -200,7 +200,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
         const model = (flat.ModelName || '').toLowerCase();
         const hwVersion = (flat.HardwareVersion || '').toLowerCase();
 
-        const { status, result } = await httpRequest('/api/campaigns', 'GET');
+        const { status, result } = await httpRequest(`${apiPrefix}/campaigns`, 'GET');
         if (status === 200 && Array.isArray(result)) {
           const match = result.some(
             (c) =>
@@ -235,7 +235,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
         firmwareId = value;
       }
       const body = JSON.stringify({ policy, manual_firmware_id: firmwareId });
-      const { status } = await httpRequest(`/api/device/${sn}/fw-policy`, 'PUT', body);
+      const { status } = await httpRequest(`${apiPrefix}/device/${sn}/fw-policy`, 'PUT', body);
       if (status === 200 || status === 204) {
         setFwPolicy(value);
         if (policy === 'manual') setFwPolicyFwId(firmwareId);
@@ -316,7 +316,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
               openConfirm(
                 'Reboot Device',
                 'Are you sure you want to reboot this device? This cannot be undone.',
-                `/api/device/${sn}/${mtp}/reboot`
+                `${apiPrefix}/device/${sn}/${mtp}/reboot`
               )
             }
           >
@@ -332,7 +332,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
               openConfirm(
                 'Factory Reset',
                 'Are you sure you want to factory reset this device? This cannot be undone.',
-                `/api/device/${sn}/${mtp}/factory-reset`
+                `${apiPrefix}/device/${sn}/${mtp}/factory-reset`
               )
             }
           >

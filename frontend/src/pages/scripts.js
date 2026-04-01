@@ -22,7 +22,7 @@ import { useBackendContext } from 'src/contexts/backend-context';
 import { useAlertContext } from 'src/contexts/error-context';
 
 const Page = () => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   const [scripts, setScripts] = useState([]);
@@ -48,7 +48,7 @@ const Page = () => {
   const fetchScripts = useCallback(async () => {
     setLoading(true);
     try {
-      const { status, result } = await httpRequest('/api/scripts', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/scripts`, 'GET');
       if (status === 200 && Array.isArray(result)) {
         setScripts(result);
       }
@@ -84,7 +84,7 @@ const Page = () => {
   const handleEditorSave = async (scriptData) => {
     const isEdit = editingScript && editingScript.id;
     const method = isEdit ? 'PUT' : 'POST';
-    const path = isEdit ? `/api/scripts/${editingScript.id}` : '/api/scripts';
+    const path = isEdit ? `${apiPrefix}/scripts/${editingScript.id}` : `${apiPrefix}/scripts`;
 
     const { status } = await httpRequest(path, method, JSON.stringify(scriptData));
     if (status === 201 || status === 204 || status === 200) {
@@ -114,7 +114,7 @@ const Page = () => {
     if (!scriptToDelete) return;
     setDeleting(true);
     try {
-      const { status } = await httpRequest(`/api/scripts/${scriptToDelete.id}`, 'DELETE');
+      const { status } = await httpRequest(`${apiPrefix}/scripts/${scriptToDelete.id}`, 'DELETE');
       if (status === 204 || status === 200) {
         setScripts((prev) => prev.filter((s) => s.id !== scriptToDelete.id));
         setAlert({ severity: 'success', message: 'Script deleted.' });

@@ -361,7 +361,7 @@ const CampaignDialog = ({ open, onClose, onSave, campaign, firmware, campaigns }
 // ─── Upgrade Log (expanded row) ─────────────────────────────────────────────
 
 const CampaignLogs = ({ campaignId }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -371,7 +371,7 @@ const CampaignLogs = ({ campaignId }) => {
     setLoading(true);
     try {
       const { status, result } = await httpRequest(
-        `/api/campaigns/${campaignId}/logs?page=${page}&page_size=${PAGE_SIZE}`,
+        `${apiPrefix}/campaigns/${campaignId}/logs?page=${page}&page_size=${PAGE_SIZE}`,
         'GET'
       );
       if (status === 200 && result) {
@@ -487,7 +487,7 @@ const CampaignLogs = ({ campaignId }) => {
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 const Page = () => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
   const [campaigns, setCampaigns] = useState([]);
@@ -507,7 +507,7 @@ const Page = () => {
   const fetchCampaigns = useCallback(async () => {
     setLoading(true);
     try {
-      const { status, result } = await httpRequest('/api/campaigns', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/campaigns`, 'GET');
       if (status === 200 && Array.isArray(result)) {
         setCampaigns(result);
       }
@@ -520,7 +520,7 @@ const Page = () => {
 
   const fetchFirmware = useCallback(async () => {
     try {
-      const { status, result } = await httpRequest('/api/firmware', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/firmware`, 'GET');
       if (status === 200 && Array.isArray(result)) {
         setFirmware(result);
       }
@@ -566,7 +566,7 @@ const Page = () => {
   const handleSave = async (body) => {
     if (editingCampaign) {
       const { status } = await httpRequest(
-        `/api/campaigns/${editingCampaign.id}`,
+        `${apiPrefix}/campaigns/${editingCampaign.id}`,
         'PUT',
         JSON.stringify(body)
       );
@@ -578,7 +578,7 @@ const Page = () => {
         setAlert({ severity: 'error', message: 'Failed to update campaign.' });
       }
     } else {
-      const { status } = await httpRequest('/api/campaigns', 'POST', JSON.stringify(body));
+      const { status } = await httpRequest(`${apiPrefix}/campaigns`, 'POST', JSON.stringify(body));
       if (status === 200 || status === 201) {
         setAlert({ severity: 'success', message: 'Campaign created.' });
         handleDialogClose();
@@ -603,7 +603,7 @@ const Page = () => {
     if (!campaignToDelete) return;
     setDeleting(true);
     try {
-      const { status } = await httpRequest(`/api/campaigns/${campaignToDelete.id}`, 'DELETE');
+      const { status } = await httpRequest(`${apiPrefix}/campaigns/${campaignToDelete.id}`, 'DELETE');
       if (status === 200 || status === 204) {
         setAlert({ severity: 'success', message: 'Campaign deleted.' });
         setCampaigns((prev) => prev.filter((c) => c.id !== campaignToDelete.id));
@@ -623,7 +623,7 @@ const Page = () => {
       time_window_end: campaign.time_window_end || '',
       enabled: !campaign.enabled,
     });
-    const { status } = await httpRequest(`/api/campaigns/${campaign.id}`, 'PUT', body);
+    const { status } = await httpRequest(`${apiPrefix}/campaigns/${campaign.id}`, 'PUT', body);
     if (status === 200 || status === 204) {
       setCampaigns((prev) =>
         prev.map((c) => (c.id === campaign.id ? { ...c, enabled: !campaign.enabled } : c))

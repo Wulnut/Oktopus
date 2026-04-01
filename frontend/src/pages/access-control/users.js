@@ -18,11 +18,13 @@ import { useAuth } from 'src/hooks/use-auth';
 import { useRouter } from 'next/router';
 import { is } from 'date-fns/locale';
 import { set } from 'nprogress';
+import { useTenant } from 'src/contexts/tenant-context';
 
 const Page = () => {
 
   const auth = useAuth();
   const router = useRouter();
+  const { apiPrefix } = useTenant();
 
   const validateEmail = (email) => {
     return email.match(
@@ -55,7 +57,7 @@ const Page = () => {
       redirect: 'follow'
     }
 
-    return fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/auth/delete/${id}`, requestOptions)
+    return fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/users/${id}`, requestOptions)
       .then(response => {
         if (response.status === 401) {
           router.push("/auth/login")
@@ -82,7 +84,7 @@ const Page = () => {
       redirect: 'follow'
     }
 
-    return fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/users`, requestOptions)
+    return fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/users`, requestOptions)
       .then(response => {
         if (response.status === 401) {
           router.push("/auth/login")
@@ -142,7 +144,7 @@ const Page = () => {
       redirect: 'follow'
     };
 
-    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/auth/register`, requestOptions)
+    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/users`, requestOptions)
 
     if (result.status == 200) {
       console.log("user created: deu boa raça !!")

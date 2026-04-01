@@ -17,14 +17,14 @@ import {
 import { useBackendContext } from 'src/contexts/backend-context';
 
 export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
-  const { httpRequest } = useBackendContext();
+  const { httpRequest, apiPrefix } = useBackendContext();
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const fetchDevices = useCallback(async () => {
     setLoading(true);
     try {
-      const { status, result } = await httpRequest('/api/device?page_size=500', 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/device?page_size=500`, 'GET');
       if (status === 200 && result) {
         const list = result.devices || [];
         setDevices(list);

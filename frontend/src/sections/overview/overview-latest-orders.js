@@ -28,6 +28,7 @@ import { SeverityPill } from 'src/components/severity-pill';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import PencilIcon from '@heroicons/react/24/outline/PencilIcon';
+import { useTenant } from 'src/contexts/tenant-context';
 
 const statusMap = {
   1: 'warning',
@@ -59,6 +60,7 @@ export const OverviewLatestOrders = (props) => {
   const { orders = [], sx } = props;
 
   const router = useRouter()
+  const { apiPrefix } = useTenant();
 
   const [showSetDeviceAlias, setShowSetDeviceAlias] = useState(false);
   const [deviceAlias, setDeviceAlias] = useState(null);
@@ -76,7 +78,7 @@ export const OverviewLatestOrders = (props) => {
       redirect: 'follow'
     };
 
-    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/device/alias?id=${sn}`, requestOptions)
+    let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/device/alias?id=${sn}`, requestOptions)
     console.log("result:", result)
     if (result.status === 401){
       router.push("/auth/login")
