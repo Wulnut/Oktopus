@@ -11,27 +11,47 @@ import (
 	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/utils"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func (a *Api) retrieveUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := a.db.FindAllUsers()
+	slug := middleware.GetTenantSlug(r)
+	tenant, err := a.db.FindTenant(r.Context(), slug)
+	if err != nil {
+		http.Error(w, `{"error":"tenant not found"}`, http.StatusNotFound)
+		return
+	}
+
+	users, err := a.db.FindUsersByTenant(tenant.ID)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	for _, x := range users {
-		objectID, ok := x["_id"].(primitive.ObjectID)
-		if ok {
-			creationTime := objectID.Timestamp()
-			x["createdAt"] = creationTime.Format("02/01/2006")
-		}
-		delete(x, "password")
+	type userResponse struct {
+		ID        string `json:"_id"`
+		Email     string `json:"email"`
+		Name      string `json:"name"`
+		Phone     string `json:"phone"`
+		Level     int    `json:"level"`
+		CreatedAt string `json:"createdAt"`
 	}
 
-	err = json.NewEncoder(w).Encode(users)
+	var result []userResponse
+	for _, u := range users {
+		resp := userResponse{
+			Email: u.Email,
+			Name:  u.Name,
+			Phone: u.Phone,
+			Level: int(u.Level),
+		}
+		if !u.TenantID.IsZero() {
+			resp.ID = u.TenantID.Hex()
+		}
+		result = append(result, resp)
+	}
+
+	err = json.NewEncoder(w).Encode(result)
 	if err != nil {
 		log.Println(err)
 	}

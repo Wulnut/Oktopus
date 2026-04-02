@@ -26,6 +26,14 @@ import { Scrollbar } from 'src/components/scrollbar';
 import { getInitials } from 'src/utils/get-initials';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import { useState } from 'react';
+import { useAuth } from 'src/hooks/use-auth';
+import { useTenant } from 'src/contexts/tenant-context';
+
+const levelLabels = {
+  0: 'Super Admin',
+  1: 'Tenant Admin',
+  2: 'Operator',
+};
 
 export const CustomersTable = (props) => {
   const {
@@ -42,6 +50,10 @@ export const CustomersTable = (props) => {
     rowsPerPage = 0,
     selected = []
   } = props;
+
+  const auth = useAuth();
+  const { level: currentUserLevel } = useTenant();
+  const currentUserEmail = auth.user?.email;
 
   // const selectedSome = (selected.length > 0) && (selected.length < items.length);
   // const selectedAll = (items.length > 0) && (selected.length === items.length);
@@ -141,23 +153,21 @@ export const CustomersTable = (props) => {
                       {customer.createdAt}
                     </TableCell>
                     <TableCell>
-                    {customer.level == 1 ? "Admin" : "User"}
+                    {levelLabels[customer.level] || 'Unknown'}
                     </TableCell>
                     <TableCell>
-                      { customer.level == 0 ? <Button
-                        onClick={() => {
-                          console.log("delete user: ", customer._id)
-                          setUserToDelete(customer.email);
-                          setShowDeleteDialog(true);
-                        }}
-                      ><SvgIcon
-                        color="action"
-                        fontSize="small"
-                        sx={{ cursor: 'pointer'}}
-                      >
-                        <TrashIcon
-                        ></TrashIcon>
-                      </SvgIcon></Button>: <span></span>}
+                      {currentUserLevel <= customer.level && customer.email !== currentUserEmail && (
+                        <Button
+                          onClick={() => {
+                            setUserToDelete(customer.email);
+                            setShowDeleteDialog(true);
+                          }}
+                        >
+                          <SvgIcon color="action" fontSize="small" sx={{ cursor: 'pointer' }}>
+                            <TrashIcon />
+                          </SvgIcon>
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
