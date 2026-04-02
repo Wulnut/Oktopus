@@ -36,6 +36,7 @@ const (
 	STOMP_STATUS_QUEUE                = STOMP_QUEUE_PREFIX + "status"
 	DEVICE_TIMEOUT_RESPONSE           = 5 * time.Second
 	USP_CONTENT_TYPE                  = "application/vnd.bbf.usp.msg"
+	DEFAULT_TENANT                    = "default"
 )
 
 type (
@@ -106,7 +107,7 @@ func (b *Bridge) StartBridge() {
 						device := deviceQueue[len(deviceQueue)-1]
 						status := fmtBody[1]
 						log.Printf("[STOMP] Device status update: device=%s, status=%s", device, status)
-						b.Pub(NATS_STOMP_SUBJECT_PREFIX+device+".status", []byte(status))
+						b.Pub(NATS_STOMP_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".status", []byte(status))
 						
 						// Handle persistent subscriptions based on device status
 						if status == "1" {
@@ -142,12 +143,13 @@ func connectToServer(url string, options []func(*stomp.Conn) error) (*stomp.Conn
 
 func (b *Bridge) subscribe(st *stomp.Conn) {
 
-	b.Sub(NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"*.info", func(msg *nats.Msg) {
+	b.Sub(NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"*.*.info", func(msg *nats.Msg) {
 
 		log.Printf("Received message on info subject")
 
 		subj := strings.Split(msg.Subject, ".")
 		device := subj[len(subj)-2]
+		tenant := extractTenantFromSubject(msg.Subject)
 
 		deviceInfoQueue := STOMP_QUEUE_PREFIX + "controller/" + device + "/info"
 
@@ -172,7 +174,7 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		case data := <-sub.C:
 			body := data.Body
 			log.Println("Received message answer")
-			err = b.Pub(NATS_STOMP_SUBJECT_PREFIX+device+".info", body)
+			err = b.Pub(NATS_STOMP_SUBJECT_PREFIX+tenant+"."+device+".info", body)
 			if err != nil {
 				log.Printf("send nats msg error: %q", err)
 			}
@@ -182,12 +184,13 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		sub.Unsubscribe()
 	})
 
-	b.Sub(NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"*.api", func(msg *nats.Msg) {
+	b.Sub(NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"*.*.api", func(msg *nats.Msg) {
 
 		log.Printf("[STOMP] Received message on NATS api subject: %s, size=%d bytes", msg.Subject, len(msg.Data))
 
 		subj := strings.Split(msg.Subject, ".")
 		device := subj[len(subj)-2]
+		tenant := extractTenantFromSubject(msg.Subject)
 
 		deviceApiQueue := STOMP_QUEUE_PREFIX + "controller/" + device + "/api"
 		agentQueue := STOMP_QUEUE_PREFIX + "agent/" + device
@@ -216,11 +219,11 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		case data := <-sub.C:
 			body := data.Body
 			log.Printf("[STOMP] Received response on temporary subscription for device %s (queue: %s), size=%d bytes", device, deviceApiQueue, len(body))
-			err = b.Pub(DEVICE_SUBJECT_PREFIX+device+".api", body)
+			err = b.Pub(DEVICE_SUBJECT_PREFIX+tenant+"."+device+".api", body)
 			if err != nil {
 				log.Printf("[STOMP] ERROR: send nats msg error: %q", err)
 			} else {
-				log.Printf("[STOMP] SUCCESS: Published response to NATS subject %s", DEVICE_SUBJECT_PREFIX+device+".api")
+				log.Printf("[STOMP] SUCCESS: Published response to NATS subject %s", DEVICE_SUBJECT_PREFIX+tenant+"."+device+".api")
 			}
 		case <-time.After(DEVICE_TIMEOUT_RESPONSE):
 			log.Printf("[STOMP] WARNING: Timeout waiting for device %s response on queue %s", device, deviceApiQueue)
@@ -229,7 +232,7 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		sub.Unsubscribe()
 	})
 
-	b.Sub(NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"rtt", func(msg *nats.Msg) {
+	b.Sub(NATS_STOMP_ADAPTER_SUBJECT_PREFIX+"*.rtt", func(msg *nats.Msg) {
 
 		log.Printf("Received message on rtt subject")
 
@@ -250,6 +253,14 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		respondMsg(msg.Respond, 200, rtt/1000)
 
 	})
+}
+
+func extractTenantFromSubject(subject string) string {
+	paths := strings.Split(subject, ".")
+	if len(paths) >= 5 {
+		return paths[3]
+	}
+	return DEFAULT_TENANT
 }
 
 func respondMsg(respond func(data []byte) error, code int, msgData any) {
@@ -346,7 +357,7 @@ func (b *Bridge) handleAsyncMessages(device string, sub *stomp.Subscription) {
 			}
 			
 			log.Printf("[STOMP] Received async message from device %s, size=%d bytes", device, len(msg.Body))
-			err := b.Pub(NATS_STOMP_SUBJECT_PREFIX+device+".async", msg.Body)
+			err := b.Pub(NATS_STOMP_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".async", msg.Body)
 			if err != nil {
 				log.Printf("[STOMP] ERROR: Failed to publish async message for device %s: %v", device, err)
 			}

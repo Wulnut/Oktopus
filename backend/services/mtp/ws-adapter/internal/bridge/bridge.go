@@ -27,6 +27,7 @@ const (
 	NATS_WS_ADAPTER_SUBJECT_PREFIX = "ws-adapter.usp.v1."
 	DEVICE_SUBJECT_PREFIX          = "device.usp.v1."
 	WS_CONNECTION_RETRY            = 10 * time.Second
+	DEFAULT_TENANT                 = "default"
 )
 
 const (
@@ -122,7 +123,7 @@ func (b *Bridge) StartBridge(port string, tls bool) {
 							log.Println(err)
 							continue
 						}
-						b.Pub(DEVICE_SUBJECT_PREFIX+device+".api", wsMsg)
+						b.Pub(DEVICE_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".api", wsMsg)
 						continue
 					}
 
@@ -138,7 +139,7 @@ func (b *Bridge) subscribe(wc *websocket.Conn) {
 	b.NewDeviceQueue = make(map[string]string)
 	b.NewDevQMutex = &sync.Mutex{}
 
-	b.Sub(NATS_WS_ADAPTER_SUBJECT_PREFIX+"*.info", func(msg *nats.Msg) {
+	b.Sub(NATS_WS_ADAPTER_SUBJECT_PREFIX+"*.*.info", func(msg *nats.Msg) {
 
 		log.Printf("Received message on info subject")
 
@@ -156,7 +157,7 @@ func (b *Bridge) subscribe(wc *websocket.Conn) {
 		}
 	})
 
-	b.Sub(NATS_WS_ADAPTER_SUBJECT_PREFIX+"*.api", func(msg *nats.Msg) {
+	b.Sub(NATS_WS_ADAPTER_SUBJECT_PREFIX+"*.*.api", func(msg *nats.Msg) {
 
 		log.Printf("Received message on api subject")
 
@@ -167,7 +168,7 @@ func (b *Bridge) subscribe(wc *websocket.Conn) {
 		}
 	})
 
-	b.Sub(NATS_WS_ADAPTER_SUBJECT_PREFIX+"rtt", func(msg *nats.Msg) {
+	b.Sub(NATS_WS_ADAPTER_SUBJECT_PREFIX+"*.rtt", func(msg *nats.Msg) {
 
 		log.Printf("Received message on rtt subject")
 
@@ -190,6 +191,14 @@ func (b *Bridge) subscribe(wc *websocket.Conn) {
 	})
 }
 
+func extractTenantFromSubject(subject string) string {
+	paths := strings.Split(subject, ".")
+	if len(paths) >= 5 {
+		return paths[3]
+	}
+	return DEFAULT_TENANT
+}
+
 func respondMsg(respond func(data []byte) error, code int, msgData any) {
 
 	msg, err := json.Marshal(msgAnswer{
@@ -207,7 +216,7 @@ func respondMsg(respond func(data []byte) error, code int, msgData any) {
 
 func (b *Bridge) newDeviceMsgHandler(wc *websocket.Conn, device string, msg []byte) {
 	log.Printf("New device %s response", device)
-	b.Pub(NATS_WS_SUBJECT_PREFIX+device+".info", msg)
+	b.Pub(NATS_WS_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".info", msg)
 
 	b.NewDevQMutex.Lock()
 	delete(b.NewDeviceQueue, device)
@@ -221,7 +230,7 @@ func (b *Bridge) statusMsgHandler(wsMsg []byte) {
 		log.Println("Websockets Text Message is not about devices status")
 		return
 	}
-	b.Pub(NATS_WS_SUBJECT_PREFIX+deviceStatus.Eid+".status", []byte(deviceStatus.Status))
+	b.Pub(NATS_WS_SUBJECT_PREFIX+DEFAULT_TENANT+"."+deviceStatus.Eid+".status", []byte(deviceStatus.Status))
 }
 
 func (b *Bridge) urlBuild(tls bool, port string) string {

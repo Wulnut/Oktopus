@@ -33,6 +33,7 @@ const NATS_MQTT_SUBJECT_PREFIX = "mqtt.usp.v1."
 const NATS_MQTT_ADAPTER_SUBJECT_PREFIX = "mqtt-adapter.usp.v1."
 const DEVICE_SUBJECT_PREFIX = "device.usp.v1."
 const MQTT_TOPIC_PREFIX = "oktopus/usp/"
+const DEFAULT_TENANT = "default"
 
 type (
 	Publisher  func(string, []byte) error
@@ -108,35 +109,37 @@ func (b *Bridge) StartBridge(serverUrl, clientId string) {
 }
 
 func (b *Bridge) natsMessageHandler(cm *autopaho.ConnectionManager) {
-	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"*.info", func(m *nats.Msg) {
+	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"*.*.info", func(m *nats.Msg) {
 
-		log.Printf("Received message on info subject")
+		device := getDeviceFromSubject(m.Subject)
+		log.Printf("Received message on info subject for device %s", device)
 		cm.Publish(b.Ctx, &paho.Publish{
 			QoS:     byte(b.Mqtt.Qos),
-			Topic:   MQTT_TOPIC_PREFIX + "v1/agent/" + getDeviceFromSubject(m.Subject),
+			Topic:   MQTT_TOPIC_PREFIX + "v1/agent/" + device,
 			Payload: m.Data,
 			Properties: &paho.PublishProperties{
-				ResponseTopic: "oktopus/usp/v1/controller/" + getDeviceFromSubject(m.Subject),
+				ResponseTopic: "oktopus/usp/v1/controller/" + device,
 			},
 		})
 
 	})
 
-	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"*.api", func(m *nats.Msg) {
+	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"*.*.api", func(m *nats.Msg) {
 
-		log.Printf("Received message on api subject")
+		device := getDeviceFromSubject(m.Subject)
+		log.Printf("Received message on api subject for device %s", device)
 		cm.Publish(b.Ctx, &paho.Publish{
 			QoS:     byte(b.Mqtt.Qos),
-			Topic:   MQTT_TOPIC_PREFIX + "v1/agent/" + getDeviceFromSubject(m.Subject),
+			Topic:   MQTT_TOPIC_PREFIX + "v1/agent/" + device,
 			Payload: m.Data,
 			Properties: &paho.PublishProperties{
-				ResponseTopic: "oktopus/usp/v1/api/" + getDeviceFromSubject(m.Subject),
+				ResponseTopic: "oktopus/usp/v1/api/" + device,
 			},
 		})
 
 	})
 
-	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"rtt", func(msg *nats.Msg) {
+	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"*.rtt", func(msg *nats.Msg) {
 
 		log.Printf("Received message on rtt subject")
 		url := strings.Split(b.Mqtt.Url, "://")[1]
@@ -164,17 +167,29 @@ func getDeviceFromSubject(subject string) string {
 	return device
 }
 
+func extractTenantFromSubject(subject string) string {
+	paths := strings.Split(subject, ".")
+	if len(paths) >= 5 {
+		return paths[3]
+	}
+	return DEFAULT_TENANT
+}
+
 func (b *Bridge) mqttMessageHandler(status, controller, apiMsg, asyncMsg chan *paho.Publish) {
 	for {
 		select {
 		case d := <-status:
-			b.Pub(NATS_MQTT_SUBJECT_PREFIX+getDeviceFromTopic(d.Topic)+".status", d.Payload)
+			device := getDeviceFromTopic(d.Topic)
+			b.Pub(NATS_MQTT_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".status", d.Payload)
 		case c := <-controller:
-			b.Pub(NATS_MQTT_SUBJECT_PREFIX+getDeviceFromTopic(c.Topic)+".info", c.Payload)
+			device := getDeviceFromTopic(c.Topic)
+			b.Pub(NATS_MQTT_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".info", c.Payload)
 		case a := <-apiMsg:
-			b.Pub(DEVICE_SUBJECT_PREFIX+getDeviceFromTopic(a.Topic)+".api", a.Payload)
+			device := getDeviceFromTopic(a.Topic)
+			b.Pub(DEVICE_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".api", a.Payload)
 		case async := <-asyncMsg:
-			b.Pub(NATS_MQTT_SUBJECT_PREFIX+getDeviceFromTopic(async.Topic)+".async", async.Payload)
+			device := getDeviceFromTopic(async.Topic)
+			b.Pub(NATS_MQTT_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".async", async.Payload)
 		}
 	}
 }
