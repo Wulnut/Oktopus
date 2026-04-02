@@ -21,17 +21,38 @@ import SignalIcon from '@heroicons/react/24/solid/SignalIcon';
 import SignalSlashIcon from '@heroicons/react/24/solid/SignalSlashIcon';
 import BuildingOfficeIcon from '@heroicons/react/24/solid/BuildingOfficeIcon';
 
+const DevicesCard = ({ total, online, offline }) => (
+  <Card sx={{ height: '100%' }}>
+    <CardContent>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Avatar sx={{ bgcolor: 'primary.main', width: 48, height: 48 }}>
+          <SvgIcon fontSize="small"><CpuChipIcon /></SvgIcon>
+        </Avatar>
+        <Box>
+          <Typography variant="overline" color="text.secondary">
+            Total Devices
+          </Typography>
+          <Typography variant="h4">{total}</Typography>
+          <Typography variant="body2" sx={{ mt: 0.5 }}>
+            <Typography component="span" variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
+              {online} online
+            </Typography>
+            {' / '}
+            <Typography component="span" variant="body2" sx={{ color: 'error.main', fontWeight: 600 }}>
+              {offline} offline
+            </Typography>
+          </Typography>
+        </Box>
+      </Box>
+    </CardContent>
+  </Card>
+);
+
 const StatCard = ({ label, value, icon, color }) => (
   <Card sx={{ height: '100%' }}>
     <CardContent>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Avatar
-          sx={{
-            bgcolor: color || 'primary.main',
-            width: 48,
-            height: 48,
-          }}
-        >
+        <Avatar sx={{ bgcolor: color || 'primary.main', width: 48, height: 48 }}>
           <SvgIcon fontSize="small">{icon}</SvgIcon>
         </Avatar>
         <Box>
@@ -174,32 +195,15 @@ const Page = () => {
             {/* Left Column */}
             <Grid size={{ xs: 12, lg: 8 }}>
               <Grid container spacing={3}>
-                {/* Row 1: Stat cards */}
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <StatCard
-                    label="Total Devices"
-                    value={devicesCount}
-                    icon={<CpuChipIcon />}
-                    color="primary.main"
+                {/* Row 1: Devices + Vendors */}
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <DevicesCard
+                    total={devicesCount}
+                    online={onlineCount}
+                    offline={offlineCount}
                   />
                 </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <StatCard
-                    label="Online"
-                    value={onlineCount}
-                    icon={<SignalIcon />}
-                    color="success.main"
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <StatCard
-                    label="Offline"
-                    value={offlineCount}
-                    icon={<SignalSlashIcon />}
-                    color="error.main"
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <StatCard
                     label="Vendors"
                     value={vendorsTotal}
