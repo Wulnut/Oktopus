@@ -21,14 +21,26 @@ type msgAnswer struct {
 	Msg  any
 }
 
+// extractTenantSlug extracts the tenant slug from a NATS subject.
+// Subject format: adapter.usp.v1.<tenant_slug>.devices.<action>
+// The tenant slug is at index 3.
+func extractTenantSlug(subject string) string {
+	parts := strings.Split(subject, ".")
+	if len(parts) >= 4 {
+		return parts[3]
+	}
+	return ""
+}
+
 func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	log.Println("Listening for nats requests")
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"*.device", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
+		tenantSlug := extractTenantSlug(msg.Subject)
 		subject := strings.Split(msg.Subject, ".")
 		device := subject[len(subject)-2]
 
-		deviceInfo, err := db.RetrieveDevice(device)
+		deviceInfo, err := db.RetrieveDevice(device, tenantSlug)
 		if deviceInfo.SN != "" {
 			respondMsg(msg.Respond, 200, deviceInfo)
 		} else {
@@ -43,7 +55,8 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.count", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
-		count, err := db.RetrieveDevicesCount(bson.M{})
+		tenantSlug := extractTenantSlug(msg.Subject)
+		count, err := db.RetrieveDevicesCount(tenantSlug)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
 		}
@@ -51,6 +64,7 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.retrieve", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
+		tenantSlug := extractTenantSlug(msg.Subject)
 
 		var criteria map[string]interface{}
 
@@ -60,7 +74,9 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 		}
 
 		//log.Println(criteria)
-		propertiesFilter := bson.D{{}}
+		propertiesFilter := bson.D{
+			{Key: "tenantid", Value: tenantSlug},
+		}
 
 		vendorFilter := criteria["vendor"]
 		if vendorFilter != nil {
@@ -149,6 +165,7 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.delete", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
+		tenantSlug := extractTenantSlug(msg.Subject)
 
 		var serialNumbersList []string
 
@@ -168,7 +185,7 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 			{"$or", criteria},
 		}
 
-		deletedCount, err := db.DeleteDevices(filter)
+		deletedCount, err := db.DeleteDevices(filter, tenantSlug)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
 		}
@@ -176,7 +193,8 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.filterOptions", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
-		result, err := db.RetrieveDeviceFilterOptions()
+		tenantSlug := extractTenantSlug(msg.Subject)
+		result, err := db.RetrieveDeviceFilterOptions(tenantSlug)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
 		}
@@ -184,7 +202,8 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.class", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
-		productClassCount, err := db.RetrieveProductsClassInfo()
+		tenantSlug := extractTenantSlug(msg.Subject)
+		productClassCount, err := db.RetrieveProductsClassInfo(tenantSlug)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
 		}
@@ -192,7 +211,8 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.vendors", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
-		productClassCount, err := db.RetrieveVendorsInfo()
+		tenantSlug := extractTenantSlug(msg.Subject)
+		productClassCount, err := db.RetrieveVendorsInfo(tenantSlug)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
 		}
@@ -200,7 +220,8 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.status", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
-		productClassCount, err := db.RetrieveStatusInfo()
+		tenantSlug := extractTenantSlug(msg.Subject)
+		productClassCount, err := db.RetrieveStatusInfo(tenantSlug)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
 		}
@@ -208,10 +229,11 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	})
 
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"*.device.alias", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
+		tenantSlug := extractTenantSlug(msg.Subject)
 		subject := strings.Split(msg.Subject, ".")
 		device := subject[len(subject)-3]
 
-		err := db.SetDeviceAlias(device, string(msg.Data))
+		err := db.SetDeviceAlias(device, string(msg.Data), tenantSlug)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
 				respondMsg(msg.Respond, 404, "Device not found")

@@ -30,7 +30,7 @@ const (
 type Device struct {
 	SN           string
 	Model        string
-	Customer     string
+	TenantID     string
 	Vendor       string
 	Version      string
 	ProductClass string
@@ -63,7 +63,11 @@ func (d *Database) CreateDevice(device Device) error {
 	defer d.m.Unlock()
 
 	/* ------------------ Do not overwrite status of other mtp ------------------ */
-	err := d.devices.FindOne(d.ctx, bson.D{{"sn", device.SN}}, nil).Decode(&deviceExistent)
+	findFilter := bson.D{{"sn", device.SN}}
+	if device.TenantID != "" {
+		findFilter = append(findFilter, bson.E{Key: "tenantid", Value: device.TenantID})
+	}
+	err := d.devices.FindOne(d.ctx, findFilter, nil).Decode(&deviceExistent)
 	if err == nil {
 		if deviceExistent.Mqtt == Online {
 			device.Mqtt = Online
@@ -97,7 +101,11 @@ func (d *Database) CreateDevice(device Device) error {
 		// transaction.
 		opts := options.FindOneAndReplace().SetUpsert(true)
 
-		err := d.devices.FindOneAndReplace(d.ctx, bson.D{{"sn", device.SN}}, device, opts).Decode(&result)
+		upsertFilter := bson.D{{"sn", device.SN}}
+		if device.TenantID != "" {
+			upsertFilter = append(upsertFilter, bson.E{Key: "tenantid", Value: device.TenantID})
+		}
+		err := d.devices.FindOneAndReplace(d.ctx, upsertFilter, device, opts).Decode(&result)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
 				log.Printf("New device %s added to database", device.SN)
@@ -143,8 +151,11 @@ func (d *Database) RetrieveDevices(filter bson.A) (*DevicesList, error) {
 	return &results[0], err
 }
 
-func (d *Database) RetrieveDeviceFilterOptions() (FilterOptions, error) {
+func (d *Database) RetrieveDeviceFilterOptions(tenantSlug string) (FilterOptions, error) {
 	filter := bson.A{
+		bson.D{
+			{"$match", bson.D{{"tenantid", tenantSlug}}},
+		},
 		bson.D{
 			{"$group",
 				bson.D{
@@ -194,8 +205,8 @@ func (d *Database) RetrieveDeviceFilterOptions() (FilterOptions, error) {
 	}
 }
 
-func (d *Database) DeleteDevices(filter bson.D) (int64, error) {
-
+func (d *Database) DeleteDevices(filter bson.D, tenantSlug string) (int64, error) {
+	filter = append(filter, bson.E{Key: "tenantid", Value: tenantSlug})
 	result, err := d.devices.DeleteMany(d.ctx, filter)
 	if err != nil {
 		log.Println(err)
@@ -203,17 +214,21 @@ func (d *Database) DeleteDevices(filter bson.D) (int64, error) {
 	return result.DeletedCount, err
 }
 
-func (d *Database) RetrieveDevice(sn string) (Device, error) {
+func (d *Database) RetrieveDevice(sn string, tenantSlug string) (Device, error) {
 	var result Device
-	err := d.devices.FindOne(d.ctx, bson.D{{"sn", sn}}, nil).Decode(&result)
+	filter := bson.D{{"sn", sn}}
+	if tenantSlug != "" {
+		filter = append(filter, bson.E{Key: "tenantid", Value: tenantSlug})
+	}
+	err := d.devices.FindOne(d.ctx, filter, nil).Decode(&result)
 	if err != nil {
 		log.Println(err)
 	}
 	return result, err
 }
 
-func (d *Database) RetrieveDevicesCount(filter bson.M) (int64, error) {
-	count, err := d.devices.CountDocuments(d.ctx, filter)
+func (d *Database) RetrieveDevicesCount(tenantSlug string) (int64, error) {
+	count, err := d.devices.CountDocuments(d.ctx, bson.M{"tenantid": tenantSlug})
 	return count, err
 }
 
@@ -221,13 +236,14 @@ func (d *Database) DeleteDevice() {
 
 }
 
-func (d *Database) SetDeviceAlias(sn string, newAlias string) error {
-	err := d.devices.FindOneAndUpdate(d.ctx, bson.D{{"sn", sn}}, bson.D{{"$set", bson.D{{"alias", newAlias}}}}).Err()
+func (d *Database) SetDeviceAlias(sn string, newAlias string, tenantSlug string) error {
+	filter := bson.D{{"sn", sn}, {"tenantid", tenantSlug}}
+	err := d.devices.FindOneAndUpdate(d.ctx, filter, bson.D{{"$set", bson.D{{"alias", newAlias}}}}).Err()
 	return err
 }
 
 func (d *Database) DeviceExists(sn string) (bool, error) {
-	_, err := d.RetrieveDevice(sn)
+	_, err := d.RetrieveDevice(sn, "")
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return false, nil

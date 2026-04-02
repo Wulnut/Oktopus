@@ -21,7 +21,7 @@ const (
 	USP_SUBJECT        = ".usp.v1."
 	BUCKET_NAME        = "devices-auth"
 	BUCKET_DESCRIPTION = "Devices authentication"
-	ADAPTER_SUBJECT    = "adapter" + USP_SUBJECT
+	ADAPTER_SUBJECT    = "adapter" + USP_SUBJECT + "*."
 	ADAPTER_QUEUE      = "adapter"
 )
 

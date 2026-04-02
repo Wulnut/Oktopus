@@ -21,9 +21,12 @@ type StatusCount struct {
 	Count  int `bson:"count" json:"count"`
 }
 
-func (d *Database) RetrieveVendorsInfo() ([]VendorsCount, error) {
+func (d *Database) RetrieveVendorsInfo(tenantSlug string) ([]VendorsCount, error) {
 	var results []VendorsCount
 	cursor, err := d.devices.Aggregate(d.ctx, []bson.M{
+		{
+			"$match": bson.M{"tenantid": tenantSlug},
+		},
 		{
 			"$group": bson.M{
 				"_id":   "$vendor",
@@ -46,9 +49,12 @@ func (d *Database) RetrieveVendorsInfo() ([]VendorsCount, error) {
 	return results, nil
 }
 
-func (d *Database) RetrieveStatusInfo() ([]StatusCount, error) {
+func (d *Database) RetrieveStatusInfo(tenantSlug string) ([]StatusCount, error) {
 	var results []StatusCount
 	cursor, err := d.devices.Aggregate(d.ctx, []bson.M{
+		{
+			"$match": bson.M{"tenantid": tenantSlug},
+		},
 		{
 			"$group": bson.M{
 				"_id":   "$status",
@@ -71,9 +77,12 @@ func (d *Database) RetrieveStatusInfo() ([]StatusCount, error) {
 	return results, nil
 }
 
-func (d *Database) RetrieveProductsClassInfo() ([]ProductClassCount, error) {
+func (d *Database) RetrieveProductsClassInfo(tenantSlug string) ([]ProductClassCount, error) {
 	var results []ProductClassCount
 	cursor, err := d.devices.Aggregate(d.ctx, []bson.M{
+		{
+			"$match": bson.M{"tenantid": tenantSlug},
+		},
 		{
 			"$group": bson.M{
 				"_id":   "$productclass",
