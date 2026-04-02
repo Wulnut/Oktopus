@@ -103,12 +103,12 @@ export const OverviewTraffic = (props) => {
 
   return (
     <Card sx={sx}>
-      <div style={{display:'flex',justifyContent:'center'}}>
-      <CardHeader title={title} />
-      </div>
-      <CardContent>
+      <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
+        <Typography variant="subtitle2" align="center" sx={{ mb: 1 }}>
+          {title}
+        </Typography>
         <Chart
-          height={300}
+          height={180}
           options={chartOptions}
           series={chartSeries}
           type="donut"
@@ -119,31 +119,23 @@ export const OverviewTraffic = (props) => {
           direction="row"
           justifyContent="center"
           spacing={2}
-          sx={{ mt: 2 }}
+          sx={{ mt: 1 }}
         >
           {chartSeries.map((item, index) => {
             const label = labels[index];
-
             return (
               <Box
                 key={label}
                 sx={{
                   display: 'flex',
                   flexDirection: 'column',
-                  alignItems: 'center'
+                  alignItems: 'center',
                 }}
               >
-                {iconMap[label]}
-                <Typography
-                  sx={{ my: 1 }}
-                  variant="h8"
-                >
+                <Typography variant="caption" color="text.secondary">
                   {label}
                 </Typography>
-                <Typography
-                  color="text.secondary"
-                  variant="subtitle2"
-                >
+                <Typography variant="caption" fontWeight={600}>
                   {item}%
                 </Typography>
               </Box>
