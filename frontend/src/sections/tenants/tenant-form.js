@@ -36,7 +36,8 @@ export const TenantForm = (props) => {
     onClose();
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
     const newErrors = {};
     if (!formData.name.trim()) {
       newErrors.name = 'Tenant name is required';
@@ -111,8 +112,8 @@ export const TenantForm = (props) => {
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained">
+        <Button type="button" onClick={handleClose}>Cancel</Button>
+        <Button type="button" onClick={handleSubmit} variant="contained">
           Create
         </Button>
       </DialogActions>
