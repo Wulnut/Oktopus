@@ -22,11 +22,12 @@ const getProtocolParams = (protocol, host, tenantSlug) => {
       return [
         ['Device.LocalAgent.MTP.1.Protocol', 'MQTT'],
         ['Device.LocalAgent.MTP.1.Enable', 'true'],
+        ['Device.LocalAgent.MTP.1.MQTT.Reference', 'Device.MQTT.Client.1'],
+        ['Device.LocalAgent.MTP.1.MQTT.ResponseTopicConfigured', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
         ['Device.MQTT.Client.1.BrokerAddress', `mqtt://${host}:1883`],
         ['Device.MQTT.Client.1.TransportProtocol', 'TCP/IP'],
         ['Device.MQTT.Client.1.Username', '<device_serial>'],
         ['Device.MQTT.Client.1.Password', '<device_password>'],
-        ['Device.LocalAgent.MTP.1.MQTT.ResponseTopicConfigured', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'MQTT'],
         ['Device.LocalAgent.Controller.1.MTP.1.MQTT.Topic', `oktopus/usp/v1/${t}/controller/<endpoint_id>`],
@@ -35,19 +36,22 @@ const getProtocolParams = (protocol, host, tenantSlug) => {
       return [
         ['Device.LocalAgent.MTP.1.Protocol', 'WebSocket'],
         ['Device.LocalAgent.MTP.1.Enable', 'true'],
-        ['Device.LocalAgent.MTP.1.WebSocket.URL', `ws://${host}:8080/${t}/`],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'WebSocket'],
+        ['Device.LocalAgent.Controller.1.MTP.1.WebSocket.Host', host],
+        ['Device.LocalAgent.Controller.1.MTP.1.WebSocket.Port', '8080'],
+        ['Device.LocalAgent.Controller.1.MTP.1.WebSocket.Path', `/${t}/`],
       ];
     case 'STOMP':
       return [
         ['Device.LocalAgent.MTP.1.Protocol', 'STOMP'],
         ['Device.LocalAgent.MTP.1.Enable', 'true'],
+        ['Device.LocalAgent.MTP.1.STOMP.Reference', 'Device.STOMP.Connection.1'],
+        ['Device.LocalAgent.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
         ['Device.STOMP.Connection.1.Host', host],
         ['Device.STOMP.Connection.1.Port', '61613'],
         ['Device.STOMP.Connection.1.Username', '<device_serial>'],
         ['Device.STOMP.Connection.1.Password', '<device_password>'],
-        ['Device.LocalAgent.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'STOMP'],
         ['Device.LocalAgent.Controller.1.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/controller/<endpoint_id>`],
