@@ -86,7 +86,7 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 		_, err := bridge.NatsReqWithoutHttpSet[time.Duration](subject, []byte(""), a.nc)
 		if err == nil {
 			mu.Lock()
-			setter(time.Until(now).String())
+			setter(time.Since(now).String())
 			mu.Unlock()
 		}
 	}
