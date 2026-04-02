@@ -130,8 +130,16 @@ func (a *Api) listTenants(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/tenants/{slug}
 func (a *Api) getTenant(w http.ResponseWriter, r *http.Request) {
+	level := middleware.GetLevel(r)
+	tenantSlug := middleware.GetTenantSlug(r)
 	vars := mux.Vars(r)
 	slug := vars["slug"]
+
+	// Tenant users can only view their own tenant
+	if db.UserLevels(level) != db.SuperAdmin && slug != tenantSlug {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
 
 	tenant, err := a.db.FindTenant(r.Context(), slug)
 	if err != nil {
