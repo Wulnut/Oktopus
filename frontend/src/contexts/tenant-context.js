@@ -20,8 +20,8 @@ export function TenantProvider({ children }) {
 
   const setActiveTenant = useCallback((slug) => {
     if (isSuperAdmin) {
-      setActiveTenantSlug(slug);
       window.sessionStorage.setItem('activeTenantSlug', slug);
+      window.location.reload();
     }
   }, [isSuperAdmin]);
 
