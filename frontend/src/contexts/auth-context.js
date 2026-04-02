@@ -97,10 +97,12 @@ export const AuthProvider = (props) => {
       const tenantId = window.sessionStorage.getItem('tenantId') || '';
       const tenantSlug = window.sessionStorage.getItem('tenantSlug') || '';
       const level = parseInt(window.sessionStorage.getItem('level') || '0', 10);
+      const token = window.localStorage.getItem('token') || '';
       const user = {
         avatar: '/assets/avatars/default-avatar.png',
         name: email,
         email: email,
+        token,
         tenantId,
         tenantSlug,
         level,
@@ -182,16 +184,17 @@ export const AuthProvider = (props) => {
       console.error(err);
     }
 
+    localStorage.setItem("token", token)
+
     const user = {
       avatar: '/assets/avatars/default-avatar.png',
       name: claims?.username || email,
       email: email,
+      token,
       tenantId: claims?.tenant_id || '',
       tenantSlug: claims?.tenant_slug || '',
       level: claims?.level ?? 0,
     };
-
-    localStorage.setItem("token", token)
 
     dispatch({
       type: HANDLERS.SIGN_IN,
