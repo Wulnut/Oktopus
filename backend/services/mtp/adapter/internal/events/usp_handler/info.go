@@ -18,7 +18,7 @@ func (h *Handler) HandleDeviceInfo(device, tenantSlug, subject string, data []by
 	deviceInfo.TenantID = tenantSlug
 	if deviceExists, _ := h.db.DeviceExists(deviceInfo.SN); !deviceExists {
 		fmtDeviceInfo, _ := json.Marshal(deviceInfo)
-		h.nc.Publish("device.v1.new", fmtDeviceInfo)
+		h.nc.Publish("device.v1."+tenantSlug+".new", fmtDeviceInfo)
 	}
 	err := h.db.CreateDevice(deviceInfo)
 	if err != nil {
@@ -26,7 +26,7 @@ func (h *Handler) HandleDeviceInfo(device, tenantSlug, subject string, data []by
 	}
 	// Publish online event for every connect (used by controller for campaign checks)
 	onlineData, _ := json.Marshal(deviceInfo)
-	h.nc.Publish("device.v1.online", onlineData)
+	h.nc.Publish("device.v1."+tenantSlug+".online", onlineData)
 }
 
 func getMtp(mtp string) db.MTP {

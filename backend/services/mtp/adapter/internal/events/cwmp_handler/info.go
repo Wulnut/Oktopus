@@ -16,7 +16,7 @@ func (h *Handler) HandleDeviceInfo(device, tenantSlug string, data []byte, ack f
 	deviceInfo.TenantID = tenantSlug
 	if deviceExists, _ := h.db.DeviceExists(deviceInfo.SN); !deviceExists {
 		fmtDeviceInfo, _ := json.Marshal(deviceInfo)
-		h.nc.Publish("device.v1.new", fmtDeviceInfo)
+		h.nc.Publish("device.v1."+tenantSlug+".new", fmtDeviceInfo)
 	}
 	err := h.db.CreateDevice(deviceInfo)
 	if err != nil {

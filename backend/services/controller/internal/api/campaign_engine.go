@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,13 +23,18 @@ const maxRetries = 3
 // onConnectSem limits concurrent handleDeviceOnline goroutines.
 var onConnectSem = make(chan struct{}, 50)
 
-// StartCampaignEngine subscribes to device.v1.online events and runs campaign checks.
-// NOTE: Until tenant-scoped NATS subjects are implemented, this uses a default tenant DB.
+// StartCampaignEngine subscribes to device.v1.*.online events and runs campaign checks.
+// The wildcard matches the tenant slug in the subject (device.v1.<tenant>.online).
 func (a *Api) StartCampaignEngine() {
-	const defaultTenantSlug = "default"
-	defaultTDB := a.db.ForTenant(defaultTenantSlug)
+	sub, err := a.nc.Subscribe("device.v1.*.online", func(msg *nats.Msg) {
+		// Extract tenant slug from subject: device.v1.<tenant>.online
+		parts := strings.Split(msg.Subject, ".")
+		tenantSlug := "default"
+		if len(parts) >= 4 {
+			tenantSlug = parts[2]
+		}
+		tdb := a.db.ForTenant(tenantSlug)
 
-	sub, err := a.nc.Subscribe("device.v1.online", func(msg *nats.Msg) {
 		var device entity.Device
 		if err := json.Unmarshal(msg.Data, &device); err != nil {
 			log.Printf("campaign_engine: failed to unmarshal device event: %v", err)
@@ -38,16 +44,16 @@ func (a *Api) StartCampaignEngine() {
 		case onConnectSem <- struct{}{}:
 			go func() {
 				defer func() { <-onConnectSem }()
-				a.handleDeviceOnline(defaultTDB, device, defaultTenantSlug)
+				a.handleDeviceOnline(tdb, device, tenantSlug)
 			}()
 		default:
 			log.Printf("campaign_engine: too many concurrent checks, skipping device %s", device.SN)
 		}
 	})
 	if err != nil {
-		log.Printf("campaign_engine: failed to subscribe to device.v1.online: %v", err)
+		log.Printf("campaign_engine: failed to subscribe to device.v1.*.online: %v", err)
 	} else {
-		log.Printf("campaign_engine: subscribed to device.v1.online (sub=%s)", sub.Subject)
+		log.Printf("campaign_engine: subscribed to device.v1.*.online (sub=%s)", sub.Subject)
 	}
 }
 
