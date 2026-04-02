@@ -11,10 +11,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (h *Handler) HandleDeviceInfo(device, subject string, data []byte, mtp string, ack func()) {
+func (h *Handler) HandleDeviceInfo(device, tenantSlug, subject string, data []byte, mtp string, ack func()) {
 	defer ack()
-	log.Printf("Device %s info, mtp: %s", device, mtp)
+	log.Printf("Device %s info, mtp: %s, tenant: %s", device, mtp, tenantSlug)
 	deviceInfo := parseDeviceInfoMsg(device, subject, data, getMtp(mtp))
+	deviceInfo.TenantID = tenantSlug
 	if deviceExists, _ := h.db.DeviceExists(deviceInfo.SN); !deviceExists {
 		fmtDeviceInfo, _ := json.Marshal(deviceInfo)
 		h.nc.Publish("device.v1.new", fmtDeviceInfo)

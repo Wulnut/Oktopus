@@ -3,6 +3,7 @@ package usp_handler
 import (
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/OktopUSP/oktopus/backend/services/mtp/adapter/internal/db"
 	"github.com/OktopUSP/oktopus/backend/services/mtp/adapter/internal/usp"
@@ -17,9 +18,16 @@ func (h *Handler) HandleDeviceStatus(device, subject string, data []byte, mtp st
 		log.Printf("Status subject payload message error %q", err)
 	}
 
+	// Extract tenant slug from subject (e.g., mqtt-adapter.usp.v1.<tenant>.<sn>.status)
+	parts := strings.Split(subject, ".")
+	tenantSlug := ""
+	if len(parts) >= 4 {
+		tenantSlug = parts[3]
+	}
+
 	switch payload {
 	case ONLINE:
-		h.deviceOnline(device, mtp)
+		h.deviceOnline(device, tenantSlug, mtp)
 	case OFFLINE:
 		h.deviceOffline(device, mtp)
 	default:
@@ -27,7 +35,7 @@ func (h *Handler) HandleDeviceStatus(device, subject string, data []byte, mtp st
 	}
 }
 
-func (h *Handler) deviceOnline(device, mtp string) {
+func (h *Handler) deviceOnline(device, tenantSlug, mtp string) {
 
 	log.Printf("Device %s is online", device)
 
@@ -51,7 +59,7 @@ func (h *Handler) deviceOnline(device, mtp string) {
 		log.Fatalln("Failed to encode tr369 record:", err)
 	}
 
-	err = h.nc.Publish(mtp+"-adapter.usp.v1."+device+".info", tr369Message)
+	err = h.nc.Publish(mtp+"-adapter.usp.v1."+tenantSlug+"."+device+".info", tr369Message)
 	if err != nil {
 		log.Printf("Failed to publish online device message: %v", err)
 	}

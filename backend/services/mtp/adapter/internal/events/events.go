@@ -48,12 +48,16 @@ func StartEventsListener(ctx context.Context, js jetstream.JetStream, uspHandler
 				subject := strings.Split(msg.Subject(), ".")
 				msgType := subject[len(subject)-1]
 				device := subject[len(subject)-2]
+				tenantSlug := ""
+				if len(subject) >= 4 {
+					tenantSlug = subject[3]
+				}
 
 				switch msgType {
 				case "status":
 					uspHandler.HandleDeviceStatus(device, msg.Subject(), data, event, func() { msg.Ack() })
 				case "info":
-					uspHandler.HandleDeviceInfo(device, msg.Subject(), data, event, func() { msg.Ack() })
+					uspHandler.HandleDeviceInfo(device, tenantSlug, msg.Subject(), data, event, func() { msg.Ack() })
 				case "async":
 					uspHandler.HandleDeviceAsync(device, msg.Subject(), data, event, func() { msg.Ack() })
 				default:
@@ -93,12 +97,16 @@ func StartEventsListener(ctx context.Context, js jetstream.JetStream, uspHandler
 				subject := strings.Split(msg.Subject(), ".")
 				msgType := subject[len(subject)-1]
 				device := subject[len(subject)-2]
+				cwmpTenantSlug := ""
+				if len(subject) >= 4 {
+					cwmpTenantSlug = subject[3]
+				}
 
 				switch msgType {
 				case "status":
 					cwmpHandler.HandleDeviceStatus(device, msg.Subject(), data, func() { msg.Ack() })
 				case "info":
-					cwmpHandler.HandleDeviceInfo(device, data, func() { msg.Ack() })
+					cwmpHandler.HandleDeviceInfo(device, cwmpTenantSlug, data, func() { msg.Ack() })
 				default:
 					log.Printf("Unknown message type received, subject: %s", msg.Subject())
 					msg.Ack()
