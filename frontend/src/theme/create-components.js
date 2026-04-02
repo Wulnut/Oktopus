@@ -205,13 +205,13 @@ export function createComponents(config) {
             backgroundColor: 'transparent',
             [`& .${outlinedInputClasses.notchedOutline}`]: {
               borderColor: palette.primary.main,
-              boxShadow: `${palette.primary.main} 0 0 0 2px`
+              borderWidth: 2,
             }
           },
           [`&.${filledInputClasses.error}`]: {
             [`& .${outlinedInputClasses.notchedOutline}`]: {
               borderColor: palette.error.main,
-              boxShadow: `${palette.error.main} 0 0 0 2px`
+              borderWidth: 2,
             }
           }
         },

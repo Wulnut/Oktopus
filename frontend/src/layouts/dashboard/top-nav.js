@@ -104,14 +104,22 @@ export const TopNav = (props) => {
               </IconButton>
             )}
             {isSuperAdmin && (
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel id="tenant-selector-label">Active Tenant</InputLabel>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <InputLabel id="tenant-selector-label" shrink>Active Tenant</InputLabel>
                 <Select
                   labelId="tenant-selector-label"
                   value={tenantSlug}
                   label="Active Tenant"
                   onChange={(e) => setActiveTenant(e.target.value)}
                   displayEmpty
+                  notched
+                  renderValue={(selected) => {
+                    if (!selected) {
+                      return <Typography variant="body2" color="text.secondary">None (Provider view)</Typography>;
+                    }
+                    const t = tenantList.find((item) => item.slug === selected);
+                    return t ? t.name : selected;
+                  }}
                 >
                   <MenuItem value="">
                     <em>None (Provider view)</em>
