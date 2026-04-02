@@ -220,16 +220,15 @@ func (a *Api) deviceClearHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log the action for audit purposes
-	log.Printf("User %s clearing message history for device %s", userEmail, deviceSerial)
+	// Only TenantAdmin+ can clear history
+	level := middleware.GetLevel(r)
+	if db.UserLevels(level) > db.TenantAdmin {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write(utils.Marshall("Forbidden: insufficient permissions"))
+		return
+	}
 
-	// TODO: Add authorization check here
-	// Example: Check if user is admin or owns the device
-	// if !isAdmin(userEmail) && !ownsDevice(userEmail, deviceSerial) {
-	//     w.WriteHeader(http.StatusForbidden)
-	//     w.Write(utils.Marshall("Forbidden: insufficient permissions"))
-	//     return
-	// }
+	log.Printf("User %s clearing message history for device %s", userEmail, deviceSerial)
 
 	// Delete messages and errors
 	messagesCount, errorsCount, err := a.tenantDB(r).DeleteMessageHistory(r.Context(), deviceSerial)

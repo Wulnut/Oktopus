@@ -74,20 +74,28 @@ func (a *Api) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// New users created under a tenant get Operator level
-	user.Level = db.Operator
+	// Prevent level escalation: TenantAdmin can only create Operators
+	// SuperAdmin can create TenantAdmins
+	if db.UserLevels(level) == db.TenantAdmin {
+		user.Level = db.Operator
+	} else if db.UserLevels(level) == db.SuperAdmin {
+		if user.Level < db.TenantAdmin {
+			user.Level = db.TenantAdmin // SuperAdmin can create TenantAdmin at most via this endpoint
+		}
+	}
 
 	// Assign user to the tenant from URL slug
 	slug := middleware.GetTenantSlug(r)
-	if slug != "" {
-		tenant, err := a.db.FindTenant(r.Context(), slug)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode("Tenant not found")
-			return
-		}
-		user.TenantID = tenant.ID
+	if slug == "" {
+		http.Error(w, `{"error":"tenant slug required"}`, http.StatusBadRequest)
+		return
 	}
+	tenant, err := a.db.FindTenant(r.Context(), slug)
+	if err != nil {
+		http.Error(w, `{"error":"tenant not found"}`, http.StatusBadRequest)
+		return
+	}
+	user.TenantID = tenant.ID
 
 	if err := user.HashPassword(user.Password); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -120,18 +128,38 @@ func valid(email string) bool {
 func (a *Api) deleteUser(w http.ResponseWriter, r *http.Request) {
 	email := middleware.GetEmail(r)
 	level := middleware.GetLevel(r)
-
 	userEmail := mux.Vars(r)["user"]
 
-	// SuperAdmin can delete any user, TenantAdmin can delete within their tenant
-	if email == userEmail || db.UserLevels(level) <= db.TenantAdmin {
-		if err := a.db.DeleteUser(userEmail); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(err)
+	// Cannot delete yourself
+	if email == userEmail {
+		http.Error(w, `{"error":"cannot delete own account"}`, http.StatusForbidden)
+		return
+	}
+
+	// Only TenantAdmin+ can delete users
+	if db.UserLevels(level) > db.TenantAdmin {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	// TenantAdmin must verify target user belongs to their tenant
+	if db.UserLevels(level) == db.TenantAdmin {
+		targetUser, err := a.db.FindUser(userEmail)
+		if err != nil {
+			http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
 			return
 		}
-	} else {
-		w.WriteHeader(http.StatusForbidden)
+		slug := middleware.GetTenantSlug(r)
+		tenant, err := a.db.FindTenant(r.Context(), slug)
+		if err != nil || targetUser.TenantID != tenant.ID {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return
+		}
+	}
+
+	if err := a.db.DeleteUser(userEmail); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 }
 

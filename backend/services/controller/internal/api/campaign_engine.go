@@ -29,10 +29,11 @@ func (a *Api) StartCampaignEngine() {
 	sub, err := a.nc.Subscribe("device.v1.*.online", func(msg *nats.Msg) {
 		// Extract tenant slug from subject: device.v1.<tenant>.online
 		parts := strings.Split(msg.Subject, ".")
-		tenantSlug := "default"
-		if len(parts) >= 4 {
-			tenantSlug = parts[2]
+		if len(parts) < 4 || parts[2] == "" {
+			log.Printf("campaign_engine: invalid subject format, skipping: %s", msg.Subject)
+			return
 		}
+		tenantSlug := parts[2]
 		tdb := a.db.ForTenant(tenantSlug)
 
 		var device entity.Device
