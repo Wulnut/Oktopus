@@ -22,6 +22,7 @@ node_modules/
 .idea
 .vscode
 .worktrees
+.superpowers
 
 # Generated env files with secrets (use generate-secrets.sh to create)
 # .env.*.example files are tracked; actual .env.* files are ignored
