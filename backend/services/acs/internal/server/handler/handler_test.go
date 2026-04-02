@@ -168,7 +168,7 @@ func Test_CWMPHandler_ValidInform_ProcessesSuccessfully(t *testing.T) {
 	}
 
 	// Verify NATS publish was called with the correct subject.
-	expectedSubject := NATS_CWMP_SUBJECT_PREFIX + sn + ".info"
+	expectedSubject := NATS_CWMP_SUBJECT_PREFIX + DEFAULT_TENANT + "." + sn + ".info"
 	if publishedSubject != expectedSubject {
 		t.Errorf("Published to subject %q, want %q", publishedSubject, expectedSubject)
 	}

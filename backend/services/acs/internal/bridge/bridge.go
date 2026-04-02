@@ -45,7 +45,7 @@ func NewBridge(
 
 func (b *Bridge) StartBridge() {
 
-	b.sub(handler.NATS_CWMP_ADAPTER_SUBJECT_PREFIX+"*.api", func(msg *nats.Msg) {
+	b.sub(handler.NATS_CWMP_ADAPTER_SUBJECT_PREFIX+"*.*.api", func(msg *nats.Msg) {
 		if b.conf.DebugMode {
 			log.Printf("Received message: %s", string(msg.Data))
 			log.Printf("Subject: %s", msg.Subject)
@@ -100,7 +100,7 @@ func (b *Bridge) StartBridge() {
 
 	})
 
-	b.sub(handler.NATS_CWMP_ADAPTER_SUBJECT_PREFIX+"rtt", func(msg *nats.Msg) {
+	b.sub(handler.NATS_CWMP_ADAPTER_SUBJECT_PREFIX+"*.rtt", func(msg *nats.Msg) {
 		log.Printf("Received message on rtt subject")
 		url := "127.0.0.1" + b.conf.Port
 		conn, err := net.Dial("tcp", url)

@@ -17,7 +17,7 @@ func (h *Handler) HandleCpeStatus() {
 			if time.Since(h.Cpes[cpe].LastConnection) > h.acsConfig.KeepAliveInterval {
 				log.Printf("LastConnection: %s, KeepAliveInterval: %s", h.Cpes[cpe].LastConnection, h.acsConfig.KeepAliveInterval)
 				log.Println("CPE", cpe, "is offline")
-				h.pub("cwmp.v1."+cpe+".status", []byte("0"))
+				h.pub(NATS_CWMP_SUBJECT_PREFIX+DEFAULT_TENANT+"."+cpe+".status", []byte("0"))
 				delete(h.Cpes, cpe)
 				break
 			}

@@ -67,6 +67,7 @@ const (
 	NATS_CWMP_SUBJECT_PREFIX         = "cwmp.v1."
 	NATS_CWMP_ADAPTER_SUBJECT_PREFIX = "cwmp-adapter.v1."
 	NATS_ADAPTER_SUBJECT_PREFIX      = "adapter.v1."
+	DEFAULT_TENANT                   = "default"
 )
 
 func NewHandler(

@@ -83,7 +83,7 @@ func (h *Handler) CwmpHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			h.Cpes[sn] = cpe
 			h.mu.Unlock()
-			h.pub(NATS_CWMP_SUBJECT_PREFIX+sn+".info", tmp)
+			h.pub(NATS_CWMP_SUBJECT_PREFIX+DEFAULT_TENANT+"."+sn+".info", tmp)
 		} else {
 			cpe = existing
 			h.mu.Unlock()
