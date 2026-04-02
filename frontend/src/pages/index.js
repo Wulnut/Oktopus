@@ -1,340 +1,259 @@
 import Head from 'next/head';
 import React, { useEffect, useState } from 'react';
-import { subDays, subHours } from 'date-fns';
-import { 
-  Box, 
+import {
+  Avatar,
+  Box,
+  Card,
+  CardContent,
+  CircularProgress,
   Container,
-  CircularProgress, 
-  Grid2 as Grid } from '@mui/material';
+  Grid2 as Grid,
+  SvgIcon,
+  Typography,
+} from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
-import { OverviewTasksProgress } from 'src/sections/overview/overview-tasks-progress';
-import { OverviewTotalCustomers } from 'src/sections/overview/overview-total-customers';
 import { OverviewTraffic } from 'src/sections/overview/overview-traffic';
+import { OverviewCpeSettings } from 'src/sections/overview/overview-cpe-settings';
 import { useRouter } from 'next/router';
 import { useTenant } from 'src/contexts/tenant-context';
+import CpuChipIcon from '@heroicons/react/24/solid/CpuChipIcon';
+import SignalIcon from '@heroicons/react/24/solid/SignalIcon';
+import SignalSlashIcon from '@heroicons/react/24/solid/SignalSlashIcon';
+import BuildingOfficeIcon from '@heroicons/react/24/solid/BuildingOfficeIcon';
 
-const now = new Date();
-
-const Page = () => {
-
-  const router = useRouter()
-  const { apiPrefix } = useTenant();
-
-  const [generalInfo, setGeneralInfo] = useState(null)
-  const [devicesStatus, setDevicesStatus] = useState([0,0])
-  const [devicesCount, setDevicesCount] = useState(0)
-  const [productClassLabels, setProductClassLabels] = useState(['-'])
-  const [productClassValues, setProductClassValues] = useState(['0'])
-  const [vendorLabels, setVendorLabels] = useState(['-'])
-  const [vendorValues, setVendorValues] = useState([0])
-
-  const fetchGeneralInfo = async () => {
-
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", localStorage.getItem("token"));
-
-    var requestOptions = {
-        method: 'GET',
-        headers: myHeaders,
-        redirect: 'follow',
-    };
-
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${apiPrefix}/info/general`, requestOptions))
-    if (result.status === 401){
-    router.push("/auth/login")
-    }else if (result.status != 200){
-      console.log("Status:", result.status)
-      let content = await result.json()
-      console.log("Message:", content)
-    }else{
-      let content = await result.json()
-      console.log("general info result:", content)
-      let totalDevices = content.StatusCount.Offline + content.StatusCount.Online
-      setDevicesCount(totalDevices)
-
-      let onlinePercentage = ((content.StatusCount.Online * 100)/totalDevices)
-      console.log("ONLINE AND OFFLINE:",onlinePercentage,100 - onlinePercentage)
-      
-      if(Number.isInteger(onlinePercentage)){
-        setDevicesStatus([onlinePercentage, 100 - onlinePercentage])
-      }else{
-        onlinePercentage = Number(onlinePercentage.toFixed(1))
-        let offlinePercentage = 100 - onlinePercentage
-        setDevicesStatus([onlinePercentage, Number(offlinePercentage.toFixed(1))])
-      }
-
-      let prodClassLabels = []
-      let prodClassValues = []
-      let prodClassValue = 0
-      
-      content.ProductClassCount?.map((p)=>{
-        if (p.productClass === ""){
-          prodClassLabels.push("unknown")
-        }else{
-          prodClassLabels.push(p.productClass)
-        }
-        prodClassValue += p.count
-      })
-
-      content.ProductClassCount?.map((p)=>{
-        let percentageValue = p.count * 100 / prodClassValue
-        if (Number.isInteger(percentageValue)){
-          prodClassValues.push(percentageValue)
-        }else{
-          prodClassValues.push(Number(percentageValue.toFixed(1)))
-        }
-      })
-      
-      setProductClassLabels(prodClassLabels)
-      setProductClassValues(prodClassValues)
-      console.log("productClassLabels:", prodClassLabels)
-      console.log("productClassValues:", productClassValues)
-
-      let vLabels = []
-      let vValues = []
-      let vValue = 0
-      content.VendorsCount?.map((p)=>{
-        if (p.vendor === ""){
-          vLabels.push("unknown")
-        }else{
-          vLabels.push(p.vendor)
-        }
-        vValue = vValue + p.count
-      })
-
-      content.VendorsCount?.map((p)=>{
-        let percentageValue = p.count * 100 / vValue
-        if (Number.isInteger(percentageValue)){
-          vValues.push(percentageValue)
-        }else{
-          vValues.push(Number(percentageValue.toFixed(1)))
-        }
-      })
-
-      setVendorLabels(vLabels)
-      setVendorValues(vValues)
-
-      console.log("vendorLabels:", vLabels)
-      console.log("vendorValues:", vValues)
-
-      setGeneralInfo(content)
-    }
-
-  }
-
-  useEffect(()=>{
-    fetchGeneralInfo()
-  },[])
-  
-  return(generalInfo ?
-  <>
-    <Head>
-      <title>
-        Oktopus | Controller
-      </title>
-    </Head>
-    <Box
-      component="main"
-      sx={{
-        flexGrow: 1,
-        py: 8
-      }}
-    >
-      <Container maxWidth="xl">
-        <Grid
-          container
-          spacing={3}
+const StatCard = ({ label, value, icon, color }) => (
+  <Card sx={{ height: '100%' }}>
+    <CardContent>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Avatar
+          sx={{
+            bgcolor: color || 'primary.main',
+            width: 48,
+            height: 48,
+          }}
         >
-          <Grid size={12}>
-            <OverviewTotalCustomers
-              positive={false}
-              sx={{ height: '100%' }}
-              value={devicesCount.toString()}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
-            <OverviewTasksProgress
-              sx={{ height: '100%' }}
-              mtp={"STOMP Connection"}
-              type={"stomp"}
-              value={generalInfo.StompRtt}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
-            <OverviewTasksProgress
-              sx={{ height: '100%' }}
-              mtp={"MQTT Connection"}
-              type={"mqtt"}
-              value={generalInfo.MqttRtt}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 4 }}>
-            <OverviewTasksProgress
-              sx={{ height: '100%' }}
-              mtp={"Websockets Connection"}
-              type={"websocket"}
-              value={generalInfo.WebsocketsRtt}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-            <OverviewTraffic
-              chartSeries={vendorValues}
-              labels={vendorLabels}
-              sx={{ height: '100%' }}
-              title={'Vendors'}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-            <OverviewTraffic
-              chartSeries={devicesStatus}
-              labels={['Online', 'Offline']}
-              sx={{ height: '100%' }}
-              title={'Status'}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-            <OverviewTraffic
-              chartSeries={productClassValues}
-              labels={productClassLabels}
-              sx={{ height: '100%' }}
-              title={'Devices Type'}
-            />
-          </Grid>
-        </Grid>
-      </Container>
-    </Box>
-  </>:    <Box sx={{display:'flex',justifyContent:'center'}}>
-        <CircularProgress color="inherit" />
-    </Box>)
-};
-
-Page.getLayout = (page) => (
-  <DashboardLayout>
-    {page}
-  </DashboardLayout>
+          <SvgIcon fontSize="small">{icon}</SvgIcon>
+        </Avatar>
+        <Box>
+          <Typography variant="overline" color="text.secondary">
+            {label}
+          </Typography>
+          <Typography variant="h4">{value}</Typography>
+        </Box>
+      </Box>
+    </CardContent>
+  </Card>
 );
 
-export default Page;
+const Page = () => {
+  const router = useRouter();
+  const { apiPrefix } = useTenant();
 
-/*
-            <OverviewSales
-              chartSeries={[
-                {
-                  name: 'This year',
-                  data: [18, 16, 5, 8, 3, 14, 14, 16, 17, 19, 18, 20]
-                },
-                {
-                  name: 'Last year',
-                  data: [12, 11, 4, 6, 2, 9, 9, 10, 11, 12, 13, 13]
-                }
-              ]}
-              sx={{ height: '100%' }}
-            />
-                        <OverviewLatestProducts
-              products={[
-                {
-                  id: '5ece2c077e39da27658aa8a9',
-                  image: '/assets/products/product-1.png',
-                  name: 'Healthcare Erbology',
-                  updatedAt: subHours(now, 6).getTime()
-                },
-                {
-                  id: '5ece2c0d16f70bff2cf86cd8',
-                  image: '/assets/products/product-2.png',
-                  name: 'Makeup Lancome Rouge',
-                  updatedAt: subDays(subHours(now, 8), 2).getTime()
-                },
-                {
-                  id: 'b393ce1b09c1254c3a92c827',
-                  image: '/assets/products/product-5.png',
-                  name: 'Skincare Soja CO',
-                  updatedAt: subDays(subHours(now, 1), 1).getTime()
-                },
-                {
-                  id: 'a6ede15670da63f49f752c89',
-                  image: '/assets/products/product-6.png',
-                  name: 'Makeup Lipstick',
-                  updatedAt: subDays(subHours(now, 3), 3).getTime()
-                },
-                {
-                  id: 'bcad5524fe3a2f8f8620ceda',
-                  image: '/assets/products/product-7.png',
-                  name: 'Healthcare Ritual',
-                  updatedAt: subDays(subHours(now, 5), 6).getTime()
-                }
-              ]}
-              sx={{ height: '100%' }}
-            />
+  const [generalInfo, setGeneralInfo] = useState(null);
+  const [devicesStatus, setDevicesStatus] = useState([0, 0]);
+  const [devicesCount, setDevicesCount] = useState(0);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [offlineCount, setOfflineCount] = useState(0);
+  const [vendorsTotal, setVendorsTotal] = useState(0);
+  const [productClassLabels, setProductClassLabels] = useState(['-']);
+  const [productClassValues, setProductClassValues] = useState(['0']);
+  const [vendorLabels, setVendorLabels] = useState(['-']);
+  const [vendorValues, setVendorValues] = useState([0]);
+
+  const fetchGeneralInfo = async () => {
+    var myHeaders = new Headers();
+    myHeaders.append('Content-Type', 'application/json');
+    myHeaders.append('Authorization', localStorage.getItem('token'));
+
+    var requestOptions = {
+      method: 'GET',
+      headers: myHeaders,
+      redirect: 'follow',
+    };
+
+    let result = await fetch(
+      `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ''}${apiPrefix}/info/general`,
+      requestOptions
+    );
+    if (result.status === 401) {
+      router.push('/auth/login');
+    } else if (result.status != 200) {
+      console.log('Status:', result.status);
+      let content = await result.json();
+      console.log('Message:', content);
+    } else {
+      let content = await result.json();
+      console.log('general info result:', content);
+      let totalDevices = content.StatusCount.Offline + content.StatusCount.Online;
+      setDevicesCount(totalDevices);
+      setOnlineCount(content.StatusCount.Online);
+      setOfflineCount(content.StatusCount.Offline);
+
+      let onlinePercentage = (content.StatusCount.Online * 100) / totalDevices;
+
+      if (Number.isInteger(onlinePercentage)) {
+        setDevicesStatus([onlinePercentage, 100 - onlinePercentage]);
+      } else {
+        onlinePercentage = Number(onlinePercentage.toFixed(1));
+        let offlinePercentage = 100 - onlinePercentage;
+        setDevicesStatus([onlinePercentage, Number(offlinePercentage.toFixed(1))]);
+      }
+
+      let prodClassLabels = [];
+      let prodClassValues = [];
+      let prodClassValue = 0;
+
+      content.ProductClassCount?.map((p) => {
+        if (p.productClass === '') {
+          prodClassLabels.push('unknown');
+        } else {
+          prodClassLabels.push(p.productClass);
+        }
+        prodClassValue += p.count;
+      });
+
+      content.ProductClassCount?.map((p) => {
+        let percentageValue = (p.count * 100) / prodClassValue;
+        if (Number.isInteger(percentageValue)) {
+          prodClassValues.push(percentageValue);
+        } else {
+          prodClassValues.push(Number(percentageValue.toFixed(1)));
+        }
+      });
+
+      setProductClassLabels(prodClassLabels);
+      setProductClassValues(prodClassValues);
+
+      let vLabels = [];
+      let vValues = [];
+      let vValue = 0;
+      content.VendorsCount?.map((p) => {
+        if (p.vendor === '') {
+          vLabels.push('unknown');
+        } else {
+          vLabels.push(p.vendor);
+        }
+        vValue = vValue + p.count;
+      });
+
+      content.VendorsCount?.map((p) => {
+        let percentageValue = (p.count * 100) / vValue;
+        if (Number.isInteger(percentageValue)) {
+          vValues.push(percentageValue);
+        } else {
+          vValues.push(Number(percentageValue.toFixed(1)));
+        }
+      });
+
+      setVendorLabels(vLabels);
+      setVendorValues(vValues);
+      setVendorsTotal(content.VendorsCount?.length || 0);
+
+      setGeneralInfo(content);
+    }
+  };
+
+  useEffect(() => {
+    fetchGeneralInfo();
+  }, []);
+
+  return generalInfo ? (
+    <>
+      <Head>
+        <title>Oktopus | Controller</title>
+      </Head>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          py: 8,
+        }}
+      >
+        <Container maxWidth="xl">
+          <Grid container spacing={3}>
+            {/* Left Column */}
+            <Grid size={{ xs: 12, lg: 8 }}>
+              <Grid container spacing={3}>
+                {/* Row 1: Stat cards */}
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <StatCard
+                    label="Total Devices"
+                    value={devicesCount}
+                    icon={<CpuChipIcon />}
+                    color="primary.main"
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <StatCard
+                    label="Online"
+                    value={onlineCount}
+                    icon={<SignalIcon />}
+                    color="success.main"
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <StatCard
+                    label="Offline"
+                    value={offlineCount}
+                    icon={<SignalSlashIcon />}
+                    color="error.main"
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <StatCard
+                    label="Vendors"
+                    value={vendorsTotal}
+                    icon={<BuildingOfficeIcon />}
+                    color="warning.main"
+                  />
+                </Grid>
+
+                {/* Row 2: Donut charts */}
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <OverviewTraffic
+                    chartSeries={devicesStatus}
+                    labels={['Online', 'Offline']}
+                    sx={{ height: '100%' }}
+                    title={'Status'}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <OverviewTraffic
+                    chartSeries={vendorValues}
+                    labels={vendorLabels}
+                    sx={{ height: '100%' }}
+                    title={'Vendors'}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <OverviewTraffic
+                    chartSeries={productClassValues}
+                    labels={productClassLabels}
+                    sx={{ height: '100%' }}
+                    title={'Devices Type'}
+                  />
+                </Grid>
+              </Grid>
+            </Grid>
+
+            {/* Right Column: CPE Settings */}
+            <Grid size={{ xs: 12, lg: 4 }}>
+              <OverviewCpeSettings
+                generalInfo={generalInfo}
+                sx={{ height: '100%' }}
+              />
+            </Grid>
           </Grid>
-          <Grid
-            xs={12}
-            md={12}
-            lg={8}
-          >
-            <OverviewLatestOrders
-              orders={[
-                {
-                  id: 'f69f88012978187a6c12897f',
-                  ref: 'DEV1049',
-                  amount: 30.5,
-                  customer: {
-                    name: 'Ekaterina Tankova'
-                  },
-                  createdAt: 1555016400000,
-                  status: 'pending'
-                },
-                {
-                  id: '9eaa1c7dd4433f413c308ce2',
-                  ref: 'DEV1048',
-                  amount: 25.1,
-                  customer: {
-                    name: 'Cao Yu'
-                  },
-                  createdAt: 1555016400000,
-                  status: 'delivered'
-                },
-                {
-                  id: '01a5230c811bd04996ce7c13',
-                  ref: 'DEV1047',
-                  amount: 10.99,
-                  customer: {
-                    name: 'Alexa Richardson'
-                  },
-                  createdAt: 1554930000000,
-                  status: 'refunded'
-                },
-                {
-                  id: '1f4e1bd0a87cea23cdb83d18',
-                  ref: 'DEV1046',
-                  amount: 96.43,
-                  customer: {
-                    name: 'Anje Keizer'
-                  },
-                  createdAt: 1554757200000,
-                  status: 'pending'
-                },
-                {
-                  id: '9f974f239d29ede969367103',
-                  ref: 'DEV1045',
-                  amount: 32.54,
-                  customer: {
-                    name: 'Clarke Gillebert'
-                  },
-                  createdAt: 1554670800000,
-                  status: 'delivered'
-                },
-                {
-                  id: 'ffc83c1560ec2f66a1c05596',
-                  ref: 'DEV1044',
-                  amount: 16.76,
-                  customer: {
-                    name: 'Adam Denisov'
-                  },
-                  createdAt: 1554670800000,
-                  status: 'delivered'
-                }
-              ]}
-              sx={{ height: '100%' }}
-            />
-*/ 
+        </Container>
+      </Box>
+    </>
+  ) : (
+    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+      <CircularProgress color="inherit" />
+    </Box>
+  );
+};
+
+Page.getLayout = (page) => <DashboardLayout>{page}</DashboardLayout>;
+
+export default Page;
