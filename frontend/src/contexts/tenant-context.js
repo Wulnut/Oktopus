@@ -36,13 +36,16 @@ export function TenantProvider({ children }) {
   const tenantSlug = isSuperAdmin ? activeTenantSlug : (user?.tenantSlug || '');
   const apiPrefix = tenantSlug ? `/api/tenants/${tenantSlug}` : '/api';
 
+  const hasTenant = !!tenantSlug;
+
   const value = useMemo(() => ({
     tenantSlug,
     level,
     isSuperAdmin,
+    hasTenant,
     apiPrefix,
     setActiveTenant,
-  }), [tenantSlug, level, isSuperAdmin, apiPrefix, setActiveTenant]);
+  }), [tenantSlug, level, isSuperAdmin, hasTenant, apiPrefix, setActiveTenant]);
 
   return (
     <TenantContext.Provider value={value}>

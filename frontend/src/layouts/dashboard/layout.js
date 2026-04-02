@@ -5,7 +5,8 @@ import { withAuthGuard } from 'src/hocs/with-auth-guard';
 import { SideNav } from './side-nav';
 import { TopNav } from './top-nav';
 import { useAlertContext } from 'src/contexts/error-context';
-import { Alert, AlertTitle, Snackbar } from '@mui/material';
+import { Alert, AlertTitle, Box, Snackbar, Typography } from '@mui/material';
+import { useTenant } from 'src/contexts/tenant-context';
 
 const SIDE_NAV_WIDTH = 280;
 
@@ -31,6 +32,11 @@ export const Layout = withAuthGuard((props) => {
   const [openNav, setOpenNav] = useState(false);
 
   const {alert, setAlert} = useAlertContext();
+  const { isSuperAdmin, hasTenant } = useTenant();
+
+  // Pages that don't require a tenant selection
+  const tenantFreePages = ['/tenants', '/settings', '/auth'];
+  const needsTenant = isSuperAdmin && !hasTenant && !tenantFreePages.some(p => pathname?.startsWith(p));
 
   const handlePathnameChange = useCallback(
     () => {
@@ -58,7 +64,16 @@ export const Layout = withAuthGuard((props) => {
       />
       <LayoutRoot>
         <LayoutContainer>
-          {children}
+          {needsTenant ? (
+            <Box sx={{ p: 4, textAlign: 'center', mt: 8 }}>
+              <Typography variant="h5" gutterBottom>
+                No tenant selected
+              </Typography>
+              <Typography color="text.secondary">
+                Select a tenant from the dropdown in the top navigation bar, or go to the Tenants page to manage tenants.
+              </Typography>
+            </Box>
+          ) : children}
         </LayoutContainer>
       </LayoutRoot>
       {alert && <Snackbar
