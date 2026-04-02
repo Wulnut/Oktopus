@@ -68,7 +68,7 @@ const StatCard = ({ label, value, icon, color }) => (
 
 const Page = () => {
   const router = useRouter();
-  const { apiPrefix } = useTenant();
+  const { apiPrefix, tenantSlug } = useTenant();
 
   const [generalInfo, setGeneralInfo] = useState(null);
   const [devicesStatus, setDevicesStatus] = useState([0, 0]);
@@ -244,6 +244,7 @@ const Page = () => {
             <Grid size={{ xs: 12, lg: 4 }}>
               <OverviewCpeSettings
                 generalInfo={generalInfo}
+                tenantSlug={tenantSlug}
                 sx={{ height: '100%' }}
               />
             </Grid>

@@ -15,7 +15,8 @@ import {
   Typography,
 } from '@mui/material';
 
-const getProtocolParams = (protocol, host) => {
+const getProtocolParams = (protocol, host, tenantSlug) => {
+  const t = tenantSlug || 'default';
   switch (protocol) {
     case 'MQTT':
       return [
@@ -25,17 +26,17 @@ const getProtocolParams = (protocol, host) => {
         ['Device.MQTT.Client.1.TransportProtocol', 'TCP/IP'],
         ['Device.MQTT.Client.1.Username', '<device_serial>'],
         ['Device.MQTT.Client.1.Password', '<device_password>'],
-        ['Device.LocalAgent.MTP.1.MQTT.Topic', 'oktopus/usp/v1/agent/<endpoint_id>'],
-        ['Device.LocalAgent.MTP.1.MQTT.ResponseTopicConfigured', 'oktopus/usp/v1/controller/<endpoint_id>'],
+        ['Device.LocalAgent.MTP.1.MQTT.Topic', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
+        ['Device.LocalAgent.MTP.1.MQTT.ResponseTopicConfigured', `oktopus/usp/v1/${t}/controller/<endpoint_id>`],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'MQTT'],
-        ['Device.LocalAgent.Controller.1.MTP.1.MQTT.Topic', 'oktopus/usp/v1/controller/<endpoint_id>'],
+        ['Device.LocalAgent.Controller.1.MTP.1.MQTT.Topic', `oktopus/usp/v1/${t}/controller/<endpoint_id>`],
       ];
     case 'WebSocket':
       return [
         ['Device.LocalAgent.MTP.1.Protocol', 'WebSocket'],
         ['Device.LocalAgent.MTP.1.Enable', 'true'],
-        ['Device.LocalAgent.MTP.1.WebSocket.URL', `ws://${host}:8080/`],
+        ['Device.LocalAgent.MTP.1.WebSocket.URL', `ws://${host}:8080/${t}/`],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'WebSocket'],
       ];
@@ -47,14 +48,14 @@ const getProtocolParams = (protocol, host) => {
         ['Device.STOMP.Connection.1.Port', '61613'],
         ['Device.STOMP.Connection.1.Username', '<device_serial>'],
         ['Device.STOMP.Connection.1.Password', '<device_password>'],
-        ['Device.LocalAgent.MTP.1.STOMP.Destination', 'oktopus/usp/v1/agent/<endpoint_id>'],
+        ['Device.LocalAgent.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'STOMP'],
-        ['Device.LocalAgent.Controller.1.MTP.1.STOMP.Destination', 'oktopus/usp/v1/controller/<endpoint_id>'],
+        ['Device.LocalAgent.Controller.1.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/controller/<endpoint_id>`],
       ];
     case 'CWMP':
       return [
-        ['Device.ManagementServer.URL', `http://${host}:9292/acs/`],
+        ['Device.ManagementServer.URL', `http://${host}:9292/acs/${t}/`],
         ['Device.ManagementServer.Username', '<device_serial>'],
         ['Device.ManagementServer.Password', '<device_password>'],
         ['Device.ManagementServer.PeriodicInformEnable', 'true'],
@@ -73,7 +74,7 @@ const protocols = [
 ];
 
 export const OverviewCpeSettings = (props) => {
-  const { generalInfo, sx } = props;
+  const { generalInfo, tenantSlug, sx } = props;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedProtocol, setSelectedProtocol] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -92,7 +93,7 @@ export const OverviewCpeSettings = (props) => {
 
   const getParamsText = () => {
     if (!selectedProtocol) return '';
-    const params = getProtocolParams(selectedProtocol, host);
+    const params = getProtocolParams(selectedProtocol, host, tenantSlug);
     return params.map(([key, value]) => `${key}\t${value}`).join('\n');
   };
 
