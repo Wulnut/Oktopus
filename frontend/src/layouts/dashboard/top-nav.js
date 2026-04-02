@@ -47,21 +47,36 @@ export const TopNav = (props) => {
   const { isSuperAdmin, tenantSlug, setActiveTenant } = useTenant();
   const { answerCall, call, callAccepted } = useContext(WsContext);
   const [tenantList, setTenantList] = useState([]);
+  const [tenantName, setTenantName] = useState('');
 
   useEffect(() => {
-    if (!isSuperAdmin || !auth.user?.token) return;
-    const h = new Headers();
-    h.append('Content-Type', 'application/json');
-    h.append('Authorization', auth.user.token);
-    fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ''}/api/tenants`, {
-      method: 'GET',
-      headers: h,
-      redirect: 'follow',
-    })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setTenantList(data || []))
-      .catch(() => {});
-  }, [isSuperAdmin, auth.user?.token]);
+    if (!auth.user?.token) return;
+    if (isSuperAdmin) {
+      const h = new Headers();
+      h.append('Content-Type', 'application/json');
+      h.append('Authorization', auth.user.token);
+      fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ''}/api/tenants`, {
+        method: 'GET',
+        headers: h,
+        redirect: 'follow',
+      })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setTenantList(data || []))
+        .catch(() => {});
+    } else if (tenantSlug) {
+      const h = new Headers();
+      h.append('Content-Type', 'application/json');
+      h.append('Authorization', auth.user.token);
+      fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ''}/api/tenants/${tenantSlug}`, {
+        method: 'GET',
+        headers: h,
+        redirect: 'follow',
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => { if (data) setTenantName(data.name); })
+        .catch(() => {});
+    }
+  }, [isSuperAdmin, tenantSlug, auth.user?.token]);
 
   return ( auth.user &&
     <>
@@ -103,7 +118,7 @@ export const TopNav = (props) => {
                 </SvgIcon>
               </IconButton>
             )}
-            {isSuperAdmin && (
+            {isSuperAdmin ? (
               <FormControl size="small" sx={{ minWidth: 220 }}>
                 <InputLabel id="tenant-selector-label" shrink>Active Tenant</InputLabel>
                 <Select
@@ -131,6 +146,13 @@ export const TopNav = (props) => {
                   ))}
                 </Select>
               </FormControl>
+            ) : tenantName && (
+              <Chip
+                label={tenantName}
+                variant="outlined"
+                size="small"
+                sx={{ fontWeight: 600 }}
+              />
             )}
           </Stack>
           <Stack
