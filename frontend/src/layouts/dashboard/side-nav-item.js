@@ -8,7 +8,7 @@ import { usePathname } from 'next/navigation';
 import ArrowTopRightOnSquareIcon from '@heroicons/react/24/solid/ArrowTopRightOnSquareIcon';
 
 export const SideNavItem = (props) => {
-  const { active = false, disabled, external, icon, path, title, children, padleft, tooltip } = props;
+  const { active = false, disabled, external, icon, path, title, children, padleft, tooltip, nested = false } = props;
 
   const [open, setOpen] = useState(true);
   const pathname = usePathname();
@@ -42,8 +42,10 @@ export const SideNavItem = (props) => {
     // console.log('path', path);
     // console.log('title', title);
 
+  const Wrapper = nested ? 'div' : 'li';
+
   return (
-    <li>
+    <Wrapper>
       <Tooltip title={tooltip} placement='bottom-end'>
       <ButtonBase
         sx={{
@@ -173,13 +175,14 @@ export const SideNavItem = (props) => {
                       children={child?.children}
                       padleft={padleft + 2}
                       tooltip={child.tooltip}
+                      nested
                     />
                   );
                 })
               )
           }
         </Collapse>
-    </li>
+    </Wrapper>
   );
 };
 
