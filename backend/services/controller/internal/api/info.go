@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/leandrofars/oktopus/internal/api/middleware"
@@ -75,45 +76,27 @@ func (a *Api) generalInfo(w http.ResponseWriter, r *http.Request) {
 	result.VendorsCount = vendorcount.Msg
 	result.ProductClassCount = productclasscount.Msg
 
-	now := time.Now()
-	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NatsWsAdapterSubjectPrefix(tenantSlug)+"rtt",
-		[]byte(""),
-		a.nc,
-	)
-	if err == nil {
-		result.WebsocketsRtt = time.Until(now).String()
+	// Run RTT checks concurrently to avoid sequential timeouts
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	rttCheck := func(subject string, setter func(string)) {
+		defer wg.Done()
+		now := time.Now()
+		_, err := bridge.NatsReqWithoutHttpSet[time.Duration](subject, []byte(""), a.nc)
+		if err == nil {
+			mu.Lock()
+			setter(time.Until(now).String())
+			mu.Unlock()
+		}
 	}
 
-	now = time.Now()
-	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NatsCwmpAdapterSubjectPrefix(tenantSlug)+"rtt",
-		[]byte(""),
-		a.nc,
-	)
-	if err == nil {
-		result.AcsRtt = time.Until(now).String()
-	}
-
-	now = time.Now()
-	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NatsStompAdapterSubjectPrefix(tenantSlug)+"rtt",
-		[]byte(""),
-		a.nc,
-	)
-	if err == nil {
-		result.StompRtt = time.Until(now).String()
-	}
-
-	now = time.Now()
-	_, err = bridge.NatsReqWithoutHttpSet[time.Duration](
-		local.NatsMqttAdapterSubjectPrefix(tenantSlug)+"rtt",
-		[]byte(""),
-		a.nc,
-	)
-	if err == nil {
-		result.MqttRtt = time.Until(now).String()
-	}
+	wg.Add(4)
+	go rttCheck(local.NatsWsAdapterSubjectPrefix(tenantSlug)+"rtt", func(v string) { result.WebsocketsRtt = v })
+	go rttCheck(local.NatsCwmpAdapterSubjectPrefix(tenantSlug)+"rtt", func(v string) { result.AcsRtt = v })
+	go rttCheck(local.NatsStompAdapterSubjectPrefix(tenantSlug)+"rtt", func(v string) { result.StompRtt = v })
+	go rttCheck(local.NatsMqttAdapterSubjectPrefix(tenantSlug)+"rtt", func(v string) { result.MqttRtt = v })
+	wg.Wait()
 
 	err = json.NewEncoder(w).Encode(result)
 	if err != nil {
