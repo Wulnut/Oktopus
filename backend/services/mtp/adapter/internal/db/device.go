@@ -63,10 +63,8 @@ func (d *Database) CreateDevice(device Device) error {
 	defer d.m.Unlock()
 
 	/* ------------------ Do not overwrite status of other mtp ------------------ */
+	// Always match by SN only for upsert — SN is unique. TenantID gets updated with the new value.
 	findFilter := bson.D{{"sn", device.SN}}
-	if device.TenantID != "" {
-		findFilter = append(findFilter, bson.E{Key: "tenantid", Value: device.TenantID})
-	}
 	err := d.devices.FindOne(d.ctx, findFilter, nil).Decode(&deviceExistent)
 	if err == nil {
 		if deviceExistent.Mqtt == Online {
@@ -102,9 +100,6 @@ func (d *Database) CreateDevice(device Device) error {
 		opts := options.FindOneAndReplace().SetUpsert(true)
 
 		upsertFilter := bson.D{{"sn", device.SN}}
-		if device.TenantID != "" {
-			upsertFilter = append(upsertFilter, bson.E{Key: "tenantid", Value: device.TenantID})
-		}
 		err := d.devices.FindOneAndReplace(d.ctx, upsertFilter, device, opts).Decode(&result)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
