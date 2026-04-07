@@ -27,10 +27,8 @@ func main() {
 
 	database := db.NewDatabase(c.Mongo.Ctx, c.Mongo.Uri)
 
-	// Start message interceptor BEFORE API starts (to capture all messages)
-	// Use a default tenant DB for the interceptor until tenant-scoped NATS subjects are implemented
-	defaultTenantDB := database.ForTenant("default")
-	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, defaultTenantDB, c.Controller.ControllerId)
+	// Start message interceptor — resolves tenant DB dynamically from NATS subject
+	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, &database, c.Controller.ControllerId)
 
 	a := api.NewApi(c, js, nc, bridge, database)
 	a.StartApi()

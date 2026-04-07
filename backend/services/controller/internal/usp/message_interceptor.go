@@ -3,7 +3,6 @@ package usp
 import (
 	"context"
 	"log"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -109,11 +108,22 @@ func getDeviceMTP(ctx context.Context, nc *nats.Conn, deviceSerial string) strin
 	return mtp
 }
 
+// extractTenantSlug extracts tenant slug from NATS subject.
+// Format: <prefix>.usp.v1.<tenant>.<serial>.<type>
+func extractTenantSlug(subject string) string {
+	parts := strings.Split(subject, ".")
+	for i, p := range parts {
+		if p == "v1" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return "default"
+}
+
 // StartMessageInterceptor subscribes to NATS subjects to intercept all USP messages
 // IMPORTANT: Use Subscribe() (not QueueSubscribe()) to ensure all subscribers receive messages
-func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, d *db.TenantDB, controllerID string) {
+func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, database *db.Database, controllerID string) {
 	// Subscribe to all adapter-to-device subjects (messages being sent TO devices)
-	// Pattern: "{mtp}-adapter.usp.v1.{sn}.api" where mtp in [mqtt, ws, stomp]
 	patterns := []string{
 		"mqtt-adapter.usp.v1.>",
 		"ws-adapter.usp.v1.>",
@@ -121,9 +131,9 @@ func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, d *db.TenantDB,
 	}
 
 	for _, pattern := range patterns {
-		// Use Subscribe() to ensure both interceptor and existing handlers receive messages
 		_, err := nc.Subscribe(pattern, func(msg *nats.Msg) {
-			// Process asynchronously to avoid blocking
+			tenantSlug := extractTenantSlug(msg.Subject)
+			d := database.ForTenant(tenantSlug)
 			go handleSentMessage(ctx, msg, d, controllerID)
 		})
 		if err != nil {
@@ -131,20 +141,17 @@ func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, d *db.TenantDB,
 		}
 	}
 
-	// Subscribe to all device-to-controller subjects (messages being received FROM devices)
-	// Pattern: "device.usp.v1.{sn}.api" (used by WS adapter and some MQTT messages)
+	// Subscribe to all device-to-controller subjects
 	_, err := nc.Subscribe("device.usp.v1.>", func(msg *nats.Msg) {
-		// Process asynchronously to avoid blocking
+		tenantSlug := extractTenantSlug(msg.Subject)
+		d := database.ForTenant(tenantSlug)
 		go handleReceivedMessage(ctx, msg, nc, d, controllerID)
 	})
 	if err != nil {
 		log.Printf("Failed to subscribe to device.usp.v1.>: %v", err)
 	}
 
-	// Also subscribe to MTP-specific subjects for received messages
-	// MQTT adapter routes some messages (e.g., from controller topic) to mqtt.usp.v1.{device}.info
-	// WS adapter routes to ws.usp.v1.{device}.info for info messages
-	// STOMP adapter routes to stomp.usp.v1.{device}.info for info messages
+	// Subscribe to MTP-specific subjects for received messages
 	mtpPatterns := []string{
 		"mqtt.usp.v1.>",
 		"ws.usp.v1.>",
@@ -153,7 +160,8 @@ func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, d *db.TenantDB,
 
 	for _, pattern := range mtpPatterns {
 		_, err := nc.Subscribe(pattern, func(msg *nats.Msg) {
-			// Process asynchronously to avoid blocking
+			tenantSlug := extractTenantSlug(msg.Subject)
+			d := database.ForTenant(tenantSlug)
 			go handleReceivedMessage(ctx, msg, nc, d, controllerID)
 		})
 		if err != nil {
@@ -298,25 +306,18 @@ func detectSourceForReceived(record usp_record.Record, controllerID string) stri
 // Pattern: "device.usp.v1.{serial}.api" or "{mtp}-adapter.usp.v1.{serial}.api"
 // Serial can contain dots, so we need to use regex or prefix/suffix removal
 func extractDeviceSerial(subject string) string {
-	// Option 1: Use regex (more robust)
-	re := regexp.MustCompile(`\.usp\.v1\.(.+?)\.api$`)
-	matches := re.FindStringSubmatch(subject)
-	if len(matches) >= 2 {
-		return matches[1] // Serial number (can contain dots)
-	}
+	// Subject format: <prefix>.usp.v1.<tenant>.<serial>.<type>
+	// Examples:
+	//   device.usp.v1.prpl-test.mb_an7583_prpl401.api
+	//   stomp.usp.v1.prpl-test.mb_an7583_prpl401.info
+	//   mqtt-adapter.usp.v1.prpl-test.mb_an7583_prpl401.api
+	parts := strings.Split(subject, ".")
 
-	// Option 2: Remove known prefixes/suffixes (fallback)
-	prefixPatterns := []string{
-		"device.usp.v1.",
-		"mqtt-adapter.usp.v1.",
-		"ws-adapter.usp.v1.",
-		"stomp-adapter.usp.v1.",
-	}
-	for _, prefix := range prefixPatterns {
-		if strings.HasPrefix(subject, prefix) {
-			serial := strings.TrimPrefix(subject, prefix)
-			serial = strings.TrimSuffix(serial, ".api")
-			return serial
+	// Find "v1" position, then tenant is at v1+1, serial at v1+2
+	for i, p := range parts {
+		if p == "v1" && i+3 < len(parts) {
+			// parts[i+1] = tenant, parts[i+2] = serial, parts[i+3] = type
+			return parts[i+2]
 		}
 	}
 
