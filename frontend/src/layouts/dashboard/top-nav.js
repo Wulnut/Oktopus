@@ -3,6 +3,7 @@ import BellIcon from '@heroicons/react/24/solid/BellIcon';
 import UsersIcon from '@heroicons/react/24/solid/UsersIcon';
 import PhoneIcon from '@heroicons/react/24/solid/PhoneIcon';
 import Bars3Icon from '@heroicons/react/24/solid/Bars3Icon';
+import Cog6ToothIcon from '@heroicons/react/24/solid/Cog6ToothIcon';
 import MagnifyingGlassIcon from '@heroicons/react/24/solid/MagnifyingGlassIcon';
 import {
   Avatar,
@@ -31,6 +32,7 @@ import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 import { alpha } from '@mui/material/styles';
 import { usePopover } from 'src/hooks/use-popover';
 import { AccountPopover } from './account-popover';
+import { SettingsDrawer } from './settings-drawer';
 import { useAuth } from 'src/hooks/use-auth';
 import { useTenant } from 'src/contexts/tenant-context';
 import { WsContext } from 'src/contexts/socketio-context';
@@ -48,6 +50,7 @@ export const TopNav = (props) => {
   const { answerCall, call, callAccepted } = useContext(WsContext);
   const [tenantList, setTenantList] = useState([]);
   const [tenantName, setTenantName] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!auth.user?.token) return;
@@ -180,6 +183,13 @@ export const TopNav = (props) => {
                 </Badge>
               </IconButton>
             </Tooltip>*/}
+            <Tooltip title="Settings">
+              <IconButton onClick={() => setSettingsOpen(true)}>
+                <SvgIcon fontSize="small">
+                  <Cog6ToothIcon />
+                </SvgIcon>
+              </IconButton>
+            </Tooltip>
             <Avatar
               onClick={accountPopover.handleOpen}
               ref={accountPopover.anchorRef}
@@ -258,6 +268,10 @@ export const TopNav = (props) => {
         anchorEl={accountPopover.anchorRef.current}
         open={accountPopover.open}
         onClose={accountPopover.handleClose}
+      />
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
     </>
   );
