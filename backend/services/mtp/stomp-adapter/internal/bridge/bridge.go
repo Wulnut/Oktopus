@@ -105,14 +105,15 @@ func (b *Bridge) StartBridge() {
 					if len(fmtBody) == 2 {
 						deviceQueue := strings.Split(fmtBody[0], "/")
 						device := deviceQueue[len(deviceQueue)-1]
+						tenant := extractTenantFromDestination(fmtBody[0])
 						status := fmtBody[1]
-						log.Printf("[STOMP] Device status update: device=%s, status=%s", device, status)
-						b.Pub(NATS_STOMP_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".status", []byte(status))
+						log.Printf("[STOMP] Device status update: device=%s, tenant=%s, status=%s", device, tenant, status)
+						b.Pub(NATS_STOMP_SUBJECT_PREFIX+tenant+"."+device+".status", []byte(status))
 						
 						// Handle persistent subscriptions based on device status
 						if status == "1" {
 							// Device is online - create persistent subscription for async messages
-							b.createAsyncSubscription(device, conn)
+							b.createAsyncSubscription(device, tenant, conn)
 						} else if status == "0" {
 							// Device is offline - remove persistent subscription
 							b.removeAsyncSubscription(device)
@@ -151,7 +152,7 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		device := subj[len(subj)-2]
 		tenant := extractTenantFromSubject(msg.Subject)
 
-		deviceInfoQueue := STOMP_QUEUE_PREFIX + "controller/" + device + "/info"
+		deviceInfoQueue := STOMP_QUEUE_PREFIX + tenant + "/controller/" + device + "/info"
 
 		sub, err := st.Subscribe(deviceInfoQueue, stomp.AckAuto)
 		if err != nil {
@@ -160,7 +161,7 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		}
 		log.Println("Subscribed to", deviceInfoQueue)
 
-		err = st.Send(STOMP_QUEUE_PREFIX+"agent/"+device, "application/vnd.bbf.usp.msg", msg.Data, func(f *frame.Frame) error {
+		err = st.Send(STOMP_QUEUE_PREFIX+tenant+"/agent/"+device, "application/vnd.bbf.usp.msg", msg.Data, func(f *frame.Frame) error {
 			f.Header.Set("reply-to-dest", deviceInfoQueue)
 			return nil
 		})
@@ -192,8 +193,8 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		device := subj[len(subj)-2]
 		tenant := extractTenantFromSubject(msg.Subject)
 
-		deviceApiQueue := STOMP_QUEUE_PREFIX + "controller/" + device + "/api"
-		agentQueue := STOMP_QUEUE_PREFIX + "agent/" + device
+		deviceApiQueue := STOMP_QUEUE_PREFIX + tenant + "/controller/" + device + "/api"
+		agentQueue := STOMP_QUEUE_PREFIX + tenant + "/agent/" + device
 
 		log.Printf("[STOMP] Creating temporary subscription for device %s on queue %s", device, deviceApiQueue)
 		sub, err := st.Subscribe(deviceApiQueue, stomp.AckAuto)
@@ -263,6 +264,19 @@ func extractTenantFromSubject(subject string) string {
 	return DEFAULT_TENANT
 }
 
+// extractTenantFromDestination extracts tenant slug from STOMP destination path.
+// New format: oktopus/usp/v1/<tenant>/agent/<endpoint_id> (6 parts, tenant at index 3)
+// Old format: oktopus/usp/v1/agent/<endpoint_id> (5 parts, no tenant)
+func extractTenantFromDestination(destination string) string {
+	parts := strings.Split(destination, "/")
+	// New format has 6+ parts with tenant at index 3
+	if len(parts) >= 6 && (parts[4] == "agent" || parts[4] == "controller") {
+		return parts[3]
+	}
+	// Old format or unknown — fall back to default
+	return DEFAULT_TENANT
+}
+
 func respondMsg(respond func(data []byte) error, code int, msgData any) {
 
 	msg, err := json.Marshal(msgAnswer{
@@ -298,26 +312,26 @@ func tcpInfo(conn *net.TCPConn) (*unix.TCPInfo, error) {
 }
 
 // createAsyncSubscription creates a persistent subscription to receive async messages (STOMPConnect, MQTTConnect, Disconnect, NOTIFY) from a device
-func (b *Bridge) createAsyncSubscription(device string, conn *stomp.Conn) {
+func (b *Bridge) createAsyncSubscription(device, tenant string, conn *stomp.Conn) {
 	b.asyncSubsMu.Lock()
 	defer b.asyncSubsMu.Unlock()
-	
+
 	// Check if subscription already exists
 	if _, exists := b.asyncSubs[device]; exists {
 		return
 	}
-	
-	asyncQueue := STOMP_QUEUE_PREFIX + "controller/" + device + "/async"
+
+	asyncQueue := STOMP_QUEUE_PREFIX + tenant + "/controller/" + device + "/async"
 	log.Printf("[STOMP] Creating async subscription for device %s on queue %s", device, asyncQueue)
 	sub, err := conn.Subscribe(asyncQueue, stomp.AckAuto)
 	if err != nil {
 		log.Printf("[STOMP] ERROR: Failed to create async subscription for device %s: %v", device, err)
 		return
 	}
-	
+
 	b.asyncSubs[device] = sub
 	log.Printf("[STOMP] Async subscription created for device %s", device)
-	go b.handleAsyncMessages(device, sub)
+	go b.handleAsyncMessages(device, tenant, sub)
 }
 
 // removeAsyncSubscription removes the persistent async subscription for a device
@@ -338,7 +352,7 @@ func (b *Bridge) removeAsyncSubscription(device string) {
 }
 
 // handleAsyncMessages handles incoming async messages (STOMPConnect, MQTTConnect, Disconnect, NOTIFY) from a device's persistent subscription
-func (b *Bridge) handleAsyncMessages(device string, sub *stomp.Subscription) {
+func (b *Bridge) handleAsyncMessages(device, tenant string, sub *stomp.Subscription) {
 	for {
 		if !sub.Active() {
 			b.asyncSubsMu.Lock()
@@ -357,7 +371,7 @@ func (b *Bridge) handleAsyncMessages(device string, sub *stomp.Subscription) {
 			}
 			
 			log.Printf("[STOMP] Received async message from device %s, size=%d bytes", device, len(msg.Body))
-			err := b.Pub(NATS_STOMP_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".async", msg.Body)
+			err := b.Pub(NATS_STOMP_SUBJECT_PREFIX+tenant+"."+device+".async", msg.Body)
 			if err != nil {
 				log.Printf("[STOMP] ERROR: Failed to publish async message for device %s: %v", device, err)
 			}
