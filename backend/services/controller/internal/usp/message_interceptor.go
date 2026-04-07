@@ -48,13 +48,16 @@ func StartMessageInterceptor(ctx context.Context, nc *nats.Conn, database *db.Da
 	}
 
 	// Subscribe to all device-to-controller subjects
-	_, err := nc.Subscribe("device.usp.v1.>", func(msg *nats.Msg) {
+	sub, err := nc.Subscribe("device.usp.v1.>", func(msg *nats.Msg) {
+		log.Printf("[interceptor-RECV] subject=%s size=%d", msg.Subject, len(msg.Data))
 		tenantSlug := extractTenantSlug(msg.Subject)
 		d := database.ForTenant(tenantSlug)
 		go handleReceivedMessage(ctx, msg, nc, d, controllerID)
 	})
 	if err != nil {
 		log.Printf("Failed to subscribe to device.usp.v1.>: %v", err)
+	} else {
+		log.Printf("Subscribed to device.usp.v1.> (sub=%v, valid=%v)", sub.Subject, sub.IsValid())
 	}
 
 	// Subscribe to MTP-specific subjects for received messages

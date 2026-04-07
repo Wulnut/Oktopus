@@ -113,18 +113,18 @@ func (t *TenantDB) GetMessageHistory(ctx context.Context, deviceSerial string, l
 			}
 
 			if hasUnknown && len(sources) > 0 {
-
-				// Mix of known sources and unknown - use $in with all values including nil and empty
-				allSources := make([]interface{}, len(sources)+2)
+				// Mix of known sources and unknown
+				allSources := make([]interface{}, len(sources)+3)
 				for i, s := range sources {
 					allSources[i] = s
 				}
-				allSources[len(sources)] = nil
-				allSources[len(sources)+1] = ""
+				allSources[len(sources)] = "unknown"
+				allSources[len(sources)+1] = nil
+				allSources[len(sources)+2] = ""
 				filter["source"] = bson.M{"$in": allSources}
 			} else if hasUnknown {
 				// Only unknown selected
-				filter["source"] = bson.M{"$in": []interface{}{nil, ""}}
+				filter["source"] = bson.M{"$in": []interface{}{"unknown", nil, ""}}
 			} else {
 				// Only known sources selected
 				filter["source"] = bson.M{"$in": sources}
@@ -148,17 +148,18 @@ func (t *TenantDB) GetMessageHistory(ctx context.Context, deviceSerial string, l
 			}
 
 			if hasUnknown && len(mtps) > 0 {
-				// Mix of known MTPs and unknown - use $in with all values including nil and empty
-				allMtps := make([]interface{}, len(mtps)+2)
+				// Mix of known MTPs and unknown
+				allMtps := make([]interface{}, len(mtps)+3)
 				for i, m := range mtps {
 					allMtps[i] = m
 				}
-				allMtps[len(mtps)] = nil
-				allMtps[len(mtps)+1] = ""
+				allMtps[len(mtps)] = "unknown"
+				allMtps[len(mtps)+1] = nil
+				allMtps[len(mtps)+2] = ""
 				filter["mtp"] = bson.M{"$in": allMtps}
 			} else if hasUnknown {
 				// Only unknown selected
-				filter["mtp"] = bson.M{"$in": []interface{}{nil, ""}}
+				filter["mtp"] = bson.M{"$in": []interface{}{"unknown", nil, ""}}
 			} else {
 				// Only known MTPs selected
 				filter["mtp"] = bson.M{"$in": mtps}
