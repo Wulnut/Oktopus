@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 const SettingsContext = createContext({
-  themeMode: 'light',
+  themeMode: 'dark',
   setThemeMode: () => {},
 });
 
 export function SettingsProvider({ children }) {
-  const [themeMode, setThemeModeState] = useState('light');
+  const [themeMode, setThemeModeState] = useState('dark');
 
   useEffect(() => {
     const stored = window.localStorage.getItem('themeMode');
