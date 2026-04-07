@@ -162,6 +162,13 @@ func handleReceivedMessage(ctx context.Context, msg *nats.Msg, nc *nats.Conn, d 
 			return
 		}
 
+		// If MTP is unknown (response on device.usp.v1.*), look up from matching sent message
+		if mtp == "unknown" && uspMsg.Header != nil && uspMsg.Header.MsgId != "" {
+			if sentMsg, err := d.FindMessageByMsgID(ctx, deviceSerial, uspMsg.Header.MsgId); err == nil && sentMsg.MTP != "" && sentMsg.MTP != "unknown" {
+				mtp = sentMsg.MTP
+			}
+		}
+
 		// Validate message
 		if err := validateMessage(uspMsg, deviceSerial); err != nil {
 			log.Printf("ERROR: Message validation failed for device %s: %v", deviceSerial, err)

@@ -58,6 +58,17 @@ func escapeRegex(s string) string {
 	return result
 }
 
+// FindMessageByMsgID finds a stored message by its USP msg_id for a device.
+// Used to look up the MTP of a sent message when storing the matching response.
+func (t *TenantDB) FindMessageByMsgID(ctx context.Context, deviceSerial, msgID string) (UspMessage, error) {
+	var msg UspMessage
+	err := t.Messages().FindOne(ctx, bson.M{
+		"device_serial": deviceSerial,
+		"msg_id":        msgID,
+	}).Decode(&msg)
+	return msg, err
+}
+
 // StoreUspMessage stores a USP message in the database
 func (t *TenantDB) StoreUspMessage(ctx context.Context, msg UspMessage) error {
 	_, err := t.Messages().InsertOne(ctx, msg)
