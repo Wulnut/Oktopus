@@ -29,7 +29,7 @@ export function createComponents(config) {
           borderRadius: '12px',
           textTransform: 'none',
           '&:hover': {
-            backgroundColor: palette.mode === 'dark' ? '#e0733f' : palette.primary.main,
+            backgroundColor: palette.mode === 'dark' ? '#4da3b8' : palette.primary.main,
             color: palette.primary.contrastText
           },
         },

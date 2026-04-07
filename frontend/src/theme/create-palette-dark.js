@@ -3,12 +3,12 @@ import { error, indigo, info, neutral, success, warning, graphics } from './colo
 
 const getDarkColorScheme = () => {
   return JSON.stringify({
-    "buttons": "#d4622e",
-    "sidebar_end": "#305a85",
+    "buttons": "#3d8b9e",
+    "sidebar_end": "#1a2332",
     "sidebar_initial": "#0E1320",
     "tables": "#1A2332",
     "words_outside_sidebar": "#EDF2F7",
-    "connected_mtps_color": "#c05521"
+    "connected_mtps_color": "#3d8b9e"
   });
 };
 
