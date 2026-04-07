@@ -4,109 +4,15 @@ import (
 	"context"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/entity"
-	local "github.com/leandrofars/oktopus/internal/nats"
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
 	"github.com/leandrofars/oktopus/internal/usp/usp_record"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/protobuf/proto"
 )
-
-// Device MTP cache with TTL
-type deviceMTPCache struct {
-	mu    sync.RWMutex
-	cache map[string]cacheEntry
-}
-
-type cacheEntry struct {
-	mtp       string
-	expiresAt time.Time
-}
-
-var mtpCache = &deviceMTPCache{
-	cache: make(map[string]cacheEntry),
-}
-
-const cacheTTL = 30 * time.Second // Cache device MTP for 30 seconds
-
-// getDeviceMTP gets the MTP for a device, using cache if available
-func getDeviceMTP(ctx context.Context, nc *nats.Conn, deviceSerial string) string {
-	// Check cache first
-	mtpCache.mu.RLock()
-	if entry, ok := mtpCache.cache[deviceSerial]; ok {
-		if time.Now().Before(entry.expiresAt) {
-			mtpCache.mu.RUnlock()
-			return entry.mtp
-		}
-		// Cache expired, remove it
-		delete(mtpCache.cache, deviceSerial)
-	}
-	mtpCache.mu.RUnlock()
-
-	// Query device info via NATS
-	// TODO: pass tenant slug when message interceptor becomes tenant-aware
-	msg, err := bridge.NatsReqWithoutHttpSet[entity.Device](
-		local.NatsAdapterSubject("default")+deviceSerial+".device",
-		[]byte(""),
-		nc,
-	)
-	if err != nil || msg == nil {
-		// If query fails, return "unknown" and cache it briefly to avoid repeated queries
-		mtpCache.mu.Lock()
-		mtpCache.cache[deviceSerial] = cacheEntry{
-			mtp:       "unknown",
-			expiresAt: time.Now().Add(5 * time.Second), // Cache "unknown" for shorter time
-		}
-		mtpCache.mu.Unlock()
-		return "unknown"
-	}
-
-	device := msg.Msg
-	var mtp string
-
-	// Check which MTPs are online
-	// Note: If multiple MTPs are active, we can't determine which one was used
-	// for a specific message since all adapters publish to device.usp.v1.{sn}.api
-	// We return the first active MTP found (priority: MQTT > WS > STOMP)
-	// This is a limitation when devices are connected via multiple MTPs simultaneously
-	var activeMTPs []string
-	if device.Mqtt == entity.Online {
-		activeMTPs = append(activeMTPs, entity.Mqtt)
-	}
-	if device.Websockets == entity.Online {
-		activeMTPs = append(activeMTPs, entity.Websockets)
-	}
-	if device.Stomp == entity.Online {
-		activeMTPs = append(activeMTPs, entity.Stomp)
-	}
-
-	if len(activeMTPs) == 0 {
-		mtp = "unknown"
-	} else if len(activeMTPs) == 1 {
-		mtp = activeMTPs[0]
-	} else {
-		// Multiple MTPs active: return first one (priority order)
-		// Could also return comma-separated list like "mqtt,stomp" if needed
-		mtp = activeMTPs[0]
-		// Log warning for debugging
-		log.Printf("Device %s has multiple active MTPs: %v, using %s for message history", deviceSerial, activeMTPs, mtp)
-	}
-
-	// Cache the result
-	mtpCache.mu.Lock()
-	mtpCache.cache[deviceSerial] = cacheEntry{
-		mtp:       mtp,
-		expiresAt: time.Now().Add(cacheTTL),
-	}
-	mtpCache.mu.Unlock()
-
-	return mtp
-}
 
 // extractTenantSlug extracts tenant slug from NATS subject.
 // Format: <prefix>.usp.v1.<tenant>.<serial>.<type>
@@ -350,11 +256,9 @@ func extractMTP(ctx context.Context, subject string, nc *nats.Conn, deviceSerial
 		return entity.Websockets
 	}
 
-	// For device subjects: look up device MTP from device registry
+	// For device subjects: MTP can't be determined from subject alone.
+	// The sent message already captured MTP from the adapter-specific subject.
 	if strings.HasPrefix(subject, "device.usp.v1.") {
-		if nc != nil && deviceSerial != "" && deviceSerial != "unknown" {
-			return getDeviceMTP(ctx, nc, deviceSerial)
-		}
 		return "unknown"
 	}
 
