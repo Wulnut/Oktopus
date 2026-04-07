@@ -3,7 +3,7 @@ import { error, indigo, info, neutral, success, warning, graphics } from './colo
 
 const getDarkColorScheme = () => {
   return JSON.stringify({
-    "buttons": "#c05521",
+    "buttons": "#d4622e",
     "sidebar_end": "#305a85",
     "sidebar_initial": "#0E1320",
     "tables": "#1A2332",

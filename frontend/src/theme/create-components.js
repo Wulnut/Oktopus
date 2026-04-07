@@ -29,7 +29,7 @@ export function createComponents(config) {
           borderRadius: '12px',
           textTransform: 'none',
           '&:hover': {
-            backgroundColor: palette.primary.main,
+            backgroundColor: palette.mode === 'dark' ? '#e0733f' : palette.primary.main,
             color: palette.primary.contrastText
           },
         },
@@ -155,12 +155,12 @@ export function createComponents(config) {
     MuiFilledInput: {
       styleOverrides: {
         root: {
-          backgroundColor: 'transparent',
+          backgroundColor: palette.mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'transparent',
           borderRadius: 8,
           borderStyle: 'solid',
           borderWidth: 1,
           overflow: 'hidden',
-          borderColor: palette.neutral[200],
+          borderColor: palette.mode === 'dark' ? palette.divider : palette.neutral[200],
           transition: muiTheme.transitions.create([
             'border-color',
             'box-shadow'
@@ -197,10 +197,11 @@ export function createComponents(config) {
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
+          backgroundColor: palette.mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'transparent',
           '&:hover': {
             backgroundColor: palette.action.hover,
             [`& .${outlinedInputClasses.notchedOutline}`]: {
-              borderColor: palette.neutral[200]
+              borderColor: palette.mode === 'dark' ? '#4A5568' : palette.neutral[200]
             }
           },
           [`&.${outlinedInputClasses.focused}`]: {
@@ -223,7 +224,7 @@ export function createComponents(config) {
           lineHeight: '24px',
         },
         notchedOutline: {
-          borderColor: palette.neutral[200],
+          borderColor: palette.mode === 'dark' ? palette.divider : palette.neutral[200],
           transition: muiTheme.transitions.create([
             'border-color',
             'box-shadow'
