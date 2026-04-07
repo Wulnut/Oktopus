@@ -693,7 +693,7 @@ export const DevicesDiscovery = () => {
               </IconButton>
             )
           }
-          sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;' }}
+          sx={{ boxShadow: (theme) => theme.shadows[2] }}
         >
           <ListItemText primary={renderPathBreadcrumb()} />
         </ListItem>
@@ -732,7 +732,7 @@ export const DevicesDiscovery = () => {
         <List component="div" disablePadding dense key={displayName}>
           <ListItem
             divider
-            sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
             secondaryAction={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 {canAdd && (
@@ -775,7 +775,7 @@ export const DevicesDiscovery = () => {
       <List component="div" disablePadding dense key={p.param_name}>
         <ListItem
           divider
-          sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+          sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
           secondaryAction={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <ValueDisplay value={deviceParametersValue[p.param_name]?.value} />
@@ -808,7 +808,7 @@ export const DevicesDiscovery = () => {
       <List component="div" disablePadding dense key={cmd.command_name + '__' + pathPrefix}>
         <ListItem
           divider
-          sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+          sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
           secondaryAction={
             <IconButton onClick={() => {
               setDeviceCommandToExecute({
@@ -852,7 +852,7 @@ export const DevicesDiscovery = () => {
         <List dense key={instanceKey}>
           <ListItem
             divider
-            sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 2, backgroundColor: 'rgba(0,0,0,0.02)' }}
+            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 2, backgroundColor: 'action.hover' }}
             secondaryAction={
               canDelete && (
                 <IconButton onClick={() => deleteDeviceObj(instanceKey)}>
@@ -872,7 +872,7 @@ export const DevicesDiscovery = () => {
               <List component="div" disablePadding dense key={paramName}>
                 <ListItem
                   divider
-                  sx={{ boxShadow: 'rgba(149, 157, 165, 0.2) 0px 0px 5px;', pl: 4 }}
+                  sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
                   secondaryAction={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <ValueDisplay value={paramData.value} />
@@ -981,7 +981,7 @@ export const DevicesDiscovery = () => {
         <Dialog
           open
           onClose={closeAddDialog}
-          slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+          slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}
           fullWidth
           maxWidth="sm"
         >
@@ -1044,7 +1044,7 @@ export const DevicesDiscovery = () => {
         <Dialog
           open
           onClose={() => setAddResult(null)}
-          slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+          slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}
           fullWidth
           maxWidth="md"
           scroll="paper"
@@ -1061,7 +1061,7 @@ export const DevicesDiscovery = () => {
             <pre style={{
               margin: 0,
               padding: '12px',
-              backgroundColor: '#f5f5f5',
+              backgroundColor: 'action.hover',
               borderRadius: '4px',
               overflow: 'auto',
               fontSize: '13px',
@@ -1089,7 +1089,7 @@ export const DevicesDiscovery = () => {
       )}
 
       {/* Parameter Edit Dialog */}
-      <Dialog open={open} slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}>
+      <Dialog open={open} slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}>
         <DialogContent>
           <DialogContentText>{parameter}</DialogContentText>
           <TextField
@@ -1112,7 +1112,7 @@ export const DevicesDiscovery = () => {
       {/* Error/Response Modal */}
       <Dialog
         open={errorModal}
-        slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+        slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}
         fullWidth
         maxWidth="md"
         scroll="paper"
@@ -1129,7 +1129,7 @@ export const DevicesDiscovery = () => {
         </DialogTitle>
         <DialogContent dividers>
           <DialogContentText tabIndex={-1}>
-            <pre style={{ color: 'black' }}>{errorModalText}</pre>
+            <pre style={{ color: 'inherit' }}>{errorModalText}</pre>
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -1141,7 +1141,7 @@ export const DevicesDiscovery = () => {
       {deviceCommandToExecute && (
         <Dialog
           open={openCommandDialog}
-          slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+          slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}
           fullWidth
           maxWidth="md"
           scroll="paper"

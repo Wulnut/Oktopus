@@ -2127,13 +2127,13 @@ export const DevicesLCM = () => {
                                     position: 'relative',
                                     opacity: isOperating ? 0.5 : 1,
                                     transition: 'opacity 0.3s ease-in-out',
-                                    backgroundColor: isOperating ? 'rgba(255, 152, 0, 0.1)' : 'rgba(0, 0, 0, 0.02)',
+                                    backgroundColor: isOperating ? 'rgba(255, 152, 0, 0.1)' : 'action.hover',
                                     backgroundImage: isOperating ? 'linear-gradient(90deg, transparent, rgba(255, 152, 0, 0.2), transparent)' : 'none',
                                     backgroundSize: isOperating ? '200% 100%' : 'auto',
                                     animation: isOperating ? `${shimmer} 2s infinite linear` : 'none',
                                     cursor: 'pointer',
                                     '&:hover': {
-                                      backgroundColor: isOperating ? 'rgba(255, 152, 0, 0.15)' : 'rgba(0, 0, 0, 0.05)',
+                                      backgroundColor: isOperating ? 'rgba(255, 152, 0, 0.15)' : 'action.selected',
                                     },
                                   }}
                                 >
@@ -2992,7 +2992,7 @@ export const DevicesLCM = () => {
                         minHeight: 0,
                         height: '100%',
                         alignItems: 'stretch',
-                        backgroundColor: '#f5f5f5',
+                        backgroundColor: 'action.hover',
                       },
                       '& .MuiInputBase-input': {
                         flex: 1,
@@ -3003,7 +3003,7 @@ export const DevicesLCM = () => {
                         padding: '16px !important',
                       },
                       '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(0, 0, 0, 0.23)',
+                        borderColor: 'divider',
                       },
                     }}
                   />

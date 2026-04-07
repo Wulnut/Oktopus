@@ -266,7 +266,7 @@ export const DevicesWiFi = () => {
             <CircularProgress color="inherit" />
         </Backdrop>
         <Dialog open={errorModal && errorModalText != ""}
-            slotProps={{ backdrop: { style: { backgroundColor: 'rgba(255,255,255,0.5)' } } }}
+            slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}
             fullWidth={true}
             maxWidth={"md"}
             scroll={"paper"}
@@ -291,7 +291,7 @@ export const DevicesWiFi = () => {
             </DialogTitle>
             <DialogContent dividers={scroll === 'paper'}>
                 <DialogContentText id="scroll-dialog-description" tabIndex={-1}>
-                    <pre style={{ color: 'black' }}>
+                    <pre style={{ color: 'inherit' }}>
                         {errorModalText}
                     </pre>
                 </DialogContentText>

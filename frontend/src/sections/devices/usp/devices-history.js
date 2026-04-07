@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useTheme, alpha } from '@mui/material/styles';
 import {
   Card,
   CardContent,
@@ -88,26 +89,27 @@ const formatTimeAgo = (timestamp) => {
   return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
 };
 
-// JSON value colors
-const JSON_COLORS = {
-  null: { color: '#999', fontStyle: 'italic' },
-  string: { color: '#0B7500' },
-  number: { color: '#1A01CC' },
-  boolean: { color: '#1A01CC' },
-};
+// JSON value colors (theme-aware)
+const getJsonColors = (isDark) => ({
+  null: { color: isDark ? '#ABB2BF' : '#999', fontStyle: 'italic' },
+  string: { color: isDark ? '#98C379' : '#0B7500' },
+  number: { color: isDark ? '#61AFEF' : '#1A01CC' },
+  boolean: { color: isDark ? '#61AFEF' : '#1A01CC' },
+  key: isDark ? '#C678DD' : '#881391',
+});
 
 // Common styles
 const commonStyles = {
   typography: { fontFamily: 'monospace', variant: 'body2' },
   collapsed: {
-    color: '#666',
+    color: 'text.secondary',
     cursor: 'pointer',
     '&:hover': { textDecoration: 'underline' },
   },
   expandable: {
     cursor: 'pointer',
     userSelect: 'none',
-    '&:hover': { backgroundColor: 'rgba(0,0,0,0.04)' },
+    '&:hover': { backgroundColor: 'action.hover' },
     borderRadius: 0.5,
   },
 };
@@ -152,6 +154,9 @@ const MTPS = [
 export const DevicesHistory = () => {
   const router = useRouter();
   const { httpRequest, apiPrefix } = useBackendContext();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const syntaxColors = useMemo(() => getJsonColors(isDark), [isDark]);
   const deviceID = router.query.id?.[0];
 
   const [messages, setMessages] = useState([]);
@@ -1009,13 +1014,13 @@ export const DevicesHistory = () => {
     let content, style;
     if (value === null || value === undefined) {
       content = 'null';
-      style = JSON_COLORS.null;
+      style = syntaxColors.null;
     } else if (typeof value === 'string') {
       content = `"${value}"`;
-      style = JSON_COLORS.string;
+      style = syntaxColors.string;
     } else if (typeof value === 'number' || typeof value === 'boolean') {
       content = String(value);
-      style = JSON_COLORS.number;
+      style = syntaxColors.number;
     } else {
       return null;
     }
@@ -1074,7 +1079,7 @@ export const DevicesHistory = () => {
           }}
           sx={{
             cursor: 'pointer',
-            '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.1)' },
+            '&:hover': { backgroundColor: 'action.selected' },
             borderRadius: '2px',
             padding: '0 2px',
           }}
@@ -1099,7 +1104,7 @@ export const DevicesHistory = () => {
               }}
               sx={{
                 cursor: 'pointer',
-                '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.1)' },
+                '&:hover': { backgroundColor: 'action.selected' },
                 borderRadius: '2px',
                 padding: '0 2px',
               }}
@@ -1143,7 +1148,7 @@ export const DevicesHistory = () => {
                 return (
                   <Box key={index} sx={{ mb: 0.5 }}>
                     <Box sx={{ pl: `${itemIndent}px`, display: 'flex', alignItems: 'flex-start' }}>
-                      <Typography component="span" {...commonStyles.typography} sx={{ color: '#666', display: 'inline-flex', alignItems: 'baseline' }}>
+                      <Typography component="span" {...commonStyles.typography} sx={{ color: 'text.secondary', display: 'inline-flex', alignItems: 'baseline' }}>
                         [{index}]:
                         {!isExpandable && (
                           <span style={{ marginLeft: '4px' }}>
@@ -1172,7 +1177,7 @@ export const DevicesHistory = () => {
                   }}
                   sx={{
                     cursor: 'pointer',
-                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.1)' },
+                    '&:hover': { backgroundColor: 'action.selected' },
                     borderRadius: '2px',
                     padding: '0 2px',
                   }}
@@ -1195,7 +1200,7 @@ export const DevicesHistory = () => {
       if (keys.length === 0) {
         return (
           <Box sx={{ pl: `${indent}px`, display: 'inline-block' }}>
-            <span style={{ color: '#999' }}>{'{}'}</span>
+            <span style={{ color: isDark ? '#ABB2BF' : '#999' }}>{'{}'}</span>
           </Box>
         );
       }
@@ -1220,7 +1225,7 @@ export const DevicesHistory = () => {
                   <Box key={key} sx={{ mb: 0.5 }}>
                     <Box sx={{ pl: `${childIndent}px`, display: 'flex', alignItems: 'flex-start' }}>
                       <Typography component="span" {...commonStyles.typography} sx={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'baseline' }}>
-                        <span style={{ color: '#881391' }}>"{key}"</span>:
+                        <span style={{ color: syntaxColors.key }}>"{key}"</span>:
                         {!isExpandable && (
                           <span style={{ marginLeft: '4px' }}>
                             {renderJsonTree(value, keyPath, 0)}
@@ -1258,7 +1263,7 @@ export const DevicesHistory = () => {
                   }}
                   sx={{
                     cursor: 'pointer',
-                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.1)' },
+                    '&:hover': { backgroundColor: 'action.selected' },
                     borderRadius: '2px',
                     padding: '0 2px',
                   }}
@@ -1351,7 +1356,7 @@ export const DevicesHistory = () => {
         )}
         <TableContainer component={Paper} sx={{ position: 'relative' }}>
           {loading && messages.length === 0 && (
-            <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.7)', zIndex: 1 }}>
+            <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: (t) => alpha(t.palette.background.paper, 0.7), zIndex: 1 }}>
               <CircularProgress />
             </Box>
           )}
@@ -1514,7 +1519,7 @@ export const DevicesHistory = () => {
                           minHeight: 0,
                           height: '100%',
                           alignItems: 'stretch',
-                          backgroundColor: '#f5f5f5',
+                          backgroundColor: 'action.hover',
                         },
                         '& .MuiInputBase-input': {
                           flex: 1,
@@ -1525,13 +1530,13 @@ export const DevicesHistory = () => {
                           padding: '16px !important',
                         },
                         '& .MuiOutlinedInput-notchedOutline': {
-                          borderColor: 'rgba(0, 0, 0, 0.23)',
+                          borderColor: 'divider',
                         },
                       }}
                     />
                   </Box>
                 ) : (
-                  <Box sx={{ backgroundColor: '#f5f5f5', p: 2, borderRadius: 1, flex: 1, overflow: 'auto', fontFamily: 'monospace', fontSize: '0.75rem', minHeight: 0 }}>
+                  <Box sx={{ backgroundColor: 'action.hover', p: 2, borderRadius: 1, flex: 1, overflow: 'auto', fontFamily: 'monospace', fontSize: '0.75rem', minHeight: 0 }}>
                     {renderJsonTree(formattedMessage.full_record || {})}
                   </Box>
                 )}
@@ -1642,7 +1647,7 @@ export const DevicesHistory = () => {
                   </Button>
                 </Stack>
               </Box>
-              <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 1, p: 1.5 }}>
+              <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
                 <Grid container spacing={1}>
                   {MESSAGE_TYPES.map((types, index) => (
                     <Grid item xs={12} key={index}>
@@ -1667,7 +1672,7 @@ export const DevicesHistory = () => {
                               flex: 1, 
                               m: 0, 
                               fontSize: '0.75rem',
-                              border: '1px solid #e0e0e0',
+                              border: 1, borderColor: 'divider',
                               borderRadius: '4px',
                               padding: '4px 8px',
                               marginRight: '8px',
@@ -1691,7 +1696,7 @@ export const DevicesHistory = () => {
                               flex: 1, 
                               m: 0, 
                               fontSize: '0.75rem',
-                              border: '1px solid #e0e0e0',
+                              border: 1, borderColor: 'divider',
                               borderRadius: '4px',
                               padding: '4px 8px',
                               marginRight: '8px',
@@ -1717,7 +1722,7 @@ export const DevicesHistory = () => {
                           sx={{ 
                             m: 0, 
                             fontSize: '0.75rem',
-                            border: '1px solid #e0e0e0',
+                            border: 1, borderColor: 'divider',
                             borderRadius: '4px',
                             padding: '4px 8px',
                             marginRight: '8px',
@@ -1735,7 +1740,7 @@ export const DevicesHistory = () => {
               <Grid container spacing={2}>
                 <Grid item xs={6}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>Source</Typography>
-                  <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 1, p: 1.5 }}>
+                  <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
                     <Stack spacing={1}>
                       {SOURCES.map((source) => (
                         <FormControlLabel
@@ -1756,7 +1761,7 @@ export const DevicesHistory = () => {
                           sx={{ 
                             m: 0,
                             fontSize: '0.75rem',
-                            border: '1px solid #e0e0e0',
+                            border: 1, borderColor: 'divider',
                             borderRadius: '4px',
                             padding: '4px 8px',
                           }}
@@ -1793,7 +1798,7 @@ export const DevicesHistory = () => {
                 </Grid>
                 <Grid item xs={6}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>MTP</Typography>
-                  <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 1, p: 1.5 }}>
+                  <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
                     <Stack spacing={1}>
                       {MTPS.map((mtp) => (
                         <FormControlLabel
@@ -1814,7 +1819,7 @@ export const DevicesHistory = () => {
                           sx={{ 
                             m: 0,
                             fontSize: '0.75rem',
-                            border: '1px solid #e0e0e0',
+                            border: 1, borderColor: 'divider',
                             borderRadius: '4px',
                             padding: '4px 8px',
                           }}
@@ -1881,7 +1886,7 @@ export const DevicesHistory = () => {
                     fontSize: '0.75rem',
                     whiteSpace: 'nowrap',
                     flexShrink: 0,
-                    border: '1px solid #e0e0e0',
+                    border: 1, borderColor: 'divider',
                     borderRadius: '4px',
                     padding: '4px 8px',
                     marginRight: '8px',

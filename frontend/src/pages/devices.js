@@ -400,7 +400,7 @@ const Page = () => {
               </Grid>
               <Grid xs={4} item>
                 <Button
-                    sx={{ backgroundColor: "rgba(48, 109, 111, 0.04)" }}
+                    sx={{ bgcolor: 'action.hover' }}
                     onClick={() => { setShowFilter(true) }}
                   >
                     <SvgIcon>

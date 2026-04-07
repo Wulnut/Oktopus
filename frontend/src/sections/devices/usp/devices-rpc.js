@@ -329,7 +329,7 @@ const fetchMessages = async () => {
           title="Custom Message" 
           action={ 
           <Stack direction={"row"} spacing={1} width={"100%"} justifyContent={"flex-end"}>
-            <Button sx={{ backgroundColor: "rgba(48, 109, 111, 0.04)" }}
+            <Button sx={{ bgcolor: 'action.hover' }}
             endIcon={<SvgIcon><PlusCircleIcon /></SvgIcon>}
             onClick={()=>{setNewMessage(true)}}
             >
@@ -442,7 +442,7 @@ const fetchMessages = async () => {
             //ref={descriptionElementRef}
             tabIndex={-1}
           >
-          <pre style={{color: 'black'}}>
+          <pre style={{color: 'inherit'}}>
             {content}
           </pre>
           </DialogContentText>
