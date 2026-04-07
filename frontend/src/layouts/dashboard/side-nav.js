@@ -207,7 +207,9 @@ export const SideNav = (props) => {
         open
         PaperProps={{
           sx: {
-            background: `linear-gradient(120deg, ${theme.palette.neutral["800"]} 0%, ${theme.palette.primary.dark} 90%);`,
+            background: theme.palette.mode === 'dark'
+              ? `linear-gradient(120deg, ${theme.palette.background.paper} 0%, #1a2332 90%)`
+              : `linear-gradient(120deg, ${theme.palette.neutral["800"]} 0%, ${theme.palette.primary.dark} 90%)`,
             width: 280
           }
         }}
@@ -225,7 +227,9 @@ export const SideNav = (props) => {
       open={open}
       PaperProps={{
         sx: {
-          background: `linear-gradient(120deg, ${theme.palette.neutral["800"]} 0%, ${theme.palette.primary.dark}  90%);`,
+          background: theme.palette.mode === 'dark'
+            ? `linear-gradient(120deg, ${theme.palette.background.paper} 0%, #1a2332 90%)`
+            : `linear-gradient(120deg, ${theme.palette.neutral["800"]} 0%, ${theme.palette.primary.dark} 90%)`,
           color: 'common.white',
           width: 280
         }
