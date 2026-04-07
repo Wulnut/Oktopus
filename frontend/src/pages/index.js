@@ -208,7 +208,7 @@ const Page = () => {
                     label="Vendors"
                     value={vendorsTotal}
                     icon={<BuildingOfficeIcon />}
-                    color="warning.main"
+                    color="info.main"
                   />
                 </Grid>
 
