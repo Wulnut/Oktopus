@@ -222,7 +222,7 @@ func handleSentMessage(ctx context.Context, msg *nats.Msg, d *db.TenantDB, contr
 // handleReceivedMessage processes messages being received FROM devices
 func handleReceivedMessage(ctx context.Context, msg *nats.Msg, nc *nats.Conn, d *db.TenantDB, controllerID string) {
 	deviceSerial := extractDeviceSerial(msg.Subject)
-	
+
 	// Skip non-protobuf messages (e.g., status messages which are just "0" or "1")
 	if len(msg.Data) < 2 {
 		return
