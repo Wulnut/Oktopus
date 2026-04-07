@@ -97,7 +97,7 @@ export const OverviewCpeSettings = (props) => {
   const getParamsText = () => {
     if (!selectedProtocol) return '';
     const params = getProtocolParams(selectedProtocol, host, tenantSlug);
-    return params.map(([key, value]) => `${key}\t${value}`).join('\n');
+    return params.map(([key, value]) => `${key} ${value}`).join('\n');
   };
 
   const handleCopy = () => {
