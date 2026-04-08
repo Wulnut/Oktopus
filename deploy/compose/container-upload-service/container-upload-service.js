@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 // Minimal Node.js service for container uploads
 // Runs docker import, tag, and push commands
+//
+// SECURITY NOTE: This service prefixes all container images with the tenant slug
+// from the JWT (e.g., "prpl-test/my-container:v1.0"). This provides namespace
+// isolation at the naming level. However, the Docker Registry itself does NOT
+// enforce download authentication — any client that knows an image name can pull it.
+// This is acceptable because:
+// 1. Devices only pull URLs constructed by the controller
+// 2. The controller only constructs URLs with the correct tenant prefix
+// 3. The /_catalog endpoint requires auth (enforced by nginx)
+// See docs/SECURITY.md for full threat model.
 
 const http = require('http');
 const { formidable } = require('formidable');
@@ -12,6 +22,22 @@ const url = require('url');
 
 const PORT = process.env.UPLOAD_SERVICE_PORT || 8005;
 const REGISTRY = process.env.REGISTRY || '127.0.0.1:443';
+
+// Decode JWT payload (base64url) to extract tenant_slug.
+// Token was already verified by the controller/nginx — we just need the claims.
+function decodeTenantFromToken(authHeader) {
+  if (!authHeader) return null;
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
+    const claims = JSON.parse(payload);
+    return claims.tenant_slug || null;
+  } catch {
+    return null;
+  }
+}
 
 // Validate Docker image name (lowercase, digits, underscores, periods, hyphens)
 function validateImageName(name) {
@@ -88,6 +114,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
+      const tenantSlug = decodeTenantFromToken(authHeader);
+      if (!tenantSlug) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Forbidden: tenant context required. SuperAdmin must select a tenant.' }));
+        return;
+      }
+
       const parsedUrl = url.parse(req.url, true);
       const name = parsedUrl.query.name;
       const tag = parsedUrl.query.tag;
@@ -105,7 +138,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      console.log(`Deleting ${name}:${tag} from registry ${REGISTRY}`);
+      // SECURITY: Tenant prefix provides namespace isolation in the shared registry.
+      // See docs/SECURITY.md for known limitations on download-level enforcement.
+      const prefixedName = `${tenantSlug}/${name}`;
+
+      console.log(`Deleting ${prefixedName}:${tag} from registry ${REGISTRY}`);
 
       // TODO: Fix it in future - Properly handle host.docker.internal resolution
       // Current workaround: Using hardcoded gateway IP (172.17.0.1) because host.docker.internal
@@ -126,7 +163,7 @@ const server = http.createServer(async (req, res) => {
         manifestResponse = await httpsRequest({
           hostname: registryHost,
           port: parseInt(registryPort),
-          path: `/v2/${name}/manifests/${tag}`,
+          path: `/v2/${prefixedName}/manifests/${tag}`,
           method: 'HEAD',
           headers: {
             'Accept': 'application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.v1+json',
@@ -139,7 +176,7 @@ const server = http.createServer(async (req, res) => {
           manifestResponse = await httpsRequest({
             hostname: registryHost,
             port: parseInt(registryPort),
-            path: `/v2/${name}/manifests/${tag}`,
+            path: `/v2/${prefixedName}/manifests/${tag}`,
             method: 'HEAD',
             headers: {
               'Accept': 'application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.v1+json',
@@ -153,7 +190,7 @@ const server = http.createServer(async (req, res) => {
       if (manifestResponse.statusCode !== 200) {
         // Log more details for debugging
         console.error(`Manifest request failed: ${manifestResponse.statusCode}`, {
-          path: `/v2/${name}/manifests/${tag}`,
+          path: `/v2/${prefixedName}/manifests/${tag}`,
           hostname: registryHost,
           port: registryPort,
           body: manifestResponse.body?.substring(0, 200),
@@ -177,7 +214,7 @@ const server = http.createServer(async (req, res) => {
       const deleteResponse = await httpsRequest({
         hostname: registryHost,
         port: parseInt(registryPort),
-        path: `/v2/${name}/manifests/${digest}`,
+        path: `/v2/${prefixedName}/manifests/${digest}`,
         method: 'DELETE',
         headers: {
           'Accept': 'application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.v1+json',
@@ -191,13 +228,13 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Also try to delete local Docker image if it exists
-      const imageName = `${REGISTRY}/${name}:${tag}`;
+      const imageName = `${REGISTRY}/${prefixedName}:${tag}`;
       execCommand('docker', ['rmi', imageName]).catch(() => {});
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         message: 'Container deleted successfully',
-        name,
+        name: prefixedName,
         tag,
       }));
     } catch (err) {
@@ -219,6 +256,13 @@ const server = http.createServer(async (req, res) => {
   if (!authHeader) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+
+  const tenantSlug = decodeTenantFromToken(authHeader);
+  if (!tenantSlug) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Forbidden: tenant context required. SuperAdmin must select a tenant.' }));
     return;
   }
 
@@ -264,7 +308,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const imageName = `${name}:${tag}`;
+    // SECURITY: Tenant prefix provides namespace isolation in the shared registry.
+    // See docs/SECURITY.md for known limitations on download-level enforcement.
+    const prefixedName = `${tenantSlug}/${name}`;
+    const imageName = `${prefixedName}:${tag}`;
     const registryImage = `${REGISTRY}/${imageName}`;
 
     console.log(`Importing ${imageName} from ${file.filepath}`);
@@ -310,7 +357,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       message: 'Container uploaded and pushed successfully',
-      name,
+      name: prefixedName,
       tag,
       image: registryImage,
     }));

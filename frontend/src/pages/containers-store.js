@@ -40,6 +40,7 @@ import EllipsisVerticalIcon from '@heroicons/react/24/outline/EllipsisVerticalIc
 import ArrowUpTrayIcon from '@heroicons/react/24/outline/ArrowUpTrayIcon';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useBackendContext } from 'src/contexts/backend-context';
+import { useTenant } from 'src/contexts/tenant-context';
 import { useRouter } from 'next/router';
 
 // Parse version tag to numeric array for sorting
@@ -136,6 +137,7 @@ function sortTags(tags) {
 const Page = () => {
   const router = useRouter();
   const { httpRequest } = useBackendContext();
+  const { tenantSlug } = useTenant();
   const [containers, setContainers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -169,10 +171,13 @@ const Page = () => {
     setError(null);
     
     try {
+      const authHeaders = { 'Authorization': localStorage.getItem('token') };
+      const tenantPrefix = tenantSlug + '/';
+
       // Use nginx proxy to fetch from compose registry
       const catalogResponse = await fetch('/docker-registry/v2/_catalog', {
         method: 'GET',
-        credentials: 'omit',
+        headers: authHeaders,
       });
 
       if (!catalogResponse.ok) {
@@ -180,8 +185,13 @@ const Page = () => {
       }
 
       const catalogData = await catalogResponse.json();
-      
-      if (!catalogData.repositories || catalogData.repositories.length === 0) {
+
+      // Filter repos belonging to this tenant
+      const tenantRepos = (catalogData.repositories || []).filter(
+        repo => repo.startsWith(tenantPrefix)
+      );
+
+      if (tenantRepos.length === 0) {
         setContainers([]);
         setLoading(false);
         return;
@@ -189,26 +199,32 @@ const Page = () => {
 
       // Fetch tags for each repository
       const containersList = [];
-      
-      for (const repo of catalogData.repositories) {
+
+      for (const repo of tenantRepos) {
         try {
           const tagsResponse = await fetch(`/docker-registry/v2/${repo}/tags/list`, {
             method: 'GET',
-            credentials: 'omit',
+            headers: authHeaders,
           });
 
           if (tagsResponse.ok) {
             const tagsData = await tagsResponse.json();
-            const containerName = tagsData.name || repo;
+            const fullName = tagsData.name || repo;
             const rawTags = tagsData.tags || [];
-            
+
             // Only include containers that have tags
             if (rawTags.length > 0) {
               // Sort tags in descending order (newest first)
               const sortedTags = sortTags(rawTags);
-              
+
+              // Store full registry name for API calls, display name without prefix
+              const displayName = fullName.startsWith(tenantPrefix)
+                ? fullName.slice(tenantPrefix.length)
+                : fullName;
+
               containersList.push({
-                name: containerName,
+                name: fullName,
+                displayName,
                 tags: sortedTags,
               });
             }
@@ -242,7 +258,7 @@ const Page = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tenantSlug]);
 
   // Initial load
   useEffect(() => {
@@ -519,6 +535,10 @@ const Page = () => {
               </Button>
             </Stack>
 
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Registry server is currently exposed. Any tenant with network access can upload containers directly to other tenants' namespaces. This will be addressed in a future update.
+            </Alert>
+
             {error && (
               <Alert severity="error" onClose={() => setError(null)}>
                 {error}
@@ -563,7 +583,7 @@ const Page = () => {
                           
                           return (
                             <TableRow key={index}>
-                              <TableCell>{container.name}</TableCell>
+                              <TableCell>{container.displayName || container.name}</TableCell>
                               <TableCell>
                                 {hasTags ? (
                                   <Select
@@ -757,7 +777,7 @@ const Page = () => {
                 </MenuItem>
                 {containers.map((container) => (
                   <MenuItem key={container.name} value={container.name}>
-                    {container.name}
+                    {container.displayName || container.name}
                   </MenuItem>
                 ))}
               </Select>

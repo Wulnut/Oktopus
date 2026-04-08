@@ -41,6 +41,7 @@ import {
 } from '@mui/material';
 import { useRouter } from 'next/router';
 import { useBackendContext } from 'src/contexts/backend-context';
+import { useTenant } from 'src/contexts/tenant-context';
 import { keyframes } from '@mui/system';
 import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 import PlusCircleIcon from '@heroicons/react/24/outline/PlusCircleIcon';
@@ -226,6 +227,7 @@ const formatUptime = (seconds) => {
 export const DevicesLCM = () => {
   const router = useRouter();
   const { httpRequest, apiPrefix } = useBackendContext();
+  const { tenantSlug } = useTenant();
   const deviceID = router.query.id[0];
 
   const [deploymentUnits, setDeploymentUnits] = useState([]);
@@ -807,6 +809,8 @@ export const DevicesLCM = () => {
       // Use current browser hostname for docker:// URLs
       // The nginx proxy handles routing to the compose registry
       const registryHost = getDefaultRegistryUrl();
+      const authHeaders = { 'Authorization': localStorage.getItem('token') };
+      const tenantPrefix = tenantSlug + '/';
 
       // Use nginx proxy: /docker-registry/v2/_catalog
       // Nginx automatically proxies to compose registry
@@ -814,7 +818,7 @@ export const DevicesLCM = () => {
       const catalogProxyUrl = `/docker-registry/v2/_catalog`;
       const catalogResponse = await fetch(catalogProxyUrl, {
         method: 'GET',
-        credentials: 'omit',
+        headers: authHeaders,
       });
 
       if (!catalogResponse.ok) {
@@ -822,8 +826,13 @@ export const DevicesLCM = () => {
       }
 
       const catalogData = await catalogResponse.json();
-      
-      if (!catalogData.repositories || catalogData.repositories.length === 0) {
+
+      // Filter repos belonging to this tenant
+      const tenantRepos = (catalogData.repositories || []).filter(
+        repo => repo.startsWith(tenantPrefix)
+      );
+
+      if (tenantRepos.length === 0) {
         setDockerImages([]);
         setDockerImagesError(null);
         return;
@@ -831,12 +840,12 @@ export const DevicesLCM = () => {
 
       // Step 2: Fetch tags for each repository and group by container name
       const containersMap = new Map();
-      for (const repo of catalogData.repositories) {
+      for (const repo of tenantRepos) {
         try {
           const tagsProxyUrl = `/docker-registry/v2/${repo}/tags/list`;
           const tagsResponse = await fetch(tagsProxyUrl, {
             method: 'GET',
-            credentials: 'omit',
+            headers: authHeaders,
           });
 
           if (tagsResponse.ok) {
@@ -854,15 +863,16 @@ export const DevicesLCM = () => {
         }
       }
 
-      // Convert map to array of {name, tags}
+      // Convert map to array of {name (full registry name), displayName (without prefix), tags}
       const containers = Array.from(containersMap.entries()).map(([name, tags]) => ({
         name,
+        displayName: name.startsWith(tenantPrefix) ? name.slice(tenantPrefix.length) : name,
         tags,
       }));
 
       setDockerImages(containers);
       setDockerImagesError(null);
-      
+
       // If containers found, select first container and its newest tag
       if (containers.length > 0) {
         const firstContainer = containers[0];
@@ -928,7 +938,7 @@ export const DevicesLCM = () => {
       const tagsProxyUrl = `/docker-registry/v2/${containerName}/tags/list`;
       const tagsResponse = await fetch(tagsProxyUrl, {
         method: 'GET',
-        credentials: 'omit',
+        headers: { 'Authorization': localStorage.getItem('token') },
       });
 
       if (!tagsResponse.ok) {
@@ -2303,6 +2313,10 @@ export const DevicesLCM = () => {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={3} mt={1}>
+            <Alert severity="warning">
+              Registry server is currently exposed. Any tenant with network access can upload containers directly to other tenants' namespaces. This will be addressed in a future update.
+            </Alert>
+
             {/* Error message for Docker registry fetch */}
             {dockerImagesError && (
               <Alert severity="error" onClose={() => setDockerImagesError(null)}>
@@ -2365,7 +2379,7 @@ export const DevicesLCM = () => {
                   [
                     ...dockerImages.map((container) => (
                       <MenuItem key={container.name} value={container.name}>
-                        {container.name}
+                        {container.displayName || container.name}
                       </MenuItem>
                     )),
                     <MenuItem key="custom" value="custom">Custom URL</MenuItem>
