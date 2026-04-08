@@ -167,11 +167,26 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 	nc.QueueSubscribe(local.ADAPTER_SUBJECT+"devices.delete", local.ADAPTER_QUEUE, func(msg *nats.Msg) {
 		tenantSlug := extractTenantSlug(msg.Subject)
 
+		// Check if this is a "delete all" request (used during tenant deletion)
+		var deleteAll struct {
+			All bool `json:"all"`
+		}
+		if err := json.Unmarshal(msg.Data, &deleteAll); err == nil && deleteAll.All {
+			deletedCount, err := db.DeleteDevices(bson.D{}, tenantSlug)
+			if err != nil {
+				respondMsg(msg.Respond, 500, err.Error())
+				return
+			}
+			respondMsg(msg.Respond, 200, deletedCount)
+			return
+		}
+
 		var serialNumbersList []string
 
 		err := json.Unmarshal(msg.Data, &serialNumbersList)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
+			return
 		}
 
 		var criteria bson.A
@@ -180,7 +195,6 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 			criteria = append(criteria, bson.D{{"sn", sn}})
 		}
 
-		// Create the filter with the $or operator
 		filter := bson.D{
 			{"$or", criteria},
 		}
@@ -188,6 +202,7 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 		deletedCount, err := db.DeleteDevices(filter, tenantSlug)
 		if err != nil {
 			respondMsg(msg.Respond, 500, err.Error())
+			return
 		}
 		respondMsg(msg.Respond, 200, deletedCount)
 	})
