@@ -25,18 +25,30 @@ const REGISTRY = process.env.REGISTRY || '127.0.0.1:443';
 
 // Decode JWT payload (base64url) to extract tenant_slug.
 // Token was already verified by the controller/nginx — we just need the claims.
-function decodeTenantFromToken(authHeader) {
+function decodeToken(authHeader) {
   if (!authHeader) return null;
   const token = authHeader.replace(/^Bearer\s+/i, '');
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
-    const claims = JSON.parse(payload);
-    return claims.tenant_slug || null;
+    return JSON.parse(payload);
   } catch {
     return null;
   }
+}
+
+// Resolve tenant slug: from JWT for tenant users, from X-Tenant-Slug header for SuperAdmin
+function resolveTenantSlug(req) {
+  const claims = decodeToken(req.headers.authorization);
+  if (!claims) return null;
+  // Tenant users have tenant_slug in JWT
+  if (claims.tenant_slug) return claims.tenant_slug;
+  // SuperAdmin (level 0) must pass tenant via header
+  if (claims.level === 0) {
+    return req.headers['x-tenant-slug'] || null;
+  }
+  return null;
 }
 
 // Validate Docker image name (lowercase, digits, underscores, periods, hyphens)
@@ -114,7 +126,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const tenantSlug = decodeTenantFromToken(authHeader);
+      const tenantSlug = resolveTenantSlug(req);
       if (!tenantSlug) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Forbidden: tenant context required. SuperAdmin must select a tenant.' }));
@@ -259,7 +271,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const tenantSlug = decodeTenantFromToken(authHeader);
+  const tenantSlug = resolveTenantSlug(req);
   if (!tenantSlug) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ message: 'Forbidden: tenant context required. SuperAdmin must select a tenant.' }));

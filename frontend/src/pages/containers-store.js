@@ -287,6 +287,7 @@ const Page = () => {
     try {
       const myHeaders = new Headers();
       myHeaders.append('Authorization', localStorage.getItem('token'));
+      if (tenantSlug) myHeaders.append('X-Tenant-Slug', tenantSlug);
 
       const response = await fetch(
         `/api/containers/delete?name=${encodeURIComponent(name)}&tag=${encodeURIComponent(tag)}`,
@@ -351,6 +352,7 @@ const Page = () => {
     try {
       const myHeaders = new Headers();
       myHeaders.append('Authorization', localStorage.getItem('token'));
+      if (tenantSlug) myHeaders.append('X-Tenant-Slug', tenantSlug);
 
       // Delete all tags sequentially
       const deletePromises = container.tags.map(tag =>
@@ -450,6 +452,7 @@ const Page = () => {
 
       const myHeaders = new Headers();
       myHeaders.append('Authorization', localStorage.getItem('token'));
+      if (tenantSlug) myHeaders.append('X-Tenant-Slug', tenantSlug);
       // Don't set Content-Type for FormData - browser will set it with boundary
 
       const response = await fetch(
