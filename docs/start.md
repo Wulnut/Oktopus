@@ -16,6 +16,11 @@ The project currently utilizes a modified version of the **OktopUSP** (USP Contr
 *   **Offline Device Access:** Device Info tab shows cached data when the device is offline. Other tabs display an offline banner. The "Access the device" button is available for all devices on the /devices list.
 *   **Scripts:** Saved sequences of USP commands (GET/SET/ADD/DELETE/OPERATE) with variables, conditions, and delays. Execution history with per-step results.
 *   **Mass Actions:** Batch firmware updates and script execution across multiple devices with concurrency control, progress tracking, and cancellation.
+*   **Multi-Tenancy:** Full tenant isolation with three user levels (SuperAdmin/TenantAdmin/Operator), per-tenant databases (`tenant_<slug>_general`, `tenant_<slug>_usp`), tenant-scoped NATS subjects, and tenant management UI.
+*   **Dark/Light Theme:** Theme toggle persisted to localStorage, with dedicated light and dark palettes.
+*   **Tenant-Scoped Container Registry:** Container images prefixed with tenant slug for namespace isolation.
+*   **CPE Settings:** TR-181 parameter display on the Overview page, organized by protocol.
+*   **Tenant Deletion:** Full cleanup including databases, NATS KeyValue buckets, and associated users.
 
 ---
 
@@ -84,3 +89,19 @@ Visualizing the local network structure is a priority, utilizing **TR-181 nodes*
 *   **Batch script execution**: Same concurrent pattern with per-device execution tracking.
 *   **Job tracking**: Progress bars, per-device status, cancellation support, auto-refresh while running.
 *   **Frontend** (`pages/mass-actions/firmware.js`, `pages/mass-actions/scripts.js`): Firmware and script mass action pages with device selector and job history.
+
+### F. Multi-Tenancy (Completed)
+*   **Tenant management** (`api/tenant.go`, `db/tenant.go`): CRUD for tenants with slug-based routing, status (active/disabled), auth policies, and CA certificates.
+*   **User roles**: Three-tier model -- SuperAdmin (level 0), TenantAdmin (level 1), Operator (level 2). JWT claims carry tenant_id, tenant_slug, and level.
+*   **Database isolation** (`db.TenantDB`): Per-tenant databases (`tenant_<slug>_general`, `tenant_<slug>_usp`). API handlers use `a.tenantDB(r)` for all tenant-scoped data access.
+*   **Middleware** (`middleware.go`): `AuthMiddleware` validates JWT. `TenantMiddleware` enforces tenant-scoping and verifies tenant existence.
+*   **NATS isolation**: Subjects include tenant slug (e.g., `adapter.usp.v1.<slug>.devices.<action>`). Per-tenant KeyValue buckets for device auth.
+*   **Adapter service**: Tenant-aware -- filters devices by `tenantid`, extracts tenant slug from NATS subjects.
+*   **Container registry**: `container-upload` service prefixes images with tenant slug.
+*   **Frontend** (`pages/tenants/`, `contexts/tenant-context.js`): Tenant management page, tenant context for API routing, SuperAdmin tenant switcher.
+*   **Tenant deletion**: Full cleanup of databases, NATS buckets, and associated users.
+
+### G. Dark/Light Theme (Completed)
+*   **Theme toggle** (`contexts/settings-context.js`): SettingsContext with localStorage persistence.
+*   **Palettes** (`theme/create-palette.js`, `theme/create-palette-dark.js`): Separate light and dark color schemes.
+*   **Integration**: Theme mode applied via MUI's `createTheme` in `theme/index.js`.

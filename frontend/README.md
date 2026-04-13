@@ -1,109 +1,72 @@
-## [Material Kit - React](https://material-kit-react.devias.io/) [![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social&logo=twitter)](https://twitter.com/intent/tweet?text=%F0%9F%9A%A8Devias%20Freebie%20Alert%20-%20An%20awesome%20ready-to-use%20register%20page%20made%20with%20%23material%20%23react%0D%0Ahttps%3A%2F%2Fdevias.io%20%23createreactapp%20%23devias%20%23material%20%23freebie%20%40devias-io)
+# Oktopus Frontend
 
-![license](https://img.shields.io/badge/license-MIT-blue.svg)
+## Tech Stack
 
-[![Material Kit - React](https://github.com/devias-io/material-kit-react/blob/main/public/assets/thumbnail.png)](https://material-kit-react.devias.io/)
+- **Next.js 15** with file-based routing
+- **React 19**
+- **Material UI 6** (MUI) for components and theming
+- **Socket.IO** client for real-time updates
+- **ApexCharts** for data visualization
+- **Formik/Yup** for form handling and validation
 
-> Free React Admin Dashboard made with [MUI's](https://mui.com/?ref=devias-io)
-> components, [React](https://reactjs.org/?ref=devias-io) and of
-> course [Next.js](https://github.com/vercel/next.js/?ref=devias-io) to boost your app development
-> process!
-
-## Demo
-
-- [Dashboard Page](https://material-kit-react.devias.io)
-- [Companies Page](https://material-kit-react.devias.io/companies)
-- [Customers Page](https://material-kit-react.devias.io/customers)
-- [Account Page](https://material-kit-react.devias.io/account)
-- [Settings Page](https://material-kit-react.devias.io/settings)
-- [Login Page](https://material-kit-react.devias.io/auth/login)
-- [Register Page](https://material-kit-react.devias.io/auth/register)
-
-## Free Figma Community File
-
-- [Duplicate File](https://www.figma.com/community/file/1039837897183395483/Devias-Dashboard-Design-Library-Kit)
-
-## Upgrade to PRO Version
-
-We also have a pro version of this product which bundles even more pages and components if you want
-to save more time and design efforts :)
-
-| Free Version (this one) | [Material Kit Pro - React](https://mui.com/store/items/devias-kit-pro/)  |
-|-------------------------|:-------------------------------------------------------------------------|
-| **9** Demo Pages        | **40+** demo pages                                                       
-| ✔ Mocked Authentication | ✔ Authentication with **Amplify**, **Auth0**, **JWT** and **Firebase**   
-| -                       | ✔ Dark & light mode                                                      
-| -                       | ✔ CRA version                                                            
-| -                       | ✔ TypeScript version - for Standard Plus and Extended license            
-| -                       | ✔ Design files (sketch & figma) - for Standard Plus and Extended license 
-| -                       | ✔ Complete users flows                                                   
-
-## Quick start
-
-- [Download from Github](https://github.com/devias-io/material-kit-react/archive/master.zip)
-  or [Download from Devias](https://devias.io/products/material-kit-react) or clone the
-  repo: `git clone https://github.com/devias-io/material-kit-react.git`
-
-- Make sure your Node.js and npm versions are up to date for `React 18`
-
-- Install dependencies: `npm install` or `yarn`
-
-- Start the server: `npm run dev` or `yarn dev`
-
-- Views are on: `localhost:3000`
-
-## File Structure
-
-Within the download you'll find the following directories and files:
+## Directory Structure
 
 ```
-material-kit-react
-
-┌── .eslintrc.json
-├── .gitignore
-├── CHANGELOG.md
-├── LICENSE.md
-├── next.config.js
-├── package.json
-├── README.md
-├── public
-└── src
-	├── components
-	├── contexts
-	├── guards
-	├── hocs
-	├── hooks
-	├── layouts
-	├── sections
-	├── theme
-	├── utils
-	└── pages
-		├── 404.js
-		├── _app.js
-		├── _document.js
-		├── account.js
-		├── companies.js
-		├── customers.js
-		├── index.js
-		├── products.js
-		└── settings.js
-		└──  auth
-			├── login.js
-			└── register.js
+src/
+  pages/          File-based routes (devices, firmware, scripts, tenants, etc.)
+  sections/       Heavy page-specific components (devices/usp, firmware, scripts, etc.)
+  components/     Shared reusable components
+  contexts/       React context providers
+  theme/          MUI theme configuration (light and dark palettes)
+  layouts/        Dashboard layout with side nav and top nav
+  guards/         Route protection (auth guard)
+  hooks/          Custom React hooks
+  hocs/           Higher-order components
+  utils/          Utility functions
 ```
 
-## Resources
+## Key Contexts
 
-- More freebies like this one: <https://devias.io>
+| Context | File | Purpose |
+|---|---|---|
+| Auth | `auth-context.js` | Authentication state, login/logout, JWT management |
+| Tenant | `tenant-context.js` | Active tenant slug, API prefix, SuperAdmin tenant switching |
+| Settings | `settings-context.js` | Theme mode (dark/light), persisted to localStorage |
+| Backend | `backend-context.js` | API client with tenant-scoped base URL |
+| Socket.IO | `socketio-context.js` | Real-time event subscriptions |
+| Error | `error-context.js` | Global error/alert notifications |
 
-## Reporting Issues:
+## Theme System
 
-- [Github Issues Page](https://github.com/devias-io/react-material-dashboard/issues?ref=devias-io)
+The app supports dark and light themes:
 
-## License
+- `theme/create-palette.js` -- light mode colors
+- `theme/create-palette-dark.js` -- dark mode colors
+- `theme/index.js` -- creates the MUI theme based on current mode
+- `contexts/settings-context.js` -- `SettingsContext` manages the toggle, persisted to localStorage
 
-- Licensed under MIT (https://github.com/devias-io/react-material-dashboard/blob/master/LICENSE.md)
+The default theme is dark. Users toggle via the top nav.
 
-## Contact Us
+## Adding a New Page
 
-- Email Us: support@deviasio.zendesk.com
+1. Create a file in `src/pages/` (e.g., `src/pages/my-page.js`).
+2. Export a default component. Use `Component.getLayout` for the dashboard layout:
+   ```js
+   import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
+   const Page = () => { /* ... */ };
+   Page.getLayout = (page) => <DashboardLayout>{page}</DashboardLayout>;
+   export default Page;
+   ```
+3. Add a navigation entry in `src/layouts/dashboard/config.js`.
+4. Create section components in `src/sections/my-page/` for complex UI.
+5. Use `useTenant()` from `tenant-context.js` to get `apiPrefix` for API calls.
+
+## Build
+
+All builds must use Docker:
+
+```bash
+sg docker -c "cd deploy/compose && docker compose -f docker-compose.yaml -f docker-compose.dev.yaml build frontend"
+```
+
+For development with hot-reload, use `./run_debug.sh` from `deploy/compose/`.
