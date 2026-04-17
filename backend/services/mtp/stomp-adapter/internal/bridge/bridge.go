@@ -45,22 +45,25 @@ type (
 )
 
 type Bridge struct {
-	Pub         Publisher
-	Sub         Subscriber
-	Stomp       config.Stomp
-	Ctx         context.Context
-	conn        *stomp.Conn
-	asyncSubs   map[string]*stomp.Subscription // device -> persistent subscription for async messages
-	asyncSubsMu sync.RWMutex                   // mutex for asyncSubs
+	Pub            Publisher
+	Sub            Subscriber
+	Stomp          config.Stomp
+	Ctx            context.Context
+	conn           *stomp.Conn
+	asyncSubs      map[string]*stomp.Subscription // device -> persistent subscription for async messages
+	asyncSubsMu    sync.RWMutex                   // mutex for asyncSubs
+	onlineDevices  map[string]string              // device -> tenant slug (tracks online devices for reconnect)
+	onlineDevicesMu sync.RWMutex
 }
 
 func NewBridge(p Publisher, s Subscriber, ctx context.Context, stompConfig config.Stomp) *Bridge {
 	return &Bridge{
-		Pub:       p,
-		Sub:       s,
-		Stomp:     stompConfig,
-		Ctx:       ctx,
-		asyncSubs: make(map[string]*stomp.Subscription),
+		Pub:           p,
+		Sub:           s,
+		Stomp:         stompConfig,
+		Ctx:           ctx,
+		asyncSubs:     make(map[string]*stomp.Subscription),
+		onlineDevices: make(map[string]string),
 	}
 }
 
@@ -81,8 +84,9 @@ func (b *Bridge) StartBridge() {
 				continue
 			}
 			b.conn = conn
-			// Clean up any existing subscriptions before creating new ones
+			// Clean up stale subscriptions, then recreate for known online devices
 			b.cleanupAllAsyncSubscriptions()
+			b.recreateAsyncSubscriptions(conn)
 			b.subscribe(conn)
 
 			sub, err := conn.Subscribe(STOMP_STATUS_QUEUE, stomp.AckAuto)
@@ -109,13 +113,17 @@ func (b *Bridge) StartBridge() {
 						status := fmtBody[1]
 						log.Printf("[STOMP] Device status update: device=%s, tenant=%s, status=%s", device, tenant, status)
 						b.Pub(NATS_STOMP_SUBJECT_PREFIX+tenant+"."+device+".status", []byte(status))
-						
+
 						// Handle persistent subscriptions based on device status
 						if status == "1" {
-							// Device is online - create persistent subscription for async messages
+							b.onlineDevicesMu.Lock()
+							b.onlineDevices[device] = tenant
+							b.onlineDevicesMu.Unlock()
 							b.createAsyncSubscription(device, tenant, conn)
 						} else if status == "0" {
-							// Device is offline - remove persistent subscription
+							b.onlineDevicesMu.Lock()
+							delete(b.onlineDevices, device)
+							b.onlineDevicesMu.Unlock()
 							b.removeAsyncSubscription(device)
 						}
 					} else {
@@ -192,6 +200,12 @@ func (b *Bridge) subscribe(st *stomp.Conn) {
 		subj := strings.Split(msg.Subject, ".")
 		device := subj[len(subj)-2]
 		tenant := extractTenantFromSubject(msg.Subject)
+
+		// Ensure async subscription exists for this device (handles adapter restart while device is online)
+		b.onlineDevicesMu.Lock()
+		b.onlineDevices[device] = tenant
+		b.onlineDevicesMu.Unlock()
+		b.createAsyncSubscription(device, tenant, st)
 
 		deviceApiQueue := STOMP_QUEUE_PREFIX + tenant + "/controller/" + device + "/api"
 		agentQueue := STOMP_QUEUE_PREFIX + tenant + "/agent/" + device
@@ -386,12 +400,31 @@ func (b *Bridge) handleAsyncMessages(device, tenant string, sub *stomp.Subscript
 func (b *Bridge) cleanupAllAsyncSubscriptions() {
 	b.asyncSubsMu.Lock()
 	defer b.asyncSubsMu.Unlock()
-	
+
 	for device, sub := range b.asyncSubs {
 		if err := sub.Unsubscribe(); err != nil {
 			log.Printf("[STOMP] ERROR: Failed to unsubscribe device %s during cleanup: %v", device, err)
 		}
 	}
-	
+
 	b.asyncSubs = make(map[string]*stomp.Subscription)
+}
+
+// recreateAsyncSubscriptions re-establishes async subscriptions for all known online devices after reconnect
+func (b *Bridge) recreateAsyncSubscriptions(conn *stomp.Conn) {
+	b.onlineDevicesMu.RLock()
+	devices := make(map[string]string, len(b.onlineDevices))
+	for device, tenant := range b.onlineDevices {
+		devices[device] = tenant
+	}
+	b.onlineDevicesMu.RUnlock()
+
+	if len(devices) == 0 {
+		return
+	}
+
+	log.Printf("[STOMP] Recreating async subscriptions for %d online devices after reconnect", len(devices))
+	for device, tenant := range devices {
+		b.createAsyncSubscription(device, tenant, conn)
+	}
 }
