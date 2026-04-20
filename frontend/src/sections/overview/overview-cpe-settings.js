@@ -54,7 +54,7 @@ const getProtocolParams = (protocol, host, tenantSlug) => {
         ['Device.STOMP.Connection.1.Password', '<device_password>'],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'STOMP'],
-        ['Device.LocalAgent.Controller.1.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/controller/<endpoint_id>`],
+        ['Device.LocalAgent.Controller.1.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/controller/<endpoint_id>/async`],
       ];
     case 'CWMP':
       return [
