@@ -224,7 +224,7 @@ const formatUptime = (seconds) => {
   }
 };
 
-export const DevicesLCM = () => {
+export const DevicesLCM = ({ onStatusRefresh }) => {
   const router = useRouter();
   const { httpRequest, apiPrefix } = useBackendContext();
   const { tenantSlug } = useTenant();
@@ -346,6 +346,7 @@ export const DevicesLCM = () => {
 
   // Fetch Deployment Units list
   const fetchDeploymentUnits = async () => {
+    onStatusRefresh?.();
     setLoading(true);
     setError(null);
 

@@ -35,7 +35,7 @@ import EnvelopeIcon from '@heroicons/react/24/outline/EnvelopeIcon';
 import CheckIcon from '@heroicons/react/24/outline/CheckIcon';
 
 
-export const DevicesRPC = () => {
+export const DevicesRPC = ({ onStatusRefresh }) => {
 
 const router = useRouter()
 let { httpRequest, apiPrefix } = useBackendContext()
@@ -262,6 +262,7 @@ const handleDeleteMessage = async () => {
 }
 
 const handleOpen = async () => {
+  onStatusRefresh?.();
   setOpen(true);
 
   let {result, status} = await httpRequest(

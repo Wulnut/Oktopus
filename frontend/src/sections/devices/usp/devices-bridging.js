@@ -147,7 +147,7 @@ const collectUsedInterfaces = (bridges) => {
   return used;
 };
 
-export const DevicesBridging = ({ sn, mtp }) => {
+export const DevicesBridging = ({ sn, mtp, onStatusRefresh }) => {
   const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
@@ -196,6 +196,7 @@ export const DevicesBridging = ({ sn, mtp }) => {
   }, [sn, mtp]);
 
   const fetchAll = useCallback(async () => {
+    onStatusRefresh?.();
     if (!sn) return;
     setLoading(true);
     try {

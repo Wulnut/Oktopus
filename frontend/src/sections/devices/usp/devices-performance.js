@@ -105,7 +105,7 @@ const buildChartOptions = (theme, title, yFormatter) => ({
   },
 });
 
-export const DevicesPerformance = ({ sn, mtp }) => {
+export const DevicesPerformance = ({ sn, mtp, onStatusRefresh }) => {
   const theme = useTheme();
   const { httpRequest, apiPrefix } = useBackendContext();
 
@@ -116,6 +116,7 @@ export const DevicesPerformance = ({ sn, mtp }) => {
   const intervalRef = useRef(null);
 
   const fetchAll = useCallback(async () => {
+    onStatusRefresh?.();
     if (!sn) return;
     setLoading(true);
     try {

@@ -198,7 +198,7 @@ const isAllErrors = (data) => {
   return data.req_path_results.every(r => r.err_code != null && r.err_code !== 0);
 };
 
-export const DevicesNetwork = ({ sn, mtp }) => {
+export const DevicesNetwork = ({ sn, mtp, onStatusRefresh }) => {
   const { httpRequest, apiPrefix } = useBackendContext();
 
   const [wifiData, setWifiData] = useState(null);
@@ -229,6 +229,7 @@ export const DevicesNetwork = ({ sn, mtp }) => {
   }, [sn, mtp]);
 
   const handleRefresh = useCallback(async () => {
+    onStatusRefresh?.();
     await fetchInterfaces();
     await fetchWifi();
   }, [fetchWifi, fetchInterfaces]);

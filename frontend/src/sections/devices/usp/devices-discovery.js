@@ -174,7 +174,7 @@ const ValueDisplay = ({ value }) => {
   );
 };
 
-export const DevicesDiscovery = () => {
+export const DevicesDiscovery = ({ onStatusRefresh }) => {
   const router = useRouter();
   const { apiPrefix } = useTenant();
 
@@ -265,6 +265,7 @@ export const DevicesDiscovery = () => {
 
   // Main data fetching function
   const updateDeviceParameters = useCallback(async (path, { preserveState = false } = {}) => {
+    onStatusRefresh?.();
     setShowLoading(true);
     if (!preserveState) {
       setDeviceParameters(null);

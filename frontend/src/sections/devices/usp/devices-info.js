@@ -74,7 +74,7 @@ const parseUspFlat = (data) => {
   return Object.entries(flat).map(([key, value]) => ({ key, value: String(value ?? '') }));
 };
 
-export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
+export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRefresh }) => {
   const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
 
@@ -100,6 +100,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
   const [noCampaignAlert, setNoCampaignAlert] = useState(false);
 
   const fetchCachedInfo = useCallback(async () => {
+    onStatusRefresh?.();
     if (!sn) return;
     setLoading(true);
     try {
@@ -116,6 +117,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange }) => {
   }, [sn]);
 
   const fetchLiveInfo = useCallback(async () => {
+    onStatusRefresh?.();
     if (!sn) return;
     setLoading(true);
     setIsCached(false);

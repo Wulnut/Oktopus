@@ -61,13 +61,14 @@ const StatusChip = ({ value }) => {
   return <Chip label={value} size="small" color={color} variant="outlined" />;
 };
 
-export const DevicesTopology = ({ sn, mtp }) => {
+export const DevicesTopology = ({ sn, mtp, onStatusRefresh }) => {
   const { httpRequest, apiPrefix } = useBackendContext();
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const fetchTopology = useCallback(async () => {
+    onStatusRefresh?.();
     if (!sn) return;
     setLoading(true);
     try {

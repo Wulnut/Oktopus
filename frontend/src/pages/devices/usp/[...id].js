@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import { Alert, Box, Chip, CircularProgress, Stack, Container, Breadcrumbs, Link } from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
@@ -23,47 +23,50 @@ const Page = () => {
 
     const [deviceOnline, setDeviceOnline] = useState(null); // null = loading, true/false
 
-    useEffect(() => {
-        const fetchStatus = async () => {
-            try {
-                const { status, result } = await httpRequest(
-                    `${apiPrefix}/device?id=${encodeURIComponent(deviceID)}`,
-                    'GET'
-                );
-                if (status === 200 && result) {
-                    setDeviceOnline(result.Status === 2);
-                } else {
-                    setDeviceOnline(false);
-                }
-            } catch {
+    const refreshStatus = useCallback(async () => {
+        try {
+            const { status, result } = await httpRequest(
+                `${apiPrefix}/device?id=${encodeURIComponent(deviceID)}`,
+                'GET'
+            );
+            if (status === 200 && result) {
+                setDeviceOnline(result.Status === 2);
+            } else {
                 setDeviceOnline(false);
             }
-        };
-        fetchStatus();
-    }, [deviceID]);
+        } catch {
+            setDeviceOnline(false);
+        }
+    }, [deviceID, apiPrefix]);
+
+    useEffect(() => {
+        refreshStatus();
+        const interval = setInterval(refreshStatus, 15000);
+        return () => clearInterval(interval);
+    }, [refreshStatus]);
 
     const showOfflineBanner = deviceOnline === false && section !== 'info';
 
     const sectionHandler = () => {
         switch(section){
             case "msg":
-                return <DevicesRPC/>
+                return <DevicesRPC onStatusRefresh={refreshStatus} />
             case "discovery":
-                return <DevicesDiscovery/>
+                return <DevicesDiscovery onStatusRefresh={refreshStatus} />
             case "lcm":
-                return <DevicesLCM/>
+                return <DevicesLCM onStatusRefresh={refreshStatus} />
             case "history":
                 return <DevicesHistory/>
             case "info":
-                return <DevicesInfo sn={deviceID} mtp="any" deviceOnline={deviceOnline} onOnlineChange={setDeviceOnline} />
+                return <DevicesInfo sn={deviceID} mtp="any" deviceOnline={deviceOnline} onOnlineChange={setDeviceOnline} onStatusRefresh={refreshStatus} />
             case "network":
-                return <DevicesNetwork sn={deviceID} mtp="any" />
+                return <DevicesNetwork sn={deviceID} mtp="any" onStatusRefresh={refreshStatus} />
             case "bridging":
-                return <DevicesBridging sn={deviceID} mtp="any" />
+                return <DevicesBridging sn={deviceID} mtp="any" onStatusRefresh={refreshStatus} />
             case "performance":
-                return <DevicesPerformance sn={deviceID} mtp="any" />
+                return <DevicesPerformance sn={deviceID} mtp="any" onStatusRefresh={refreshStatus} />
             case "topology":
-                return <DevicesTopology sn={deviceID} mtp="any" />
+                return <DevicesTopology sn={deviceID} mtp="any" onStatusRefresh={refreshStatus} />
             default:
                 router.replace(`/devices/usp/${deviceID}/info`)
         }
