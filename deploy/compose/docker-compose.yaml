@@ -4,8 +4,8 @@ services:
     image: "nats:2.10"
     container_name: nats
     ports:
-      - 4222:4222
-      - 8222:8222
+      - 127.0.0.1:4222:4222
+      - 127.0.0.1:8222:8222
     command: -c /tmp/nats/config/nats.cfg
     env_file:
       - .env.nats
@@ -198,7 +198,7 @@ services:
     # Don't specify image name to force local build instead of pulling from registry
     container_name: frontend
     ports:
-      - 3001:3000
+      - 127.0.0.1:3001:3000
     environment:
       - NODE_ENV=production
     networks:
@@ -212,7 +212,7 @@ services:
     image: portainer/portainer-ce:2.25.1
     container_name: portainer
     ports:
-      - 9443:9443
+      - 127.0.0.1:9443:9443
     networks:
       usp_network:
         ipv4_address: 172.16.235.15
@@ -226,7 +226,7 @@ services:
     image: "oktopusp/acs"
     container_name: acs
     ports:
-      - 9292:9292
+      - 127.0.0.1:9292:9292
     env_file:
       - .env.acs
     volumes:
