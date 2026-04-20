@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { Alert, Box, Stack, Container, Breadcrumbs, Link } from '@mui/material';
+import { Alert, Box, Chip, CircularProgress, Stack, Container, Breadcrumbs, Link } from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useRouter } from 'next/router';
 import { useBackendContext } from 'src/contexts/backend-context';
@@ -89,14 +89,27 @@ const Page = () => {
                     {[<Link underline="hover" key="1" color="inherit" href="/devices">
                         Devices
                     </Link>,
-                    <Link
-                    underline="none"
-                    key="2"
-                    color="inherit"
-                    href={`/devices/${deviceID}`}
-                    >
-                    {deviceID}
-                    </Link>]}
+                    <Box key="2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Link
+                            underline="none"
+                            color="inherit"
+                            href={`/devices/${deviceID}`}
+                        >
+                            {deviceID}
+                        </Link>
+                        {deviceOnline === null ? (
+                            <Chip
+                                size="small"
+                                label="Fetching"
+                                icon={<CircularProgress size={12} color="inherit" />}
+                                variant="outlined"
+                            />
+                        ) : deviceOnline ? (
+                            <Chip size="small" label="Online" color="success" />
+                        ) : (
+                            <Chip size="small" label="Offline" color="error" />
+                        )}
+                    </Box>]}
                     </Breadcrumbs>
                     {showOfflineBanner && (
                         <Alert severity="error" variant="filled" sx={{ fontWeight: 600 }}>

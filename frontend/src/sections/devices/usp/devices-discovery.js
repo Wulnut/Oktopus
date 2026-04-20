@@ -732,21 +732,22 @@ export const DevicesDiscovery = () => {
         <List component="div" disablePadding dense key={displayName}>
           <ListItem
             divider
-            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
+            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+            onClick={() => navigateTo(navPath)}
             secondaryAction={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 {canAdd && (
-                  <IconButton onClick={() => openAddDialog(addPath, child.supported_obj_path)}>
+                  <IconButton onClick={(e) => { e.stopPropagation(); openAddDialog(addPath, child.supported_obj_path); }}>
                     <SvgIcon><PlusCircleIcon /></SvgIcon>
                   </IconButton>
                 )}
-                <IconButton onClick={() => navigateTo(navPath)}>
+                <IconButton onClick={(e) => { e.stopPropagation(); navigateTo(navPath); }}>
                   <SvgIcon><ArrowRightIcon /></SvgIcon>
                 </IconButton>
               </Box>
             }
           >
-            <ListItemText primary={<b>{displayName + (isMulti ? '.{i}.' : '.')}</b>} />
+            <ListItemText primary={<b>{displayName + (isMulti ? '.{i}.' : '.')}</b>}  />
           </ListItem>
         </List>
       );
@@ -771,29 +772,36 @@ export const DevicesDiscovery = () => {
 
     const sortedParams = sortParams(mainObj.supported_params, p => p.param_name);
 
-    return sortedParams.map(p => (
-      <List component="div" disablePadding dense key={p.param_name}>
-        <ListItem
-          divider
-          sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
-          secondaryAction={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <ValueDisplay value={deviceParametersValue[p.param_name]?.value} />
-              {deviceParametersValue[p.param_name]?.access > ParamAccessType.ReadOnly && (
-                <IconButton onClick={() => showEditDialog(
-                  mainObj.supported_obj_path + p.param_name,
-                  deviceParametersValue[p.param_name]?.value
-                )}>
-                  <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
-                </IconButton>
-              )}
-            </Box>
-          }
-        >
-          <ListItemText primary={p.param_name} />
-        </ListItem>
-      </List>
-    ));
+    return sortedParams.map(p => {
+      const isWritable = deviceParametersValue[p.param_name]?.access > ParamAccessType.ReadOnly;
+      const paramPath = mainObj.supported_obj_path + p.param_name;
+      const paramValue = deviceParametersValue[p.param_name]?.value;
+      return (
+        <List component="div" disablePadding dense key={p.param_name}>
+          <ListItem
+            divider
+            sx={{
+              boxShadow: (theme) => theme.shadows[2],
+              pl: 4,
+              ...(isWritable && { cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }),
+            }}
+            onClick={isWritable ? () => showEditDialog(paramPath, paramValue) : undefined}
+            secondaryAction={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <ValueDisplay value={paramValue} />
+                {isWritable && (
+                  <IconButton onClick={(e) => { e.stopPropagation(); showEditDialog(paramPath, paramValue); }}>
+                    <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
+                  </IconButton>
+                )}
+              </Box>
+            }
+          >
+            <ListItemText primary={p.param_name}  />
+          </ListItem>
+        </List>
+      );
+    });
   };
 
   // Render commands for a single object (or per-instance)
@@ -804,26 +812,30 @@ export const DevicesDiscovery = () => {
       a.command_name.localeCompare(b.command_name)
     );
 
-    return sortedCommands.map(cmd => (
-      <List component="div" disablePadding dense key={cmd.command_name + '__' + pathPrefix}>
-        <ListItem
-          divider
-          sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
-          secondaryAction={
-            <IconButton onClick={() => {
-              setDeviceCommandToExecute({
-                [pathPrefix + cmd.command_name]: { input_arg_names: cmd.input_arg_names }
-              });
-              setOpenCommandDialog(true);
-            }}>
-              <SvgIcon><PlayCircleIcon /></SvgIcon>
-            </IconButton>
-          }
-        >
-          <ListItemText primary={cmd.command_name} />
-        </ListItem>
-      </List>
-    ));
+    return sortedCommands.map(cmd => {
+      const handleExecute = () => {
+        setDeviceCommandToExecute({
+          [pathPrefix + cmd.command_name]: { input_arg_names: cmd.input_arg_names }
+        });
+        setOpenCommandDialog(true);
+      };
+      return (
+        <List component="div" disablePadding dense key={cmd.command_name + '__' + pathPrefix}>
+          <ListItem
+            divider
+            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+            onClick={handleExecute}
+            secondaryAction={
+              <IconButton onClick={(e) => { e.stopPropagation(); handleExecute(); }}>
+                <SvgIcon><PlayCircleIcon /></SvgIcon>
+              </IconButton>
+            }
+          >
+            <ListItemText primary={cmd.command_name}  />
+          </ListItem>
+        </List>
+      );
+    });
   };
 
   // Render instance-based parameters (multi-instance objects)
@@ -868,23 +880,29 @@ export const DevicesDiscovery = () => {
           {sortedParams.map(param => {
             const paramName = Object.keys(param)[0];
             const paramData = param[paramName];
+            const isWritable = paramData.access > ParamAccessType.ReadOnly;
             return (
               <List component="div" disablePadding dense key={paramName}>
                 <ListItem
                   divider
-                  sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4 }}
+                  sx={{
+                    boxShadow: (theme) => theme.shadows[2],
+                    pl: 4,
+                    ...(isWritable && { cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }),
+                  }}
+                  onClick={isWritable ? () => showEditDialog(instanceKey + paramName, paramData.value) : undefined}
                   secondaryAction={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <ValueDisplay value={paramData.value} />
-                      {paramData.access > ParamAccessType.ReadOnly && (
-                        <IconButton onClick={() => showEditDialog(instanceKey + paramName, paramData.value)}>
+                      {isWritable && (
+                        <IconButton onClick={(e) => { e.stopPropagation(); showEditDialog(instanceKey + paramName, paramData.value); }}>
                           <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
                         </IconButton>
                       )}
                     </Box>
                   }
                 >
-                  <ListItemText primary={paramName} />
+                  <ListItemText primary={paramName}  />
                 </ListItem>
               </List>
             );
