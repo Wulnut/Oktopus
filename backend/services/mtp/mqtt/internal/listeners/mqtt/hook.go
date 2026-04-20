@@ -117,6 +117,16 @@ func (h *NatsAuthHook) Init(c any) error {
 func (h *NatsAuthHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet) bool {
 	username := string(pk.Connect.Username)
 
+	// Allow internal controller connection (oktopusController is the mqtt-adapter)
+	if username == "oktopusController" {
+		return true
+	}
+
+	if username == "" {
+		log.Printf("auth: empty username rejected")
+		return false
+	}
+
 	tenant, _ := parseTenantDevice(username)
 	if tenant == "" {
 		log.Printf("auth: invalid username format (expected tenant/device): %s", username)
@@ -130,21 +140,31 @@ func (h *NatsAuthHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet)
 		return false
 	}
 
-	entry, err := kv.Get(context.TODO(), username)
+	// Try per-device credential first (sanitize key: colons not allowed in NATS KV keys)
+	kvKey := strings.ReplaceAll(username, ":", "_")
+	log.Printf("auth: looking up key=%s in bucket=%s", kvKey, bucketName)
+	entry, err := kv.Get(context.TODO(), kvKey)
 	if err != nil {
-		if err == jetstream.ErrKeyNotFound {
-			log.Printf("auth: credential not found for user %s in bucket %s", username, bucketName)
-		} else {
-			log.Printf("auth: error getting credential for %s: %v", username, err)
-		}
-		return false
-	}
-
-	if bytes.Equal(entry.Value(), pk.Connect.Password) {
+		log.Printf("auth: per-device lookup failed for key=%s: %v", kvKey, err)
+	} else if bytes.Equal(entry.Value(), pk.Connect.Password) {
+		log.Printf("auth: per-device credential matched for %s", username)
 		return true
+	} else {
+		log.Printf("auth: per-device credential found but password mismatch for %s", username)
 	}
 
-	log.Printf("auth: password mismatch for user %s", username)
+	// Fall back to shared tenant password
+	entry, err = kv.Get(context.TODO(), "__tenant_password__")
+	if err != nil {
+		log.Printf("auth: no tenant password set in bucket %s: %v", bucketName, err)
+	} else if bytes.Equal(entry.Value(), pk.Connect.Password) {
+		log.Printf("auth: tenant password matched for %s", username)
+		return true
+	} else {
+		log.Printf("auth: tenant password mismatch for %s", username)
+	}
+
+	log.Printf("auth: failed for user %s in bucket %s", username, bucketName)
 	return false
 }
 
@@ -159,15 +179,18 @@ func (h *NatsAuthHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) boo
 		return true
 	}
 
-	tenant, device := parseTenantDevice(username)
-	if tenant == "" || device == "" {
+	tenant, _ := parseTenantDevice(username)
+	if tenant == "" {
 		return false
 	}
 
+	// Allow any device within the tenant's namespace.
+	// Username is for authentication, not per-device topic restriction.
+	// This supports shared credentials (e.g., prpl-test/testdevice) where
+	// the username doesn't match the actual EndpointID.
 	if !write {
-		// Devices can read (subscribe to) their agent topic
 		allowedRead := []string{
-			"oktopus/usp/v1/" + tenant + "/agent/" + device,
+			"oktopus/usp/v1/" + tenant + "/agent/+",
 		}
 		for _, allowed := range allowedRead {
 			if _, ok := auth.MatchTopic(allowed, topic); ok {
@@ -177,12 +200,11 @@ func (h *NatsAuthHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) boo
 		return false
 	}
 
-	// Devices can write (publish) to controller, api, async, and status topics
 	allowedWrite := []string{
-		"oktopus/usp/v1/" + tenant + "/controller/" + device,
-		"oktopus/usp/v1/" + tenant + "/api/" + device,
-		"oktopus/usp/v1/" + tenant + "/async/" + device,
-		"oktopus/usp/v1/" + tenant + "/status/" + device,
+		"oktopus/usp/v1/" + tenant + "/controller/+",
+		"oktopus/usp/v1/" + tenant + "/api/+",
+		"oktopus/usp/v1/" + tenant + "/async/+",
+		"oktopus/usp/v1/" + tenant + "/status/+",
 	}
 	for _, allowed := range allowedWrite {
 		if _, ok := auth.MatchTopic(allowed, topic); ok {

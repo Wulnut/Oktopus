@@ -278,6 +278,53 @@ func deleteTenantDevices(nc *nats.Conn, tenantSlug string) {
 	log.Printf("Deleted adapter devices for tenant %s: %s", tenantSlug, string(msg.Data))
 }
 
+// GET /api/tenants/{slug}/device-password
+func (a *Api) getDevicePassword(w http.ResponseWriter, r *http.Request) {
+	level := middleware.GetLevel(r)
+	if db.UserLevels(level) > db.TenantAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	slug := middleware.GetTenantSlug(r)
+	kv, err := a.js.KeyValue(a.ctx, "devices-auth-"+slug)
+	if err != nil {
+		http.Error(w, `{"error":"device auth store not found"}`, http.StatusNotFound)
+		return
+	}
+	entry, err := kv.Get(r.Context(), "__tenant_password__")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"password": ""})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"password": string(entry.Value())})
+}
+
+// PUT /api/tenants/{slug}/device-password
+func (a *Api) setDevicePassword(w http.ResponseWriter, r *http.Request) {
+	level := middleware.GetLevel(r)
+	if db.UserLevels(level) > db.TenantAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	slug := middleware.GetTenantSlug(r)
+	var body struct {
+		Password string `json:"password"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	if body.Password == "" {
+		http.Error(w, `{"error":"password required"}`, http.StatusBadRequest)
+		return
+	}
+	kv, err := a.js.KeyValue(a.ctx, "devices-auth-"+slug)
+	if err != nil {
+		http.Error(w, `{"error":"device auth store not found"}`, http.StatusNotFound)
+		return
+	}
+	kv.PutString(r.Context(), "__tenant_password__", body.Password)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 // cleanupTenantRegistryImages deletes all container images prefixed with the tenant slug
 // from the Docker registry. Runs in background (best-effort).
 func cleanupTenantRegistryImages(tenantSlug, authHeader string) {

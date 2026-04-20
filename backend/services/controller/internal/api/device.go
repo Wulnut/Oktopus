@@ -202,6 +202,13 @@ type DeviceAuth struct {
 	Password string `json:"password"`
 }
 
+// sanitizeKVKey replaces characters not allowed in NATS KV keys.
+// NATS KV keys allow: a-z, A-Z, 0-9, -, /, _, =, .
+// Colons (:) are NOT allowed — replace with underscore.
+func sanitizeKVKey(key string) string {
+	return strings.ReplaceAll(key, ":", "_")
+}
+
 func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 
 	email := middleware.GetEmail(r)
@@ -227,7 +234,7 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 
 		id := r.URL.Query().Get("id")
 		if id != "" {
-			entry, err := kv.Get(r.Context(), id)
+			entry, err := kv.Get(r.Context(), sanitizeKVKey(id))
 			if err != nil {
 				if err == jetstream.ErrKeyNotFound {
 					w.WriteHeader(http.StatusNotFound)
@@ -270,7 +277,7 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 
 		id := r.URL.Query().Get("id")
 		if id != "" {
-			err := kv.Purge(r.Context(), id)
+			err := kv.Purge(r.Context(), sanitizeKVKey(id))
 			if err != nil {
 				if err == jetstream.ErrKeyNotFound {
 					w.WriteHeader(http.StatusNotFound)
@@ -297,12 +304,13 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if deviceAuth.User != "" {
-			_, err := kv.Get(r.Context(), deviceAuth.User)
+			kvKey := sanitizeKVKey(deviceAuth.User)
+			_, err := kv.Get(r.Context(), kvKey)
 
 			if err != nil {
 
 				if err == jetstream.ErrKeyNotFound {
-					_, err = kv.PutString(r.Context(), deviceAuth.User, deviceAuth.Password)
+					_, err = kv.PutString(r.Context(), kvKey, deviceAuth.Password)
 					if err != nil {
 						w.WriteHeader(http.StatusInternalServerError)
 						utils.MarshallEncoder(err, w)

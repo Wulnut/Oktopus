@@ -75,6 +75,10 @@ func (a *Api) StartApi() {
 		return a.db.FindTenant(context.Background(), slug)
 	}))
 
+	// Device password (shared tenant credential)
+	tenantRouter.HandleFunc("/device-password", a.getDevicePassword).Methods("GET")
+	tenantRouter.HandleFunc("/device-password", a.setDevicePassword).Methods("PUT")
+
 	// CA Certs
 	tenantRouter.HandleFunc("/ca-certs", a.listCACerts).Methods("GET")
 	tenantRouter.HandleFunc("/ca-certs", a.addCACert).Methods("POST")

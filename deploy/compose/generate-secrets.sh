@@ -46,12 +46,19 @@ NATS_PW=${NATS_PW}
 EOF
 
 # Services that only need NATS_URL + TLS
-for svc in acs mqtt socketio ws; do
+for svc in acs socketio ws; do
     cat > "$COMPOSE_DIR/.env.${svc}" <<EOF
 NATS_URL=${NATS_URL_ENCODED}
 ${TLS_BLOCK}
 EOF
 done
+
+# MQTT broker needs auth enabled
+cat > "$COMPOSE_DIR/.env.mqtt" <<EOF
+NATS_URL=${NATS_URL_ENCODED}
+${TLS_BLOCK}
+AUTH_ENABLE=true
+EOF
 
 # Services that need NATS_URL + TLS + extra config
 cat > "$COMPOSE_DIR/.env.controller" <<EOF

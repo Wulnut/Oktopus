@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/OktopUSP/oktopus/ws/internal/usp_record"
@@ -148,15 +150,37 @@ func (c *Client) writePump() {
 	}
 }
 
+// parseTenantDevice splits "tenant/device" into parts.
+func parseTenantDevice(username string) (tenant, device string) {
+	parts := strings.SplitN(username, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", ""
+	}
+	return parts[0], parts[1]
+}
+
 // Handle USP Controller events
 func ServeController(
 	w http.ResponseWriter,
 	r *http.Request,
 	cEID string,
 	authEnable bool,
-	kv jetstream.KeyValue,
+	js jetstream.JetStream,
 ) {
 	if authEnable {
+		// Controller auth: try token from query param against any tenant bucket
+		// or a dedicated controller credential bucket
+		recv_token := r.URL.Query().Get("token")
+		tenant := r.URL.Query().Get("tenant")
+		if tenant == "" {
+			tenant = "default"
+		}
+		bucketName := "devices-auth-" + tenant
+		kv, err := js.KeyValue(context.Background(), bucketName)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		entry, err := kv.Get(r.Context(), cEID)
 		if err != nil {
 			if err == jetstream.ErrKeyNotFound {
@@ -167,7 +191,6 @@ func ServeController(
 			w.Write([]byte("Nats kv error:" + err.Error()))
 			return
 		}
-		recv_token := r.URL.Query().Get("token")
 		if recv_token != string(entry.Value()) {
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte("Unauthorized"))
@@ -193,7 +216,7 @@ func ServeAgent(
 	w http.ResponseWriter,
 	r *http.Request,
 	cEID string,
-	kv jetstream.KeyValue,
+	js jetstream.JetStream,
 	authEnable bool,
 ) {
 
@@ -211,20 +234,35 @@ func ServeAgent(
 	}
 
 	if authEnable {
-		entry, err := kv.Get(r.Context(), deviceid)
+		// Parse tenant from device ID (format: tenant/device)
+		tenant, _ := parseTenantDevice(deviceid)
+		if tenant == "" {
+			// Fall back to "default" tenant if no slash in device ID
+			tenant = "default"
+		}
+
+		bucketName := "devices-auth-" + tenant
+		kv, err := js.KeyValue(context.Background(), bucketName)
 		if err != nil {
-			if err == jetstream.ErrKeyNotFound {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			log.Println("Nats kv error:", err)
-			w.Write([]byte("Nats kv error:" + err.Error()))
+			log.Printf("auth: KV bucket %s not found: %v", bucketName, err)
+			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 
-		if mux.Vars(r)["passwd"] != string(entry.Value()) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+		passwd := mux.Vars(r)["passwd"]
+
+		// Try per-device credential first (sanitize key: colons not allowed in NATS KV keys)
+		kvKey := strings.ReplaceAll(deviceid, ":", "_")
+		entry, err := kv.Get(r.Context(), kvKey)
+		if err == nil && passwd == string(entry.Value()) {
+			// Per-device credential matched
+		} else {
+			// Fall back to shared tenant password
+			entry, err = kv.Get(r.Context(), "__tenant_password__")
+			if err != nil || passwd != string(entry.Value()) {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 		}
 	}
 

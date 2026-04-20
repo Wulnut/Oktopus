@@ -20,11 +20,11 @@ func main() {
 	// Locks app running until it receives a stop command as Ctrl+C.
 	signal.Notify(done, syscall.SIGINT)
 
-	_, kv := nats.StartNatsClient(conf.Nats)
-	
-	ws.StartNewServer(conf, kv)
+	_, js := nats.StartNatsClient(conf.Nats)
+
+	ws.StartNewServer(conf, js)
 
 	<-done
 
-	log.Println("(⌐■_■) Websockets server is out!")
+	log.Println("(>_<) Websockets server is out!")
 }

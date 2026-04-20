@@ -13,19 +13,19 @@ import (
 )
 
 // Starts New Websockets Server
-func StartNewServer(c config.Config, kv jetstream.KeyValue) {
+func StartNewServer(c config.Config, js jetstream.JetStream) {
 	// Initialize handlers of websockets events
 	go handler.InitHandlers(c.ControllerEID)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/ws/agent/{passwd}", func(w http.ResponseWriter, r *http.Request) {
-		handler.ServeAgent(w, r, c.ControllerEID, kv, c.Auth)
+		handler.ServeAgent(w, r, c.ControllerEID, js, c.Auth)
 	})
 	r.HandleFunc("/ws/agent", func(w http.ResponseWriter, r *http.Request) {
-		handler.ServeAgent(w, r, c.ControllerEID, kv, c.Auth)
+		handler.ServeAgent(w, r, c.ControllerEID, js, c.Auth)
 	})
 	r.HandleFunc("/ws/controller", func(w http.ResponseWriter, r *http.Request) {
-		handler.ServeController(w, r, c.ControllerEID, c.Auth, kv)
+		handler.ServeController(w, r, c.ControllerEID, c.Auth, js)
 	})
 
 	go func() {

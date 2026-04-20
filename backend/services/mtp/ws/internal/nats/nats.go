@@ -9,12 +9,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-const (
-	BUCKET_NAME        = "devices-auth"
-	BUCKET_DESCRIPTION = "Devices authentication"
-)
-
-func StartNatsClient(c config.Nats) (*nats.Conn, jetstream.KeyValue) {
+func StartNatsClient(c config.Nats) (*nats.Conn, jetstream.JetStream) {
 
 	var (
 		nc  *nats.Conn
@@ -40,15 +35,7 @@ func StartNatsClient(c config.Nats) (*nats.Conn, jetstream.KeyValue) {
 		log.Fatalf("Failed to create JetStream client: %v", err)
 	}
 
-	kv, err := js.CreateOrUpdateKeyValue(c.Ctx, jetstream.KeyValueConfig{
-		Bucket:      BUCKET_NAME,
-		Description: BUCKET_DESCRIPTION,
-	})
-	if err != nil {
-		log.Fatalf("Failed to create KeyValue store: %v", err)
-	}
-
-	return nc, kv
+	return nc, js
 }
 
 func defineOptions(c config.Nats) []nats.Option {

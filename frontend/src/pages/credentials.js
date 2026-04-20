@@ -109,10 +109,13 @@ const Page = () => {
       setCreatingNewCredential(false)
       return
     }else {
-      console.log("agora quebrasse ux córno mô quiridu")
-      const content = await result.json()
+      console.log("Unexpected response status:", result.status)
+      try {
+        const content = await result.text()
+        console.log("Response:", content)
+      } catch {}
       setCreatingNewCredential(false)
-      throw new Error(content);
+      return
     }
     setAddDeviceDialogOpen(false)
     let newData = {} 

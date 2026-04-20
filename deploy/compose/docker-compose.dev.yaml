@@ -31,14 +31,29 @@ services:
       # Override .env file - use empty string for relative URLs (works with nginx proxy)
       - NEXT_PUBLIC_REST_ENDPOINT=
 
+  stomp:
+    build:
+      context: ../../backend/services/mtp/stomp
+      dockerfile: build/Dockerfile
+
   stomp-adapter:
     build:
       context: ../../backend/services/mtp/stomp-adapter
       dockerfile: build/Dockerfile
 
+  mqtt:
+    build:
+      context: ../../backend/services/mtp/mqtt
+      dockerfile: build/Dockerfile
+
   mqtt-adapter:
     build:
       context: ../../backend/services/mtp/mqtt-adapter
+      dockerfile: build/Dockerfile
+
+  ws:
+    build:
+      context: ../../backend/services/mtp/ws
       dockerfile: build/Dockerfile
 
   ws-adapter:

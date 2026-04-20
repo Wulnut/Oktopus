@@ -40,7 +40,7 @@ const getProtocolParams = (protocol, host, tenantSlug) => {
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'WebSocket'],
         ['Device.LocalAgent.Controller.1.MTP.1.WebSocket.Host', host],
         ['Device.LocalAgent.Controller.1.MTP.1.WebSocket.Port', '8080'],
-        ['Device.LocalAgent.Controller.1.MTP.1.WebSocket.Path', `/${t}/`],
+        ['Device.LocalAgent.Controller.1.MTP.1.WebSocket.Path', `/ws/agent/<device_password>?eid=${t}/<endpoint_id>`],
       ];
     case 'STOMP':
       return [
@@ -50,7 +50,7 @@ const getProtocolParams = (protocol, host, tenantSlug) => {
         ['Device.LocalAgent.MTP.1.STOMP.Destination', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
         ['Device.STOMP.Connection.1.Host', host],
         ['Device.STOMP.Connection.1.Port', '61613'],
-        ['Device.STOMP.Connection.1.Username', '<device_serial>'],
+        ['Device.STOMP.Connection.1.Username', `${t}/<endpoint_id>`],
         ['Device.STOMP.Connection.1.Password', '<device_password>'],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'STOMP'],

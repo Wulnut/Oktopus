@@ -32,7 +32,7 @@ type msgAnswer struct {
 const NATS_MQTT_SUBJECT_PREFIX = "mqtt.usp.v1."
 const NATS_MQTT_ADAPTER_SUBJECT_PREFIX = "mqtt-adapter.usp.v1."
 const DEVICE_SUBJECT_PREFIX = "device.usp.v1."
-const MQTT_TOPIC_PREFIX = "oktopus/usp/"
+const MQTT_TOPIC_PREFIX = "oktopus/usp/v1/"
 const DEFAULT_TENANT = "default"
 
 type (
@@ -92,7 +92,7 @@ func (b *Bridge) StartBridge(serverUrl, clientId string) {
 	}
 
 	b.setMqttPassword()
-	if b.Mqtt.Username != "" && b.Mqtt.Password != "" {
+	if b.Mqtt.Username != "" {
 		autopahoClientConfig.SetUsernamePassword(b.Mqtt.Username, []byte(b.Mqtt.Password))
 	}
 
@@ -112,13 +112,14 @@ func (b *Bridge) natsMessageHandler(cm *autopaho.ConnectionManager) {
 	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"*.*.info", func(m *nats.Msg) {
 
 		device := getDeviceFromSubject(m.Subject)
-		log.Printf("Received message on info subject for device %s", device)
+		tenant := extractTenantFromSubject(m.Subject)
+		log.Printf("Received message on info subject for device %s tenant %s", device, tenant)
 		cm.Publish(b.Ctx, &paho.Publish{
 			QoS:     byte(b.Mqtt.Qos),
-			Topic:   MQTT_TOPIC_PREFIX + "v1/agent/" + device,
+			Topic:   MQTT_TOPIC_PREFIX + tenant + "/agent/" + device,
 			Payload: m.Data,
 			Properties: &paho.PublishProperties{
-				ResponseTopic: "oktopus/usp/v1/controller/" + device,
+				ResponseTopic: MQTT_TOPIC_PREFIX + tenant + "/controller/" + device,
 			},
 		})
 
@@ -127,13 +128,14 @@ func (b *Bridge) natsMessageHandler(cm *autopaho.ConnectionManager) {
 	b.Sub(NATS_MQTT_ADAPTER_SUBJECT_PREFIX+"*.*.api", func(m *nats.Msg) {
 
 		device := getDeviceFromSubject(m.Subject)
-		log.Printf("Received message on api subject for device %s", device)
+		tenant := extractTenantFromSubject(m.Subject)
+		log.Printf("Received message on api subject for device %s tenant %s", device, tenant)
 		cm.Publish(b.Ctx, &paho.Publish{
 			QoS:     byte(b.Mqtt.Qos),
-			Topic:   MQTT_TOPIC_PREFIX + "v1/agent/" + device,
+			Topic:   MQTT_TOPIC_PREFIX + tenant + "/agent/" + device,
 			Payload: m.Data,
 			Properties: &paho.PublishProperties{
-				ResponseTopic: "oktopus/usp/v1/api/" + device,
+				ResponseTopic: MQTT_TOPIC_PREFIX + tenant + "/api/" + device,
 			},
 		})
 
@@ -180,16 +182,20 @@ func (b *Bridge) mqttMessageHandler(status, controller, apiMsg, asyncMsg chan *p
 		select {
 		case d := <-status:
 			device := getDeviceFromTopic(d.Topic)
-			b.Pub(NATS_MQTT_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".status", d.Payload)
+			tenant := getTenantFromTopic(d.Topic)
+			b.Pub(NATS_MQTT_SUBJECT_PREFIX+tenant+"."+device+".status", d.Payload)
 		case c := <-controller:
 			device := getDeviceFromTopic(c.Topic)
-			b.Pub(NATS_MQTT_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".info", c.Payload)
+			tenant := getTenantFromTopic(c.Topic)
+			b.Pub(NATS_MQTT_SUBJECT_PREFIX+tenant+"."+device+".info", c.Payload)
 		case a := <-apiMsg:
 			device := getDeviceFromTopic(a.Topic)
-			b.Pub(DEVICE_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".api", a.Payload)
+			tenant := getTenantFromTopic(a.Topic)
+			b.Pub(DEVICE_SUBJECT_PREFIX+tenant+"."+device+".api", a.Payload)
 		case async := <-asyncMsg:
 			device := getDeviceFromTopic(async.Topic)
-			b.Pub(NATS_MQTT_SUBJECT_PREFIX+DEFAULT_TENANT+"."+device+".async", async.Payload)
+			tenant := getTenantFromTopic(async.Topic)
+			b.Pub(NATS_MQTT_SUBJECT_PREFIX+tenant+"."+device+".async", async.Payload)
 		}
 	}
 }
@@ -198,6 +204,16 @@ func getDeviceFromTopic(topic string) string {
 	paths := strings.Split(topic, "/")
 	device := paths[len(paths)-1]
 	return device
+}
+
+// getTenantFromTopic extracts tenant slug from MQTT topic.
+// Topic format: oktopus/usp/v1/<tenant>/controller/<device>
+func getTenantFromTopic(topic string) string {
+	paths := strings.Split(topic, "/")
+	if len(paths) >= 4 {
+		return paths[3]
+	}
+	return DEFAULT_TENANT
 }
 
 func subscribe(ctx context.Context, qos int, c *autopaho.ConnectionManager) {
