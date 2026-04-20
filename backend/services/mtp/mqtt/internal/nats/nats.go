@@ -18,11 +18,11 @@ const (
 	NATS_WS_SUBJECT_PREFIX           = "ws.usp.v1."
 	NATS_WS_ADAPTER_SUBJECT_PREFIX   = "ws-adapter.usp.v1."
 	DEVICE_SUBJECT_PREFIX            = "device.usp.v1."
-	BUCKET_NAME                      = "devices-auth"
-	BUCKET_DESCRIPTION               = "Devices authentication"
 )
 
-func StartNatsClient(c config.Nats) (jetstream.JetStream, *nats.Conn, jetstream.KeyValue) {
+// StartNatsClient connects to NATS and returns JetStream and connection.
+// No global KV bucket is created — auth uses per-tenant buckets on demand.
+func StartNatsClient(c config.Nats) (jetstream.JetStream, *nats.Conn) {
 
 	var (
 		nc  *nats.Conn
@@ -48,15 +48,7 @@ func StartNatsClient(c config.Nats) (jetstream.JetStream, *nats.Conn, jetstream.
 		log.Fatalf("Failed to create JetStream client: %v", err)
 	}
 
-	kv, err := js.CreateOrUpdateKeyValue(c.Ctx, jetstream.KeyValueConfig{
-		Bucket:      BUCKET_NAME,
-		Description: BUCKET_DESCRIPTION,
-	})
-	if err != nil {
-		log.Fatalf("Failed to create KeyValue store: %v", err)
-	}
-
-	return js, nc, kv
+	return js, nc
 }
 
 func defineOptions(c config.Nats) []nats.Option {

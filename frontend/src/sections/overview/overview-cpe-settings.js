@@ -26,7 +26,7 @@ const getProtocolParams = (protocol, host, tenantSlug) => {
         ['Device.LocalAgent.MTP.1.MQTT.ResponseTopicConfigured', `oktopus/usp/v1/${t}/agent/<endpoint_id>`],
         ['Device.MQTT.Client.1.BrokerAddress', `mqtt://${host}:1883`],
         ['Device.MQTT.Client.1.TransportProtocol', 'TCP/IP'],
-        ['Device.MQTT.Client.1.Username', '<device_serial>'],
+        ['Device.MQTT.Client.1.Username', `${t}/<endpoint_id>`],
         ['Device.MQTT.Client.1.Password', '<device_password>'],
         ['Device.LocalAgent.Controller.1.EndpointID', 'oktopusController'],
         ['Device.LocalAgent.Controller.1.MTP.1.Protocol', 'MQTT'],
