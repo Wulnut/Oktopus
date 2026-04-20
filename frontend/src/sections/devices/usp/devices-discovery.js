@@ -1107,7 +1107,7 @@ export const DevicesDiscovery = () => {
       )}
 
       {/* Parameter Edit Dialog */}
-      <Dialog open={open} slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}>
+      <Dialog open={open} onClose={() => setOpen(false)} slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}>
         <DialogContent>
           <DialogContentText>{parameter}</DialogContentText>
           <TextField
@@ -1130,6 +1130,7 @@ export const DevicesDiscovery = () => {
       {/* Error/Response Modal */}
       <Dialog
         open={errorModal}
+        onClose={() => { setErrorModalText(""); setErrorModal(false); setErrorModalTitle("Response"); }}
         slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}
         fullWidth
         maxWidth="md"
@@ -1159,6 +1160,7 @@ export const DevicesDiscovery = () => {
       {deviceCommandToExecute && (
         <Dialog
           open={openCommandDialog}
+          onClose={() => setOpenCommandDialog(false)}
           slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}
           fullWidth
           maxWidth="md"
