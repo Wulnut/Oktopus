@@ -15,6 +15,10 @@ func (h *Handler) HandleDeviceInfo(device, tenantSlug, subject string, data []by
 	defer ack()
 	log.Printf("Device %s info, mtp: %s, tenant: %s", device, mtp, tenantSlug)
 	deviceInfo := parseDeviceInfoMsg(device, subject, data, getMtp(mtp))
+	if deviceInfo.SN == "" {
+		log.Printf("WARNING: empty SN for device %s on subject %s, skipping", device, subject)
+		return
+	}
 	deviceInfo.TenantID = tenantSlug
 	if deviceExists, _ := h.db.DeviceExists(deviceInfo.SN); !deviceExists {
 		fmtDeviceInfo, _ := json.Marshal(deviceInfo)

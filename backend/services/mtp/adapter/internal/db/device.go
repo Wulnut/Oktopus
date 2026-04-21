@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"log"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -56,6 +57,10 @@ type FilterOptions struct {
 }
 
 func (d *Database) CreateDevice(device Device) error {
+	if device.SN == "" {
+		return fmt.Errorf("cannot create device with empty SN")
+	}
+
 	var result bson.M
 	var deviceExistent Device
 
