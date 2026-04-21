@@ -1390,6 +1390,7 @@ export const DevicesHistory = () => {
                         backgroundColor: `${bgColor}30`,
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: `${bgColor}40` },
+                        '& td': { py: 0.5 },
                       }}
                     >
                       <TableCell>
