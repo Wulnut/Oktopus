@@ -396,8 +396,20 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     const units = [];
     const requests = [];
     const execUnitsMap = new Map(); // Map<path, {name, status}>
-    
+
     if (response.req_path_results) {
+      // Check if all critical paths returned errors (LCM unsupported)
+      const deploymentErrors = response.req_path_results.filter(
+        r => r.err_code && r.requested_path?.includes('SoftwareModules')
+      );
+      if (deploymentErrors.length > 0 && deploymentErrors.length >= response.req_path_results.filter(
+        r => r.requested_path?.includes('SoftwareModules')
+      ).length) {
+        setError('LCM is not supported by this device: ' + deploymentErrors[0].err_msg);
+        setIsSupported(false);
+        return;
+      }
+
       response.req_path_results.forEach(pathResult => {
         if (pathResult.resolved_path_results) {
           pathResult.resolved_path_results.forEach(resolved => {
@@ -1918,7 +1930,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
                 },
               }}
             >
-              Device.SoftwareModules. nodes are unsupported
+              The device do not support Device.SoftwareModules. nodes
             </Alert>
           </Box>
         )}
