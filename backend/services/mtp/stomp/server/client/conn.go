@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"time"
@@ -475,6 +476,14 @@ func (c *Conn) handleConnect(f *frame.Frame) error {
 	// authenticator function.
 	login, _ := f.Header.Contains(frame.Login)
 	passcode, _ := f.Header.Contains(frame.Passcode)
+	// Log CONNECT frame headers (redact passcode)
+	for i := 0; i < f.Header.Len(); i++ {
+		k, v := f.Header.GetAt(i)
+		if k == "passcode" {
+			v = "[REDACTED]"
+		}
+		log.Printf("[STOMP CONNECT] header: %s=%s", k, v)
+	}
 	if !c.config.Authenticate(login, passcode) {
 		// sleep to slow down a rogue client a little bit
 		c.log.Error("authentication failed")

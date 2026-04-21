@@ -23,7 +23,9 @@ type NatsAuthenticator struct {
 }
 
 func (a *NatsAuthenticator) Authenticate(login, passcode string) bool {
+	log.Printf("auth: attempt login=%q passcode=[REDACTED]", login)
 	if login == "" {
+		log.Println("auth: empty login rejected")
 		return false
 	}
 
