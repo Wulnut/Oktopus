@@ -108,7 +108,7 @@ export const items = [
     )
   },
   {
-    title: 'Credentials',
+    title: 'Device Credentials',
     path: '/credentials',
     icon: (
       <SvgIcon fontSize="small">
@@ -133,16 +133,6 @@ export const items = [
         <CogIcon />
       </SvgIcon>
     )
-  },
-  {
-    title: 'Docs',
-    path: 'https://docs.oktopus.app.br',
-    icon: (
-      <SvgIcon fontSize="small">
-        <BookOpenIcon />
-      </SvgIcon>
-    ),
-    external: true,
   },
   {
     title: 'Mass Actions',

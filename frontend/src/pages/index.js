@@ -22,7 +22,7 @@ import SignalSlashIcon from '@heroicons/react/24/solid/SignalSlashIcon';
 import BuildingOfficeIcon from '@heroicons/react/24/solid/BuildingOfficeIcon';
 
 const DevicesCard = ({ total, online, offline }) => (
-  <Card sx={{ height: '100%' }}>
+  <Card sx={{ height: '100%', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => window.location.href = '/devices'}>
     <CardContent>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         <Avatar sx={{ bgcolor: 'primary.main', width: 48, height: 48 }}>
