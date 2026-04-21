@@ -19,7 +19,9 @@ import (
 // Username format: <tenant_slug>/<endpoint_id>
 // Checks per-device credential first, then falls back to shared tenant password.
 type NatsAuthenticator struct {
-	js jetstream.JetStream
+	js          jetstream.JetStream
+	serviceUser string
+	serviceKey  string
 }
 
 func (a *NatsAuthenticator) Authenticate(login, passcode string) bool {
@@ -27,6 +29,12 @@ func (a *NatsAuthenticator) Authenticate(login, passcode string) bool {
 	if login == "" {
 		log.Println("auth: empty login rejected")
 		return false
+	}
+
+	// Check service account (internal services like stomp-adapter)
+	if a.serviceKey != "" && login == a.serviceUser && passcode == a.serviceKey {
+		log.Printf("auth: service account %q authenticated", login)
+		return true
 	}
 
 	if a.js == nil {
@@ -136,7 +144,11 @@ func main() {
 		log.Println("Warning: NATS_URL not set, STOMP auth will reject all connections")
 	}
 
-	auth := &NatsAuthenticator{js: js}
+	auth := &NatsAuthenticator{
+		js:          js,
+		serviceUser: os.Getenv("STOMP_SERVICE_USER"),
+		serviceKey:  os.Getenv("STOMP_SERVICE_KEY"),
+	}
 
 	l, err := net.Listen("tcp", server.DefaultAddr)
 	if err != nil {

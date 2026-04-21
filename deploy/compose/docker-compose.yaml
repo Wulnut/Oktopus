@@ -105,7 +105,7 @@ services:
     ports:
       - 61613:61613
     env_file:
-      - .env.stomp-adapter
+      - .env.stomp
     volumes:
       - ./nats_config:/tmp/nats/config
     networks:

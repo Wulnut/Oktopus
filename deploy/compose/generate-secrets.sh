@@ -29,6 +29,7 @@ echo "Generating secrets for first-time setup..."
 NATS_USER="oktopus_$(rand_secret 8)"
 NATS_PW="$(rand_secret 24)"
 JWT_SECRET="$(rand_secret 32)"
+STOMP_SERVICE_KEY="$(rand_secret 24)"
 
 NATS_URL_ENCODED="nats://${NATS_USER}:${NATS_PW}@msg_broker:4222"
 
@@ -88,8 +89,17 @@ NATS_URL=${NATS_URL_ENCODED}
 ${TLS_BLOCK}
 EOF
 
+cat > "$COMPOSE_DIR/.env.stomp" <<EOF
+NATS_URL=${NATS_URL_ENCODED}
+${TLS_BLOCK}
+STOMP_SERVICE_USER=oktopusAdapter
+STOMP_SERVICE_KEY=${STOMP_SERVICE_KEY}
+EOF
+
 cat > "$COMPOSE_DIR/.env.stomp-adapter" <<EOF
 STOMP_SERVER=stomp:61613
+STOMP_USER=oktopusAdapter
+STOMP_PASSWD=${STOMP_SERVICE_KEY}
 NATS_URL=${NATS_URL_ENCODED}
 ${TLS_BLOCK}
 EOF
