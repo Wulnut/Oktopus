@@ -225,7 +225,7 @@ func (a *Api) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		for _, fw := range firmwares {
 			if fw.FileName != "" {
-				deleteFileFromUploadService(fw.FileName, authHeader)
+				deleteFileFromUploadService(fw.FileName, slug, authHeader)
 			}
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
+	"github.com/leandrofars/oktopus/internal/api/middleware"
 	"github.com/leandrofars/oktopus/internal/db"
 )
 
@@ -107,11 +108,12 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 		fingerprint = hex.EncodeToString(h.Sum(nil))
 		fileSize = written
 
-		if fwdErr := forwardFileToUploadService(tmpFile.Name(), fileName, r.Header.Get("Authorization")); fwdErr != nil {
+		tenantSlug := middleware.GetTenantSlug(r)
+		if fwdErr := forwardFileToUploadService(tmpFile.Name(), fileName, tenantSlug, r.Header.Get("Authorization")); fwdErr != nil {
 			http.Error(w, "upload to file server failed: "+fwdErr.Error(), http.StatusBadGateway)
 			return
 		}
-		downloadURL = firmwarePublicBaseURL + "/" + fileName
+		downloadURL = firmwarePublicBaseURL + "/" + tenantSlug + "/" + fileName
 	} else {
 		downloadURL = r.FormValue("download_url")
 		if downloadURL == "" {
@@ -159,8 +161,9 @@ func (a *Api) deleteFirmware(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if fw.FileName != "" {
+		tenantSlug := middleware.GetTenantSlug(r)
 		// Best-effort delete from file service — ignore errors
-		deleteFileFromUploadService(fw.FileName, r.Header.Get("Authorization"))
+		deleteFileFromUploadService(fw.FileName, tenantSlug, r.Header.Get("Authorization"))
 	}
 	if err := a.tenantDB(r).DeleteFirmware(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -241,7 +244,7 @@ func (a *Api) updateFirmwarePhase(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func forwardFileToUploadService(tmpPath, fileName, authHeader string) error {
+func forwardFileToUploadService(tmpPath, fileName, tenantSlug, authHeader string) error {
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
 
@@ -265,7 +268,8 @@ func forwardFileToUploadService(tmpPath, fileName, authHeader string) error {
 		pw.Close()
 	}()
 
-	req, err := http.NewRequest(http.MethodPost, firmwareUploadServiceURL+"/upload", pr)
+	uploadURL := fmt.Sprintf("%s/upload?tenant=%s", firmwareUploadServiceURL, url.QueryEscape(tenantSlug))
+	req, err := http.NewRequest(http.MethodPost, uploadURL, pr)
 	if err != nil {
 		return err
 	}
@@ -283,9 +287,9 @@ func forwardFileToUploadService(tmpPath, fileName, authHeader string) error {
 	return nil
 }
 
-func deleteFileFromUploadService(fileName, authHeader string) {
+func deleteFileFromUploadService(fileName, tenantSlug, authHeader string) {
 	req, err := http.NewRequest(http.MethodDelete,
-		fmt.Sprintf("%s/delete?name=%s", firmwareUploadServiceURL, url.QueryEscape(fileName)), nil)
+		fmt.Sprintf("%s/delete?tenant=%s&name=%s", firmwareUploadServiceURL, url.QueryEscape(tenantSlug), url.QueryEscape(fileName)), nil)
 	if err != nil {
 		return
 	}

@@ -31,8 +31,17 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: 'Invalid token' })); return;
     }
 
-    if (req.method === 'POST' && req.url === '/upload') {
-        const form = new IncomingForm({ maxFileSize: 500 * 1024 * 1024, uploadDir: FIRMWARE_DIR }); // 500MB
+    if (req.method === 'POST' && req.url.startsWith('/upload')) {
+        const reqUrl = new URL(req.url, 'http://localhost');
+        const tenant = reqUrl.searchParams.get('tenant');
+        if (!tenant || tenant.includes('/') || tenant.includes('..')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing or invalid tenant parameter' })); return;
+        }
+        const tenantDir = path.join(FIRMWARE_DIR, tenant);
+        fs.mkdirSync(tenantDir, { recursive: true });
+
+        const form = new IncomingForm({ maxFileSize: 500 * 1024 * 1024, uploadDir: tenantDir }); // 500MB
         form.parse(req, (err, fields, files) => {
             if (err) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -48,7 +57,7 @@ const server = http.createServer((req, res) => {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: 'Invalid filename' })); return;
             }
-            const destPath = path.join(FIRMWARE_DIR, origName);
+            const destPath = path.join(tenantDir, origName);
             fs.rename(file.filepath, destPath, (renameErr) => {
                 if (renameErr) {
                     res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -67,13 +76,18 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.method === 'DELETE' && req.url.startsWith('/delete')) {
-        const url = new URL(req.url, `http://localhost`);
-        const fileName = url.searchParams.get('name');
+        const reqUrl = new URL(req.url, 'http://localhost');
+        const tenant = reqUrl.searchParams.get('tenant');
+        const fileName = reqUrl.searchParams.get('name');
+        if (!tenant || tenant.includes('/') || tenant.includes('..')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing or invalid tenant parameter' })); return;
+        }
         if (!fileName || fileName.includes('/') || fileName.includes('..')) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Invalid file name' })); return;
         }
-        const filePath = path.join(FIRMWARE_DIR, fileName);
+        const filePath = path.join(FIRMWARE_DIR, tenant, fileName);
         fs.unlink(filePath, (err) => {
             if (err) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
