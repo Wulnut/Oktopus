@@ -246,9 +246,21 @@ Container images are prefixed with the tenant slug: `<tenant_slug>/<name>:<tag>`
 - **Offline device access**: The Info tab falls back to cached data when the device is offline, skipping USP queries entirely. Other device tabs show a "Device is Offline" banner.
 - **Tenant deletion** performs full cleanup: firmware files, registry containers, adapter devices, users, databases, KV buckets.
 
+### Build & Deploy Scripts
+
+All scripts are in `deploy/compose/`:
+
+| Script | Purpose |
+|--------|---------|
+| `build.sh` | Build all images from source. Accepts service names: `./build.sh controller` |
+| `run.sh` | Deploy using locally built images |
+| `run_debug.sh` | Deploy with frontend hot-reload |
+| `stop.sh` | Stop all services |
+| `package.sh` | Create offline deployment archive (`oktopus-deploy.tar.gz`) |
+
 ### Build & Test Rules
 
 - **Always use Docker** for building and testing — never use host tools (`npx`, `npm`, `node`, `go`) directly. Use `sg docker -c "..."` if the docker group requires it.
-- **Verify frontend changes**: `sg docker -c "cd deploy/compose && docker compose -f docker-compose.yaml -f docker-compose.dev.yaml build frontend"`
-- **Verify controller changes**: `sg docker -c "cd deploy/compose && docker compose -f docker-compose.yaml -f docker-compose.dev.yaml build controller"`
+- **Build all**: `sg docker -c "cd deploy/compose && ./build.sh"`
+- **Build specific service**: `sg docker -c "cd deploy/compose && ./build.sh controller"`
 - **Run tests**: `cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm <service>` (see README for full list)

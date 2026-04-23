@@ -8,17 +8,21 @@ Oktopus is an Open Source USP Controller and CWMP compatible multi-vendor manage
 
 ```bash
 cd deploy/compose
-./run.sh
+./build.sh        # Build all images from source
+./run.sh          # Deploy all services
 ```
 
 On first run, `generate-secrets.sh` automatically creates `.env.*` files with random credentials from the `.env.*.example` templates. The UI is available at `http://localhost`.
 
-For development (frontend hot-reload, backend rebuilt on start):
+### Scripts
 
-```bash
-cd deploy/compose
-./run_debug.sh
-```
+| Script | Purpose |
+|--------|---------|
+| `build.sh` | Build all Docker images from source. Pass service names to build specific ones: `./build.sh controller` |
+| `run.sh` | Deploy all services using locally built images |
+| `run_debug.sh` | Deploy with frontend hot-reload (source mounted, no rebuild needed for frontend changes) |
+| `stop.sh` | Stop all services |
+| `package.sh` | Create offline deployment archive (see [Offline Deployment](#offline-deployment)) |
 
 Stop all services:
 
@@ -88,13 +92,14 @@ Each service has a `.env.<service>.example` template in `deploy/compose/`. On fi
 | File | Key variables |
 |------|--------------|
 | `.env.nats` | `NATS_NAME`, `NATS_USER`, `NATS_PW` |
-| `.env.controller` | `MONGO_URI`, `NATS_URL`, `FIRMWARE_BASE_URL`, `SECRET_API_KEY` |
+| `.env.controller` | `MONGO_URI`, `NATS_URL`, `FIRMWARE_UPLOAD_URL`, `SECRET_API_KEY` |
 | `.env.adapter` | `MONGO_URI`, `NATS_URL` |
 | `.env.mqtt` | `NATS_URL` |
 | `.env.mqtt-adapter` | `MQTT_URL`, `NATS_URL` |
 | `.env.ws` | `NATS_URL` |
 | `.env.ws-adapter` | `WS_ADDR`, `NATS_URL` |
-| `.env.stomp-adapter` | `STOMP_SERVER`, `NATS_URL` |
+| `.env.stomp` | `NATS_URL`, `STOMP_SERVICE_USER`, `STOMP_SERVICE_KEY` |
+| `.env.stomp-adapter` | `STOMP_SERVER`, `STOMP_USER`, `STOMP_PASSWD`, `NATS_URL` |
 | `.env.acs` | `NATS_URL` |
 | `.env.socketio` | `NATS_URL` |
 | `.env.firmware-upload` | `SERVER_PORT`, `FIRMWARE_DIR`, `JWT_SECRET` |
@@ -144,6 +149,24 @@ See `docs/SECURITY.md` for known limitations on registry isolation.
 - **Dark/Light Theme**: Toggle via the gear icon in the top navigation. Default: dark mode. Persisted to localStorage.
 - **Tenant Selector**: SuperAdmin sees a dropdown to switch tenants. Tenant users see their organization name.
 - **Settings Drawer**: Right-side drawer with theme toggle and future settings.
+
+## Offline Deployment
+
+To deploy on a VM without git or build tools:
+
+```bash
+# On the build machine
+cd deploy/compose
+./package.sh                    # Creates oktopus-deploy.tar.gz
+
+# Copy to target VM, then:
+tar xzf oktopus-deploy.tar.gz
+cd oktopus-deploy
+docker load -i images.tar       # Load all Docker images
+./run.sh                        # Deploy
+```
+
+The archive contains all Docker images, compose config, nginx config, env templates, and scripts. Only Docker and docker compose are required on the target VM.
 
 ## Documentation
 
