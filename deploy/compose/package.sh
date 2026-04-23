@@ -19,27 +19,21 @@ STAGE_DIR="/tmp/${OUTPUT_NAME}"
 echo "=== Building all images ==="
 ./build.sh
 
+echo "=== Preparing staging directory ==="
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR"
+
 echo "=== Collecting image list ==="
 IMAGES=$(COMPOSE_PROFILES=nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,portainer,registry \
-  docker compose -f docker-compose.yaml -f docker-compose.dev.yaml images --format json \
-  | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-seen = set()
-for img in data:
-    name = img['Repository'] + ':' + img['Tag']
-    if name not in seen and 'golang:' not in name:
-        seen.add(name)
-        print(name)
-")
+  docker compose -f docker-compose.yaml -f docker-compose.dev.yaml config --images)
 
 echo "Images to package:"
 echo "$IMAGES"
+IMAGE_COUNT=$(echo "$IMAGES" | wc -l)
+echo "Total: $IMAGE_COUNT images"
 
 echo "=== Saving images to tar ==="
-rm -rf "$STAGE_DIR"
-mkdir -p "$STAGE_DIR"
-echo "$IMAGES" | xargs docker save -o "$STAGE_DIR/images.tar"
+docker save -o "$STAGE_DIR/images.tar" $IMAGES
 
 echo "=== Copying deployment files ==="
 # Compose and config
