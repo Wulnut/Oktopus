@@ -14,7 +14,7 @@ set -e
 cd "$(dirname "$0")"
 
 OUTPUT_NAME="${1:-oktopus-deploy}"
-STAGE_DIR="/tmp/${OUTPUT_NAME}"
+STAGE_DIR="$(pwd)/${OUTPUT_NAME}"
 
 echo "=== Building all images ==="
 ./build.sh
@@ -71,7 +71,7 @@ RUNEOF
 chmod +x "$STAGE_DIR/run.sh"
 
 echo "=== Creating archive ==="
-tar czf "${OUTPUT_NAME}.tar.gz" -C /tmp "${OUTPUT_NAME}"
+tar czf "${OUTPUT_NAME}.tar.gz" -C "$(pwd)" "${OUTPUT_NAME}"
 rm -rf "$STAGE_DIR"
 
 ARCHIVE_SIZE=$(du -h "${OUTPUT_NAME}.tar.gz" | cut -f1)
