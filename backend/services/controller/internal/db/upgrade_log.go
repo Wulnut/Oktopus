@@ -97,6 +97,11 @@ func (t *TenantDB) ListUpgradeLogsByDevice(ctx context.Context, deviceSN string)
 	return results, nil
 }
 
+func (t *TenantDB) DeleteUpgradeLog(ctx context.Context, id primitive.ObjectID) error {
+	_, err := t.UpgradeLogs().DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
 func (t *TenantDB) GetPendingUpgradeLog(ctx context.Context, deviceSN string) (FirmwareUpgradeLog, error) {
 	var l FirmwareUpgradeLog
 	err := t.UpgradeLogs().FindOne(ctx, bson.M{

@@ -67,7 +67,6 @@ MONGO_URI=mongodb://mongo_usp:27017
 NATS_URL=${NATS_URL_ENCODED}
 ${TLS_BLOCK}
 FIRMWARE_UPLOAD_URL=http://firmware-upload:8006
-FIRMWARE_BASE_URL=http://localhost/firmwares
 SECRET_API_KEY=${JWT_SECRET}
 EOF
 

@@ -155,10 +155,10 @@ func findAvailablePartition(data interface{}) string {
 				if resolvedPath == "" {
 					resolvedPath, _ = rrMap["resolvedPath"].(string)
 				}
-				// resolvedPath is like "Device.DeviceInfo.FirmwareImage.1." — split by "." and take last non-empty segment
+				// resolvedPath is like "Device.DeviceInfo.FirmwareImage.1." — extract instance number with trailing dot
 				parts := strings.Split(strings.TrimSuffix(resolvedPath, "."), ".")
 				if len(parts) > 0 {
-					return parts[len(parts)-1]
+					return parts[len(parts)-1] + "."
 				}
 			}
 		}

@@ -98,6 +98,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
   const [fwPolicyLoading, setFwPolicyLoading] = useState(false);
   const [availableFirmware, setAvailableFirmware] = useState([]);
   const [noCampaignAlert, setNoCampaignAlert] = useState(false);
+  const [upgradeLogs, setUpgradeLogs] = useState([]);
 
   const fetchCachedInfo = useCallback(async () => {
     onStatusRefresh?.();
@@ -175,8 +176,19 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
         // ignore
       }
     };
+    const fetchUpgradeLogs = async () => {
+      try {
+        const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/upgrade-logs`, 'GET');
+        if (status === 200 && Array.isArray(result)) {
+          setUpgradeLogs(result);
+        }
+      } catch {
+        // ignore
+      }
+    };
     fetchPolicy();
     fetchFwList();
+    fetchUpgradeLogs();
   }, [sn]);
 
   // Check if campaign exists for this device's hardware when policy is "campaign"
@@ -426,6 +438,56 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
           )}
         </CardContent>
       </Card>
+
+      {/* Upgrade History */}
+      {upgradeLogs.length > 0 && (
+        <Card sx={{ mt: 2 }}>
+          <CardHeader title="Upgrade History" />
+          <Divider />
+          <TableContainer component={Paper} elevation={0}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Firmware</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Trigger</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem' }}>Error</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {upgradeLogs.map((log) => (
+                  <TableRow key={log.id} hover>
+                    <TableCell sx={{ fontSize: '0.82rem' }}>
+                      {log.firmware_name} v{log.firmware_build_ver}
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={log.status}
+                        size="small"
+                        color={
+                          log.status === 'success' ? 'success'
+                          : log.status === 'failed' ? 'error'
+                          : log.status === 'downloading' ? 'warning'
+                          : 'info'
+                        }
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell sx={{ fontSize: '0.82rem' }}>{log.trigger_type}</TableCell>
+                    <TableCell sx={{ fontSize: '0.82rem' }}>
+                      {new Date(log.triggered_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell sx={{ fontSize: '0.82rem', color: 'error.main' }}>
+                      {log.error || ''}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
+      )}
 
       <ConfirmDialog
         open={confirmDialog.open}

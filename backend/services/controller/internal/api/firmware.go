@@ -22,7 +22,39 @@ import (
 )
 
 var firmwareUploadServiceURL = getEnvOrDefault("FIRMWARE_UPLOAD_URL", "http://firmware-upload:8006")
-var firmwarePublicBaseURL = getEnvOrDefault("FIRMWARE_BASE_URL", "http://file-server:8004/firmwares")
+
+// generateStoredFileName creates a deterministic filename from firmware metadata.
+// Format: <vendor>_<model>_<hw_version>_<build_version>.<ext>
+func generateStoredFileName(vendor, model, hwVersion, buildVersion, origFilename string) string {
+	sanitize := func(s string) string {
+		s = strings.ReplaceAll(s, " ", "_")
+		s = strings.ReplaceAll(s, "/", "_")
+		s = strings.ReplaceAll(s, "\\", "_")
+		s = strings.ReplaceAll(s, "..", "_")
+		return s
+	}
+
+	ext := filepath.Ext(origFilename)
+	parts := []string{}
+	for _, p := range []string{vendor, model, hwVersion, buildVersion} {
+		if s := sanitize(strings.TrimSpace(p)); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	if len(parts) == 0 {
+		return sanitize(origFilename)
+	}
+	return strings.Join(parts, "_") + ext
+}
+
+// firmwareDownloadURL constructs the download URL from the request's Host header.
+func firmwareDownloadURL(r *http.Request, tenantSlug, storedFileName string) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + "/firmwares/" + tenantSlug + "/" + storedFileName
+}
 
 func getEnvOrDefault(key, defaultVal string) string {
 	if v := os.Getenv(key); v != "" {
@@ -71,24 +103,28 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var fileName, fingerprint, downloadURL string
-	var fileSize int64
-
-	file, header, err := r.FormFile("file")
-	if err != nil && err != http.ErrMissingFile {
-		http.Error(w, "error reading file: "+err.Error(), http.StatusBadRequest)
+	// Check for duplicate firmware (same vendor+model+hw_version+build_version)
+	_, err := a.tenantDB(r).GetFirmwareByIdentity(r.Context(), vendor, model, hwVersion, buildVersion)
+	if err == nil {
+		http.Error(w, "Firmware with this vendor/model/hw_version/build_version already exists", http.StatusConflict)
 		return
 	}
 
-	if err == nil && file != nil {
+	var fileName, fingerprint, downloadURL string
+	var fileSize int64
+
+	file, header, fErr := r.FormFile("file")
+	if fErr != nil && fErr != http.ErrMissingFile {
+		http.Error(w, "error reading file: "+fErr.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if fErr == nil && file != nil {
 		defer file.Close()
 
-		// Sanitize filename to prevent path traversal
-		fileName = filepath.Base(header.Filename)
-		if fileName == "." || fileName == ".." || strings.ContainsAny(fileName, `/\`) {
-			http.Error(w, "Invalid filename", http.StatusBadRequest)
-			return
-		}
+		// Generate deterministic filename from metadata
+		origName := filepath.Base(header.Filename)
+		fileName = generateStoredFileName(vendor, model, hwVersion, buildVersion, origName)
 
 		// Stream firmware to temp file instead of buffering in memory
 		h := sha256.New()
@@ -113,7 +149,7 @@ func (a *Api) uploadFirmware(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "upload to file server failed: "+fwdErr.Error(), http.StatusBadGateway)
 			return
 		}
-		downloadURL = firmwarePublicBaseURL + "/" + tenantSlug + "/" + fileName
+		downloadURL = firmwareDownloadURL(r, tenantSlug, fileName)
 	} else {
 		downloadURL = r.FormValue("download_url")
 		if downloadURL == "" {

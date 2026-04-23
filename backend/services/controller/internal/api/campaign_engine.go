@@ -119,8 +119,21 @@ func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device e
 	}
 
 	existingLog, err := tdb.GetUpgradeLogByDeviceAndFirmware(ctx, device.SN, fw.ID)
-	if err == nil && (existingLog.Status == "success" || existingLog.Status == "pending" || existingLog.Status == "downloading") {
-		return
+	if err == nil {
+		switch existingLog.Status {
+		case "success":
+			return
+		case "pending", "downloading":
+			if time.Since(existingLog.TriggeredAt) > 15*time.Minute {
+				tdb.UpdateUpgradeLogStatus(ctx, existingLog.ID, "failed", "timed out after 15 minutes")
+				tdb.DeleteUpgradeLog(ctx, existingLog.ID)
+			} else {
+				return
+			}
+		default:
+			// failed — remove stale log so a new one can be created
+			tdb.DeleteUpgradeLog(ctx, existingLog.ID)
+		}
 	}
 
 	a.triggerUpgrade(ctx, tdb, device, fw, primitive.NilObjectID, "manual", tenantSlug)
@@ -154,8 +167,16 @@ func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device
 	existingLog, err := tdb.GetUpgradeLogByDeviceAndFirmware(ctx, device.SN, fw.ID)
 	if err == nil {
 		switch existingLog.Status {
-		case "success", "pending", "downloading":
+		case "success":
 			return
+		case "pending", "downloading":
+			if time.Since(existingLog.TriggeredAt) <= 15*time.Minute {
+				return
+			}
+			tdb.UpdateUpgradeLogStatus(ctx, existingLog.ID, "failed", "timed out after 15 minutes")
+			// Expired — treat as failed, fall through to retry
+			existingLog.Status = "failed"
+			fallthrough
 		case "failed":
 			if existingLog.RetryCount >= maxRetries {
 				return

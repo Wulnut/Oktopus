@@ -52,6 +52,17 @@ func (t *TenantDB) CreateFirmware(ctx context.Context, fw Firmware) (Firmware, e
 	return fw, err
 }
 
+func (t *TenantDB) GetFirmwareByIdentity(ctx context.Context, vendor, model, hwVersion, buildVersion string) (Firmware, error) {
+	var fw Firmware
+	err := t.Firmware().FindOne(ctx, bson.M{
+		"vendor":        vendor,
+		"model":         model,
+		"hw_version":    hwVersion,
+		"build_version": buildVersion,
+	}).Decode(&fw)
+	return fw, err
+}
+
 func (t *TenantDB) DeleteFirmware(ctx context.Context, id primitive.ObjectID) error {
 	_, err := t.Firmware().DeleteOne(ctx, bson.M{"_id": id})
 	return err

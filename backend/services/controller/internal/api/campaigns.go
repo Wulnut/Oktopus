@@ -1,17 +1,23 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/leandrofars/oktopus/internal/api/middleware"
+	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/db"
+	"github.com/leandrofars/oktopus/internal/entity"
+	local "github.com/leandrofars/oktopus/internal/nats"
 )
 
 // GET /api/campaigns
@@ -209,6 +215,36 @@ func (a *Api) setDeviceFWPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+
+	// Trigger upgrade immediately if device is online
+	if body.Policy == "manual" && !body.ManualFirmwareID.IsZero() {
+		tenantSlug := middleware.GetTenantSlug(r)
+		go func() {
+			log.Printf("fw_policy: checking device %s status (tenant=%s)", sn, tenantSlug)
+			msg, err := bridge.NatsReqWithoutHttpSet[entity.Device](
+				local.NatsAdapterSubject(tenantSlug)+sn+".device",
+				[]byte(""),
+				a.nc,
+			)
+			if err != nil {
+				log.Printf("fw_policy: failed to get device %s info: %v", sn, err)
+				return
+			}
+			if msg == nil {
+				log.Printf("fw_policy: nil response for device %s", sn)
+				return
+			}
+			log.Printf("fw_policy: device %s status=%d", sn, msg.Msg.Status)
+			if msg.Msg.Status != entity.Online {
+				log.Printf("fw_policy: device %s not online, skipping", sn)
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			tdb := a.db.ForTenant(tenantSlug)
+			a.handleManualPolicy(ctx, tdb, msg.Msg, body, tenantSlug)
+		}()
+	}
 }
 
 // GET /api/device/{sn}/upgrade-logs

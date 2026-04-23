@@ -178,9 +178,14 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 		return fmt.Errorf("templates index: %w", err)
 	}
 
-	// firmware: unique name
+	// firmware: unique compound (vendor, model, hw_version, build_version)
 	_, err = tdb.Firmware().Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys:    bson.D{{Key: "name", Value: 1}},
+		Keys: bson.D{
+			{Key: "vendor", Value: 1},
+			{Key: "model", Value: 1},
+			{Key: "hw_version", Value: 1},
+			{Key: "build_version", Value: 1},
+		},
 		Options: options.Index().SetUnique(true),
 	})
 	if err != nil {
