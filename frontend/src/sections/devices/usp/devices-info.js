@@ -100,10 +100,23 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
   const [noCampaignAlert, setNoCampaignAlert] = useState(false);
   const [upgradeLogs, setUpgradeLogs] = useState([]);
 
+  const fetchUpgradeLogs = useCallback(async () => {
+    if (!sn) return;
+    try {
+      const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/upgrade-logs`, 'GET');
+      if (status === 200 && Array.isArray(result)) {
+        setUpgradeLogs(result);
+      }
+    } catch {
+      // ignore
+    }
+  }, [sn]);
+
   const fetchCachedInfo = useCallback(async () => {
     onStatusRefresh?.();
     if (!sn) return;
     setLoading(true);
+    fetchUpgradeLogs();
     try {
       const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/cached-info`, 'GET');
       if (status === 200 && result && result.info) {
@@ -115,13 +128,14 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
       // ignore
     }
     setLoading(false);
-  }, [sn]);
+  }, [sn, fetchUpgradeLogs]);
 
   const fetchLiveInfo = useCallback(async () => {
     onStatusRefresh?.();
     if (!sn) return;
     setLoading(true);
     setIsCached(false);
+    fetchUpgradeLogs();
     try {
       const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/info`, 'GET', null, null);
       if (status === 200 && result) {
@@ -138,7 +152,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
     // Fallback to cached if live fetch failed
     await fetchCachedInfo();
     if (onOnlineChange) onOnlineChange(false);
-  }, [sn, mtp, fetchCachedInfo]);
+  }, [sn, mtp, fetchCachedInfo, fetchUpgradeLogs]);
 
   useEffect(() => {
     if (deviceOnline === false) {
@@ -171,16 +185,6 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
         const { status, result } = await httpRequest(`${apiPrefix}/firmware`, 'GET');
         if (status === 200 && Array.isArray(result)) {
           setAvailableFirmware(result);
-        }
-      } catch {
-        // ignore
-      }
-    };
-    const fetchUpgradeLogs = async () => {
-      try {
-        const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/upgrade-logs`, 'GET');
-        if (status === 200 && Array.isArray(result)) {
-          setUpgradeLogs(result);
         }
       } catch {
         // ignore

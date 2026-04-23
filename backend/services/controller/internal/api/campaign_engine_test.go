@@ -90,10 +90,10 @@ func TestHandleDeviceOnline_Concurrent_NoDuplicateUpgrades(t *testing.T) {
 
 	// Verify only one upgrade log was created (unique index should prevent duplicates)
 	ctx := context.Background()
-	log, err := testApi.db.GetUpgradeLogByDeviceAndFirmware(ctx, sn, fw.ID)
+	log, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fw.ID)
 	if err != nil {
 		// Could be that device was not online (no adapter responding) -- log may be "failed"
-		t.Logf("GetUpgradeLogByDeviceAndFirmware: %v (expected if no adapter)", err)
+		t.Logf("GetLatestUpgradeLog: %v (expected if no adapter)", err)
 		return
 	}
 	if log.DeviceSN != sn {
@@ -126,7 +126,7 @@ func TestCheckUpgradeCompletion_VersionMatch_MarksSuccess(t *testing.T) {
 	device := entity.Device{SN: sn, Version: targetVersion}
 	testApi.checkUpgradeCompletion(ctx, device)
 
-	got, err := testApi.db.GetUpgradeLogByDeviceAndFirmware(ctx, sn, fwID)
+	got, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fwID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestCheckUpgradeCompletion_VersionMismatch_MarksFailed(t *testing.T) {
 	device := entity.Device{SN: sn, Version: "1.0.0"}
 	testApi.checkUpgradeCompletion(ctx, device)
 
-	got, err := testApi.db.GetUpgradeLogByDeviceAndFirmware(ctx, sn, fwID)
+	got, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fwID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestRetryLogic_MaxRetriesExhausted_NoMoreRetries(t *testing.T) {
 	// This should NOT retry (max retries reached)
 	testApi.checkCampaignUpgrade(ctx, device)
 
-	got, err := testApi.db.GetUpgradeLogByDeviceAndFirmware(ctx, sn, fw.ID)
+	got, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fw.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestCheckCampaignUpgrade_AlreadyOnTargetVersion_Skips(t *testing.T) {
 	testApi.checkCampaignUpgrade(ctx, device)
 
 	// No upgrade log should be created
-	_, err := testApi.db.GetUpgradeLogByDeviceAndFirmware(ctx, sn, fw.ID)
+	_, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fw.ID)
 	if err == nil {
 		t.Error("Expected no upgrade log for device already on target version, but one was created")
 	}

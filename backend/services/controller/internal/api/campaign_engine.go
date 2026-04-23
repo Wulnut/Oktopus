@@ -118,7 +118,7 @@ func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device e
 		return
 	}
 
-	existingLog, err := tdb.GetUpgradeLogByDeviceAndFirmware(ctx, device.SN, fw.ID)
+	existingLog, err := tdb.GetLatestUpgradeLog(ctx, device.SN, fw.ID)
 	if err == nil {
 		switch existingLog.Status {
 		case "success":
@@ -126,14 +126,11 @@ func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device e
 		case "pending", "downloading":
 			if time.Since(existingLog.TriggeredAt) > 15*time.Minute {
 				tdb.UpdateUpgradeLogStatus(ctx, existingLog.ID, "failed", "timed out after 15 minutes")
-				tdb.DeleteUpgradeLog(ctx, existingLog.ID)
 			} else {
 				return
 			}
-		default:
-			// failed — remove stale log so a new one can be created
-			tdb.DeleteUpgradeLog(ctx, existingLog.ID)
 		}
+		// failed or expired — create a new attempt
 	}
 
 	a.triggerUpgrade(ctx, tdb, device, fw, primitive.NilObjectID, "manual", tenantSlug)
@@ -164,7 +161,7 @@ func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device
 		return
 	}
 
-	existingLog, err := tdb.GetUpgradeLogByDeviceAndFirmware(ctx, device.SN, fw.ID)
+	existingLog, err := tdb.GetLatestUpgradeLog(ctx, device.SN, fw.ID)
 	if err == nil {
 		switch existingLog.Status {
 		case "success":
@@ -174,17 +171,12 @@ func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device
 				return
 			}
 			tdb.UpdateUpgradeLogStatus(ctx, existingLog.ID, "failed", "timed out after 15 minutes")
-			// Expired — treat as failed, fall through to retry
-			existingLog.Status = "failed"
-			fallthrough
 		case "failed":
 			if existingLog.RetryCount >= maxRetries {
 				return
 			}
-			tdb.IncrementRetryAndResetStatus(ctx, existingLog.ID)
-			a.executeFirmwareUpgrade(tdb, device.SN, fw, existingLog.ID, tenantSlug)
-			return
 		}
+		// Create a new attempt
 	}
 
 	a.triggerUpgrade(ctx, tdb, device, fw, campaign.ID, "on_connect", tenantSlug)
@@ -270,7 +262,7 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlu
 			continue
 		}
 
-		existingLog, err := tdb.GetUpgradeLogByDeviceAndFirmware(ctx, d.SN, fw.ID)
+		existingLog, err := tdb.GetLatestUpgradeLog(ctx, d.SN, fw.ID)
 		if err == nil && (existingLog.Status == "success" || existingLog.Status == "pending" || existingLog.Status == "downloading") {
 			continue
 		}

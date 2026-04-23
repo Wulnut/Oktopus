@@ -268,8 +268,7 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "triggered_at", Value: -1}},
 		},
 		{
-			Keys:    bson.D{{Key: "device_sn", Value: 1}, {Key: "firmware_id", Value: 1}},
-			Options: options.Index().SetUnique(true),
+			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "firmware_id", Value: 1}},
 		},
 		{
 			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "status", Value: 1}},

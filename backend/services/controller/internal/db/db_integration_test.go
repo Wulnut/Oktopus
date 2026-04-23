@@ -218,7 +218,7 @@ func TestCreateUpgradeLog_And_UpdateStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := testTDB.GetUpgradeLogByDeviceAndFirmware(context.Background(), log.DeviceSN, log.FirmwareID)
+	got, err := testTDB.GetLatestUpgradeLog(context.Background(), log.DeviceSN, log.FirmwareID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestIncrementRetryAndResetStatus(t *testing.T) {
 	if err := testTDB.IncrementRetryAndResetStatus(context.Background(), created.ID); err != nil {
 		t.Fatal(err)
 	}
-	got, err := testTDB.GetUpgradeLogByDeviceAndFirmware(context.Background(), sn, fwID)
+	got, err := testTDB.GetLatestUpgradeLog(context.Background(), sn, fwID)
 	if err != nil {
 		t.Fatal(err)
 	}

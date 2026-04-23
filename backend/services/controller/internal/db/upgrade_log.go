@@ -48,12 +48,13 @@ func (t *TenantDB) UpdateUpgradeLogStatus(ctx context.Context, id primitive.Obje
 	return err
 }
 
-func (t *TenantDB) GetUpgradeLogByDeviceAndFirmware(ctx context.Context, deviceSN string, firmwareID primitive.ObjectID) (FirmwareUpgradeLog, error) {
+func (t *TenantDB) GetLatestUpgradeLog(ctx context.Context, deviceSN string, firmwareID primitive.ObjectID) (FirmwareUpgradeLog, error) {
 	var l FirmwareUpgradeLog
+	opts := options.FindOne().SetSort(bson.D{{Key: "triggered_at", Value: -1}})
 	err := t.UpgradeLogs().FindOne(ctx, bson.M{
 		"device_sn":   deviceSN,
 		"firmware_id": firmwareID,
-	}).Decode(&l)
+	}, opts).Decode(&l)
 	return l, err
 }
 
