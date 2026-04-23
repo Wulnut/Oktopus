@@ -118,11 +118,14 @@ func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device e
 		return
 	}
 
+	// Skip if device is already on the target version
+	if device.Version == fw.BuildVersion {
+		return
+	}
+
 	existingLog, err := tdb.GetLatestUpgradeLog(ctx, device.SN, fw.ID)
 	if err == nil {
 		switch existingLog.Status {
-		case "success":
-			return
 		case "pending", "downloading":
 			if time.Since(existingLog.TriggeredAt) > 15*time.Minute {
 				tdb.UpdateUpgradeLogStatus(ctx, existingLog.ID, "failed", "timed out after 15 minutes")
