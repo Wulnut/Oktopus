@@ -2,4 +2,4 @@
 cd "$(dirname "$0")"
 
 COMPOSE_PROFILES=nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,portainer,registry \
-  docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml down
+  docker compose -f docker-compose.yaml -f docker-compose.dev.yaml build "$@"

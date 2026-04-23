@@ -1,35 +1,17 @@
-# Development override for docker-compose.yaml
-# Usage: docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up
-# Or: docker-compose --env-file .env.dev up (if using profiles)
-
+# Local build override for docker-compose.yaml
+# Adds build contexts so services are built from source instead of using registry images.
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d
 
 services:
   controller:
     build:
       context: ../../backend/services/controller
       dockerfile: build/Dockerfile
-    # Override image to use local build instead of registry
 
   frontend:
     build:
       context: ../../frontend
-      dockerfile: build/Dockerfile.dev
-    image: oktopusp/frontend:dev
-    volumes:
-      # Mount source for hot-reload (dev mode)
-      - ../../frontend/src:/app/src
-      - ../../frontend/public:/app/public
-      - ../../frontend/next.config.js:/app/next.config.js
-      - ../../frontend/jsconfig.json:/app/jsconfig.json
-      - ../../frontend/package.json:/app/package.json
-      - ../../frontend/package-lock.json:/app/package-lock.json
-      # Use container's node_modules and .next
-      - /app/node_modules
-      - /app/.next
-    environment:
-      - NODE_ENV=development
-      # Override .env file - use empty string for relative URLs (works with nginx proxy)
-      - NEXT_PUBLIC_REST_ENDPOINT=
+      dockerfile: build/Dockerfile
 
   stomp:
     build:
@@ -65,5 +47,3 @@ services:
     build:
       context: ../../backend/services/mtp/adapter
       dockerfile: build/Dockerfile
-    # Override image to use local build instead of registry
-

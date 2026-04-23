@@ -1,0 +1,23 @@
+# Debug override: frontend hot-reload
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml up -d
+
+services:
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: build/Dockerfile.dev
+    image: oktopusp/frontend:dev
+    volumes:
+      # Mount source for hot-reload
+      - ../../frontend/src:/app/src
+      - ../../frontend/public:/app/public
+      - ../../frontend/next.config.js:/app/next.config.js
+      - ../../frontend/jsconfig.json:/app/jsconfig.json
+      - ../../frontend/package.json:/app/package.json
+      - ../../frontend/package-lock.json:/app/package-lock.json
+      # Use container's node_modules and .next
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_REST_ENDPOINT=
