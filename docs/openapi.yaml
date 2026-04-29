@@ -1,0 +1,2529 @@
+openapi: "3.0.3"
+info:
+  title: Oktopus API
+  description: |
+    Oktopus is an Open Source USP Controller and CWMP multi-vendor management platform for CPEs and IoT devices.
+
+    ## Multi-tenancy
+    - SuperAdmin (level 0): Platform owner, full access to all tenants
+    - TenantAdmin (level 1): ISP admin, manages users and resources within their tenant
+    - Operator (level 2): Day-to-day device management within their tenant
+
+    ## Authentication
+    All endpoints under `/api/tenants/{slug}` require a valid JWT Bearer token. Auth endpoints (`/api/auth/*`) do not require authentication.
+  version: "1.0.0"
+  contact:
+    name: Oktopus
+    url: https://github.com/OktopUSP/oktopus
+
+servers:
+  - url: http://localhost
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from `PUT /api/auth/login`
+
+  schemas:
+    # --- Error ---
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+
+    # --- Auth ---
+    TokenRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    LoginResponse:
+      type: string
+      description: JWT token string
+
+    AdminRegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        password:
+          type: string
+        phone:
+          type: string
+
+    AdminExistsResponse:
+      type: boolean
+      description: Whether a SuperAdmin user already exists
+
+    # --- Tenant ---
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectID
+        name:
+          type: string
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        auth_policy:
+          $ref: '#/components/schemas/TenantAuthPolicy'
+        ca_certs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantCACert'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TenantAuthPolicy:
+      type: object
+      properties:
+        password_required:
+          type: boolean
+        cert_required:
+          type: boolean
+
+    TenantCACert:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        pem:
+          type: string
+          description: PEM-encoded certificate
+        not_after:
+          type: string
+          format: date-time
+        added_at:
+          type: string
+          format: date-time
+
+    CreateTenantRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        auth_policy:
+          $ref: '#/components/schemas/TenantAuthPolicy'
+        admin_email:
+          type: string
+          format: email
+        admin_name:
+          type: string
+        admin_password:
+          type: string
+
+    UpdateTenantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        auth_policy:
+          $ref: '#/components/schemas/TenantAuthPolicy'
+
+    # --- Device Password ---
+    DevicePassword:
+      type: object
+      properties:
+        password:
+          type: string
+
+    SetDevicePasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+
+    # --- CA Cert ---
+    AddCACertRequest:
+      type: object
+      required: [label, pem]
+      properties:
+        label:
+          type: string
+        pem:
+          type: string
+          description: PEM-encoded certificate
+
+    # --- User ---
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        phone:
+          type: string
+        level:
+          type: integer
+          description: "0=SuperAdmin, 1=TenantAdmin, 2=Operator"
+        createdAt:
+          type: string
+          format: date-time
+
+    RegisterUserRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        password:
+          type: string
+        phone:
+          type: string
+
+    ChangePasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 8
+
+    # --- Device ---
+    Device:
+      type: object
+      properties:
+        SN:
+          type: string
+          description: Serial number
+        Model:
+          type: string
+        TenantID:
+          type: string
+        Vendor:
+          type: string
+        Version:
+          type: string
+        ProductClass:
+          type: string
+        HWVersion:
+          type: string
+        Alias:
+          type: string
+        Status:
+          type: integer
+          description: "0=Offline, 1=Associating, 2=Online"
+        Mqtt:
+          type: integer
+          description: MQTT connection status
+        Stomp:
+          type: integer
+          description: STOMP connection status
+        Websockets:
+          type: integer
+          description: WebSocket connection status
+        Cwmp:
+          type: integer
+          description: CWMP connection status
+
+    DevicesList:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        total:
+          type: integer
+
+    FilterOptions:
+      type: object
+      properties:
+        models:
+          type: array
+          items: { type: string }
+        productClasses:
+          type: array
+          items: { type: string }
+        vendors:
+          type: array
+          items: { type: string }
+        versions:
+          type: array
+          items: { type: string }
+
+    SetAliasRequest:
+      type: object
+      required: [sn, alias]
+      properties:
+        sn:
+          type: string
+          description: Device serial number
+        alias:
+          type: string
+
+    GenericMessageRequest:
+      type: object
+      properties:
+        data:
+          type: object
+          description: Raw JSON payload for the USP/CWMP message
+
+    WifiConfigRequest:
+      type: object
+      description: WiFi configuration parameters
+
+    # --- Device Auth ---
+    DeviceAuthEntry:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Device serial number or key
+        value:
+          type: string
+          description: Device password
+
+    TemplateMessageRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        message:
+          type: object
+          description: Template message payload
+
+    TemplateMessage:
+      type: object
+      properties:
+        name:
+          type: string
+        message:
+          type: object
+
+    # --- Firmware ---
+    Firmware:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        vendor:
+          type: string
+        model:
+          type: string
+        hw_version:
+          type: string
+        build_version:
+          type: string
+        file_size:
+          type: integer
+        fingerprint:
+          type: string
+          description: SHA-256 hash of firmware file
+        phase:
+          type: string
+          enum: [internal_testing, release]
+        download_url:
+          type: string
+        file_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateFirmwareRequest:
+      type: object
+      required: [name, build_version]
+      properties:
+        name:
+          type: string
+        vendor:
+          type: string
+        model:
+          type: string
+        hw_version:
+          type: string
+        build_version:
+          type: string
+
+    UpdateFirmwarePhaseRequest:
+      type: object
+      required: [phase]
+      properties:
+        phase:
+          type: string
+          enum: [internal_testing, release]
+
+    # --- Script ---
+    ScriptVariable:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        default: { type: string }
+        required: { type: boolean }
+
+    ScriptCondition:
+      type: object
+      properties:
+        source: { type: string }
+        path: { type: string }
+        param: { type: string }
+        operator:
+          type: string
+          enum: ["==", "!=", ">", "<", "contains", "exists"]
+        value: { type: string }
+
+    ScriptParamSetting:
+      type: object
+      properties:
+        param: { type: string }
+        value: { type: string }
+        required: { type: boolean }
+
+    ScriptInputArg:
+      type: object
+      properties:
+        key: { type: string }
+        value: { type: string }
+
+    ScriptStep:
+      type: object
+      required: [id, type]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type:
+          type: string
+          enum: [GET, SET, ADD, DELETE, OPERATE, CONDITION, DELAY]
+        on_error: { type: string }
+        param_paths: { type: array, items: { type: string } }
+        max_depth: { type: integer }
+        save_result_as: { type: string }
+        obj_path: { type: string }
+        param_settings: { type: array, items: { $ref: '#/components/schemas/ScriptParamSetting' } }
+        obj_paths: { type: array, items: { type: string } }
+        command: { type: string }
+        command_key: { type: string }
+        input_args: { type: array, items: { $ref: '#/components/schemas/ScriptInputArg' } }
+        condition: { $ref: '#/components/schemas/ScriptCondition' }
+        on_true: { type: string }
+        on_false: { type: string }
+        duration_ms: { type: integer }
+
+    Script:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        variables: { type: array, items: { $ref: '#/components/schemas/ScriptVariable' } }
+        steps: { type: array, items: { $ref: '#/components/schemas/ScriptStep' } }
+        builtin: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateScriptRequest:
+      type: object
+      required: [name, steps]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        variables: { type: array, items: { $ref: '#/components/schemas/ScriptVariable' } }
+        steps: { type: array, items: { $ref: '#/components/schemas/ScriptStep' } }
+
+    UpdateScriptRequest:
+      type: object
+      required: [name, steps]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        variables: { type: array, items: { $ref: '#/components/schemas/ScriptVariable' } }
+        steps: { type: array, items: { $ref: '#/components/schemas/ScriptStep' } }
+
+    ExecuteScriptRequest:
+      type: object
+      properties:
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+
+    StepResult:
+      type: object
+      properties:
+        step_id: { type: string }
+        step_name: { type: string }
+        status: { type: string }
+        response: { type: object }
+        error: { type: string }
+        condition_result: { type: boolean }
+        jumped_to: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+
+    ScriptExecution:
+      type: object
+      properties:
+        id: { type: string }
+        script_id: { type: string }
+        script_name: { type: string }
+        device_sn: { type: string }
+        mtp: { type: string }
+        status:
+          type: string
+          enum: [running, completed, failed]
+        variables:
+          type: object
+          additionalProperties: { type: string }
+        step_results:
+          type: array
+          items: { $ref: '#/components/schemas/StepResult' }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    # --- Campaign ---
+    Campaign:
+      type: object
+      properties:
+        id: { type: string }
+        vendor: { type: string }
+        model: { type: string }
+        hw_version: { type: string }
+        firmware_id: { type: string }
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 50
+        time_window_start: { type: string }
+        time_window_end: { type: string }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateCampaignRequest:
+      type: object
+      required: [vendor, model, hw_version, firmware_id]
+      properties:
+        vendor: { type: string }
+        model: { type: string }
+        hw_version: { type: string }
+        firmware_id: { type: string }
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 50
+        time_window_start: { type: string }
+        time_window_end: { type: string }
+        enabled: { type: boolean }
+
+    UpdateCampaignRequest:
+      type: object
+      properties:
+        firmware_id: { type: string }
+        concurrency:
+          type: integer
+          minimum: 1
+          maximum: 50
+        time_window_start: { type: string }
+        time_window_end: { type: string }
+        enabled: { type: boolean }
+
+    # --- Firmware Upgrade Log ---
+    FirmwareUpgradeLog:
+      type: object
+      properties:
+        id: { type: string }
+        device_sn: { type: string }
+        device_alias: { type: string }
+        campaign_id: { type: string }
+        firmware_id: { type: string }
+        firmware_name: { type: string }
+        firmware_build_ver: { type: string }
+        previous_version: { type: string }
+        trigger_type: { type: string }
+        status:
+          type: string
+          enum: [pending, downloading, success, failed]
+        error: { type: string }
+        retry_count: { type: integer }
+        triggered_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+
+    CampaignLogsResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/FirmwareUpgradeLog'
+        total:
+          type: integer
+
+    # --- FW Policy ---
+    DeviceFWPolicy:
+      type: object
+      properties:
+        device_sn: { type: string }
+        policy:
+          type: string
+          enum: [campaign, skip, manual]
+        manual_firmware_id: { type: string }
+
+    SetFWPolicyRequest:
+      type: object
+      required: [policy]
+      properties:
+        policy:
+          type: string
+          enum: [campaign, skip, manual]
+        manual_firmware_id: { type: string }
+
+    # --- Mass Action ---
+    DeviceResult:
+      type: object
+      properties:
+        device_sn: { type: string }
+        status:
+          type: string
+          enum: [pending, running, success, failed, skipped]
+        mtp: { type: string }
+        error: { type: string }
+        execution_id: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+
+    MassAction:
+      type: object
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [firmware_update, script]
+        name: { type: string }
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        device_sns:
+          type: array
+          items: { type: string }
+        total_devices: { type: integer }
+        firmware_id: { type: string }
+        firmware_name: { type: string }
+        firmware_url: { type: string }
+        script_id: { type: string }
+        script_name: { type: string }
+        variables:
+          type: object
+          additionalProperties: { type: string }
+        device_results:
+          type: array
+          items: { $ref: '#/components/schemas/DeviceResult' }
+        progress: { type: integer }
+        success_count: { type: integer }
+        failure_count: { type: integer }
+        concurrency: { type: integer }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+
+    MassScriptExecutionRequest:
+      type: object
+      required: [script_id, device_sns]
+      properties:
+        script_id: { type: string }
+        device_sns:
+          type: array
+          items: { type: string }
+        variables:
+          type: object
+          additionalProperties: { type: string }
+        concurrency:
+          type: integer
+
+    # --- Dashboard Info ---
+    VendorsCount:
+      type: object
+      properties:
+        vendor: { type: string }
+        count: { type: integer }
+
+    ProductClassCount:
+      type: object
+      properties:
+        productClass: { type: string }
+        count: { type: integer }
+
+    StatusCount:
+      type: object
+      properties:
+        status: { type: integer }
+        count: { type: integer }
+
+    GeneralInfo:
+      type: object
+      properties:
+        device_count: { type: integer }
+        online_count: { type: integer }
+        offline_count: { type: integer }
+
+  parameters:
+    TenantSlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Tenant URL slug
+
+    DeviceSN:
+      name: sn
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Device serial number
+
+    Mtp:
+      name: mtp
+      in: path
+      required: true
+      schema:
+        type: string
+      description: "Message Transfer Protocol: mqtt, ws (WebSocket), stomp, or cwmp"
+
+tags:
+  - name: Auth
+    description: Authentication endpoints (no JWT required)
+  - name: Tenants
+    description: Tenant management (SuperAdmin only)
+  - name: Devices
+    description: Device management and USP/CWMP operations
+  - name: Firmware
+    description: Firmware lifecycle management
+  - name: Scripts
+    description: Script editor and execution engine
+  - name: Campaigns
+    description: Firmware upgrade campaigns
+  - name: Mass Actions
+    description: Bulk operations on devices
+  - name: Users
+    description: User management within a tenant
+  - name: CA Certs
+    description: Tenant CA certificate management
+  - name: Info
+    description: Dashboard information and statistics
+
+paths:
+  # =========================================================================
+  # Auth
+  # =========================================================================
+  /api/auth/login:
+    put:
+      tags: [Auth]
+      summary: Generate JWT token
+      description: Authenticate with email and password to receive a JWT token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+
+  /api/auth/admin/register:
+    post:
+      tags: [Auth]
+      summary: Register SuperAdmin
+      description: |
+        Register the first SuperAdmin user (no auth required when no admin exists).
+        Subsequent SuperAdmin registrations require a valid SuperAdmin JWT token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRegisterRequest'
+      responses:
+        '201':
+          description: SuperAdmin registered
+        '400':
+          description: Bad request
+        '403':
+          description: Admin already exists or insufficient privileges
+
+  /api/auth/admin/exists:
+    get:
+      tags: [Auth]
+      summary: Check if SuperAdmin exists
+      security: []
+      responses:
+        '200':
+          description: Boolean indicating whether a SuperAdmin exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExistsResponse'
+
+  # =========================================================================
+  # Tenants
+  # =========================================================================
+  /api/tenants:
+    get:
+      tags: [Tenants]
+      summary: List all tenants
+      description: SuperAdmin only. Returns all tenants sorted by name.
+      responses:
+        '200':
+          description: List of tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+        '403':
+          description: Forbidden (not SuperAdmin)
+
+    post:
+      tags: [Tenants]
+      summary: Create a tenant
+      description: |
+        SuperAdmin only. Creates a tenant, provisions MongoDB databases, NATS KV bucket,
+        and optionally creates the initial TenantAdmin user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          description: Bad request (invalid name, empty slug)
+        '403':
+          description: Forbidden (not SuperAdmin)
+        '500':
+          description: Internal error (DB/KV provisioning failure)
+
+  /api/tenants/{slug}:
+    get:
+      tags: [Tenants]
+      summary: Get tenant by slug
+      description: SuperAdmin or the tenant's own users can access.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '403':
+          description: Forbidden
+        '404':
+          description: Tenant not found
+
+    put:
+      tags: [Tenants]
+      summary: Update tenant
+      description: SuperAdmin only. Update name, status, or auth policy.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantRequest'
+      responses:
+        '204':
+          description: Updated successfully
+        '400':
+          description: Bad request
+        '403':
+          description: Forbidden (not SuperAdmin)
+        '404':
+          description: Tenant not found
+
+    delete:
+      tags: [Tenants]
+      summary: Delete a tenant
+      description: |
+        SuperAdmin only. Performs full cleanup: deletes firmware files, registry containers,
+        adapter devices, users, databases, and KV buckets.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted successfully
+        '403':
+          description: Forbidden (not SuperAdmin)
+        '404':
+          description: Tenant not found
+        '500':
+          description: Cleanup error
+
+  # =========================================================================
+  # Device Password
+  # =========================================================================
+  /api/tenants/{slug}/device-password:
+    get:
+      tags: [Devices]
+      summary: Get shared device password
+      description: TenantAdmin+ only. Returns the shared tenant device password.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Device password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicePassword'
+        '403':
+          description: Forbidden
+        '404':
+          description: Auth store not found
+
+    put:
+      tags: [Devices]
+      summary: Set shared device password
+      description: TenantAdmin+ only. Sets the shared tenant device password used for device authentication.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetDevicePasswordRequest'
+      responses:
+        '200':
+          description: Password set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '400':
+          description: Bad request
+        '403':
+          description: Forbidden
+
+  # =========================================================================
+  # CA Certs
+  # =========================================================================
+  /api/tenants/{slug}/ca-certs:
+    get:
+      tags: [CA Certs]
+      summary: List CA certificates
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: List of CA certificates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TenantCACert'
+
+    post:
+      tags: [CA Certs]
+      summary: Add CA certificate
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCACertRequest'
+      responses:
+        '201':
+          description: Certificate added
+        '400':
+          description: Bad request
+
+  /api/tenants/{slug}/ca-certs/{certId}:
+    delete:
+      tags: [CA Certs]
+      summary: Remove CA certificate
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: certId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Certificate MongoDB ObjectID
+      responses:
+        '204':
+          description: Certificate removed
+        '400':
+          description: Bad request
+
+  # =========================================================================
+  # Users
+  # =========================================================================
+  /api/tenants/{slug}/users:
+    get:
+      tags: [Users]
+      summary: List users in tenant
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '404':
+          description: Tenant not found
+
+    post:
+      tags: [Users]
+      summary: Register a user in the tenant
+      description: TenantAdmin can only create Operators. SuperAdmin can create TenantAdmins.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterUserRequest'
+      responses:
+        '200':
+          description: User registered
+        '400':
+          description: Bad request
+        '403':
+          description: Forbidden
+        '409':
+          description: User with this email already exists
+
+  /api/tenants/{slug}/users/{user}:
+    delete:
+      tags: [Users]
+      summary: Delete a user
+      description: Users cannot delete themselves.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User email
+      responses:
+        '200':
+          description: User deleted
+        '403':
+          description: Forbidden
+        '404':
+          description: User not found
+
+  /api/tenants/{slug}/users/password:
+    put:
+      tags: [Users]
+      summary: Change own password
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed
+        '400':
+          description: Bad request or password too short
+        '401':
+          description: Unauthorized
+
+  /api/tenants/{slug}/users/password/{user}:
+    put:
+      tags: [Users]
+      summary: Change another user's password (admin)
+      description: TenantAdmin+ can change any user's password in their tenant.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Target user email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed
+        '400':
+          description: Bad request or password too short
+        '401':
+          description: Unauthorized
+
+  # =========================================================================
+  # Devices
+  # =========================================================================
+  /api/tenants/{slug}/device:
+    get:
+      tags: [Devices]
+      summary: List devices
+      description: Returns paginated list of devices. Supports query parameters for filtering.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: page
+          in: query
+          schema:
+            type: integer
+          description: Page number (0-based)
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+          description: Items per page
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Filter by status (offline, associating, online)
+        - name: vendor
+          in: query
+          schema:
+            type: string
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: product_class
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by SN or alias
+      responses:
+        '200':
+          description: Device list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicesList'
+
+    delete:
+      tags: [Devices]
+      summary: Delete selected devices
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sns:
+                  type: array
+                  items:
+                    type: string
+                  description: Device serial numbers to delete
+      responses:
+        '200':
+          description: Devices deleted
+
+  /api/tenants/{slug}/device/filterOptions:
+    get:
+      tags: [Devices]
+      summary: Get device filter options
+      description: Returns available values for device filters (vendors, models, etc.)
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Filter options
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilterOptions'
+
+  /api/tenants/{slug}/device/alias:
+    put:
+      tags: [Devices]
+      summary: Set device alias
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetAliasRequest'
+      responses:
+        '200':
+          description: Alias set
+
+  /api/tenants/{slug}/device/auth:
+    get:
+      tags: [Devices]
+      summary: List device credentials
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Device credentials
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceAuthEntry'
+    post:
+      tags: [Devices]
+      summary: Add device credential
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceAuthEntry'
+      responses:
+        '201':
+          description: Credential added
+    delete:
+      tags: [Devices]
+      summary: Delete device credential
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key:
+                  type: string
+                  description: Device serial number
+      responses:
+        '204':
+          description: Credential deleted
+
+  /api/tenants/{slug}/device/message/{type}:
+    post:
+      tags: [Devices]
+      summary: Add message template
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Template type identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateMessageRequest'
+      responses:
+        '201':
+          description: Template added
+
+  /api/tenants/{slug}/device/message:
+    get:
+      tags: [Devices]
+      summary: Get message template
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Template data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateMessage'
+    put:
+      tags: [Devices]
+      summary: Update message template
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateMessageRequest'
+      responses:
+        '200':
+          description: Template updated
+    delete:
+      tags: [Devices]
+      summary: Delete message template
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '204':
+          description: Template deleted
+
+  # --- Device USP Operations ---
+  /api/tenants/{slug}/device/{sn}/{mtp}/generic:
+    put:
+      tags: [Devices]
+      summary: Send generic USP message to device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericMessageRequest'
+      responses:
+        '200':
+          description: USP response
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/get:
+    put:
+      tags: [Devices]
+      summary: USP Get on device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                param_paths:
+                  type: array
+                  items:
+                    type: string
+                  description: "TR-181 parameter paths, e.g. ['Device.DeviceInfo.']"
+                max_depth:
+                  type: integer
+      responses:
+        '200':
+          description: USP Get response
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/set:
+    put:
+      tags: [Devices]
+      summary: USP Set on device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                obj_path:
+                  type: string
+                  example: "Device.WiFi.SSID.1."
+                param_settings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      param: { type: string }
+                      value: { type: string }
+                      required: { type: boolean }
+      responses:
+        '200':
+          description: USP Set response
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/add:
+    put:
+      tags: [Devices]
+      summary: USP Add (create object) on device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                obj_path:
+                  type: string
+                param_settings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      param: { type: string }
+                      value: { type: string }
+                      required: { type: boolean }
+      responses:
+        '200':
+          description: USP Add response
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/del:
+    put:
+      tags: [Devices]
+      summary: USP Delete on device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                obj_paths:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: USP Delete response
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/notify:
+    put:
+      tags: [Devices]
+      summary: USP Notify request to device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: USP Notify response
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/parameters:
+    put:
+      tags: [Devices]
+      summary: Get device supported parameters
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Supported parameters list
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/instances:
+    put:
+      tags: [Devices]
+      summary: Get device parameter instances
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                obj_path:
+                  type: string
+      responses:
+        '200':
+          description: Parameter instances
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/operate:
+    put:
+      tags: [Devices]
+      summary: USP Operate on device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                command:
+                  type: string
+                  example: "Device.Reboot()"
+                command_key:
+                  type: string
+                input_args:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '200':
+          description: USP Operate response
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/fw_update:
+    put:
+      tags: [Devices]
+      summary: Trigger firmware update on device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firmware_id:
+                  type: string
+                download_url:
+                  type: string
+      responses:
+        '200':
+          description: Firmware update triggered
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/reboot:
+    put:
+      tags: [Devices]
+      summary: Reboot device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Reboot command sent
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/factory-reset:
+    put:
+      tags: [Devices]
+      summary: Factory reset device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Factory reset command sent
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/restart-agent:
+    put:
+      tags: [Devices]
+      summary: Restart device USP agent
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Restart command sent
+
+  # --- Device Info ---
+  /api/tenants/{slug}/device/{sn}/{mtp}/info:
+    get:
+      tags: [Devices]
+      summary: Get live device info (USP)
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Device information
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/wifi-usp:
+    get:
+      tags: [Devices]
+      summary: Get device WiFi config via USP
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: WiFi configuration
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/interfaces:
+    get:
+      tags: [Devices]
+      summary: Get device network interfaces
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Network interfaces
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/performance:
+    get:
+      tags: [Devices]
+      summary: Get device performance metrics
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Performance data
+
+  /api/tenants/{slug}/device/{sn}/{mtp}/topology:
+    get:
+      tags: [Devices]
+      summary: Get device network topology
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - $ref: '#/components/parameters/Mtp'
+      responses:
+        '200':
+          description: Topology data
+
+  /api/tenants/{slug}/device/{sn}/cached-info:
+    get:
+      tags: [Devices]
+      summary: Get cached device info (offline access)
+      description: Returns previously cached device information when the device is offline.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: Cached device info
+
+  /api/tenants/{slug}/device/{sn}/wifi:
+    get:
+      tags: [Devices]
+      summary: Get device WiFi configuration (cached)
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: WiFi configuration
+    put:
+      tags: [Devices]
+      summary: Set device WiFi configuration
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WifiConfigRequest'
+      responses:
+        '200':
+          description: WiFi configuration set
+
+  /api/tenants/{slug}/device/{sn}/history:
+    get:
+      tags: [Devices]
+      summary: Get device message history
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Message history
+    delete:
+      tags: [Devices]
+      summary: Clear device message history
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '204':
+          description: History cleared
+
+  /api/tenants/{slug}/device/{sn}/metrics:
+    get:
+      tags: [Devices]
+      summary: Get device metrics history
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: Metrics history
+
+  # --- FW Policy ---
+  /api/tenants/{slug}/device/{sn}/fw-policy:
+    get:
+      tags: [Devices]
+      summary: Get device firmware upgrade policy
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: FW policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceFWPolicy'
+    put:
+      tags: [Devices]
+      summary: Set device firmware upgrade policy
+      description: |
+        Set policy to 'campaign' (follow campaigns), 'skip' (skip all upgrades),
+        or 'manual' (immediately trigger upgrade for specific firmware).
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetFWPolicyRequest'
+      responses:
+        '204':
+          description: Policy set
+        '400':
+          description: Bad request (invalid policy)
+
+  /api/tenants/{slug}/device/{sn}/upgrade-logs:
+    get:
+      tags: [Devices]
+      summary: Get device firmware upgrade logs
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: Upgrade logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FirmwareUpgradeLog'
+
+  # --- CWMP Device Operations ---
+  /api/tenants/{slug}/device/cwmp/{sn}/generic:
+    put:
+      tags: [Devices]
+      summary: Send generic CWMP message to device
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericMessageRequest'
+      responses:
+        '200':
+          description: CWMP response
+
+  /api/tenants/{slug}/device/cwmp/{sn}/getParameterNames:
+    put:
+      tags: [Devices]
+      summary: CWMP GetParameterNames
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: Parameter names
+
+  /api/tenants/{slug}/device/cwmp/{sn}/getParameterValues:
+    put:
+      tags: [Devices]
+      summary: CWMP GetParameterValues
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parameter_names:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Parameter values
+
+  /api/tenants/{slug}/device/cwmp/{sn}/getParameterAttributes:
+    put:
+      tags: [Devices]
+      summary: CWMP GetParameterAttributes
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: Parameter attributes
+
+  /api/tenants/{slug}/device/cwmp/{sn}/setParameterValues:
+    put:
+      tags: [Devices]
+      summary: CWMP SetParameterValues
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parameter_list:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      value: { type: string }
+      responses:
+        '200':
+          description: SetParameterValues response
+
+  /api/tenants/{slug}/device/cwmp/{sn}/addObject:
+    put:
+      tags: [Devices]
+      summary: CWMP AddObject
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: AddObject response
+
+  /api/tenants/{slug}/device/cwmp/{sn}/deleteObject:
+    put:
+      tags: [Devices]
+      summary: CWMP DeleteObject
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: DeleteObject response
+
+  # =========================================================================
+  # Dashboard Info
+  # =========================================================================
+  /api/tenants/{slug}/info/vendors:
+    get:
+      tags: [Info]
+      summary: Get vendor distribution
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Vendor counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VendorsCount'
+
+  /api/tenants/{slug}/info/status:
+    get:
+      tags: [Info]
+      summary: Get device status distribution
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Status counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatusCount'
+
+  /api/tenants/{slug}/info/device_class:
+    get:
+      tags: [Info]
+      summary: Get product class distribution
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Product class counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductClassCount'
+
+  /api/tenants/{slug}/info/general:
+    get:
+      tags: [Info]
+      summary: Get general dashboard info
+      description: Returns total devices, online count, offline count.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: General info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralInfo'
+
+  # =========================================================================
+  # Firmware
+  # =========================================================================
+  /api/tenants/{slug}/firmware:
+    get:
+      tags: [Firmware]
+      summary: List firmware
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Firmware list sorted by creation date (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Firmware'
+
+    post:
+      tags: [Firmware]
+      summary: Upload firmware
+      description: |
+        Upload firmware metadata and file. Either a file (multipart upload) or a download_url
+        (URL reference) must be provided.
+
+        Required fields: name, build_version.
+        The file is forwarded to the file-server service for storage.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Display name for the firmware
+                build_version:
+                  type: string
+                  description: Build version string
+                vendor:
+                  type: string
+                model:
+                  type: string
+                hw_version:
+                  type: string
+                phase:
+                  type: string
+                  enum: [internal_testing, release]
+                file:
+                  type: string
+                  format: binary
+                  description: Firmware binary file
+                download_url:
+                  type: string
+                  description: Alternative download URL if no file uploaded
+                file_name:
+                  type: string
+                fingerprint:
+                  type: string
+              required: [name, build_version]
+      responses:
+        '201':
+          description: Firmware created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Firmware'
+        '400':
+          description: Bad request (missing required fields)
+        '409':
+          description: Firmware with this identity (vendor+model+hw+build) already exists
+
+  /api/tenants/{slug}/firmware/{id}:
+    put:
+      tags: [Firmware]
+      summary: Update firmware metadata
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Firmware MongoDB ObjectID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFirmwareRequest'
+      responses:
+        '204':
+          description: Updated
+        '400':
+          description: Bad request
+        '404':
+          description: Firmware not found
+
+    delete:
+      tags: [Firmware]
+      summary: Delete firmware
+      description: |
+        Deletes the firmware file from the file server and removes the database entry.
+        Also disables any campaigns referencing this firmware.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          description: Invalid ID
+        '404':
+          description: Firmware not found
+
+  /api/tenants/{slug}/firmware/{id}/phase:
+    put:
+      tags: [Firmware]
+      summary: Update firmware phase
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFirmwarePhaseRequest'
+      responses:
+        '204':
+          description: Phase updated
+        '400':
+          description: Bad request or invalid phase
+
+  # =========================================================================
+  # Scripts
+  # =========================================================================
+  /api/tenants/{slug}/scripts:
+    get:
+      tags: [Scripts]
+      summary: List scripts
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Script list sorted by creation date (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Script'
+
+    post:
+      tags: [Scripts]
+      summary: Create script
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScriptRequest'
+      responses:
+        '201':
+          description: Script created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Script'
+        '400':
+          description: Validation error
+
+  /api/tenants/{slug}/scripts/{id}:
+    get:
+      tags: [Scripts]
+      summary: Get script by ID
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Script MongoDB ObjectID
+      responses:
+        '200':
+          description: Script details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Script'
+        '400':
+          description: Invalid ID
+        '404':
+          description: Script not found
+
+    put:
+      tags: [Scripts]
+      summary: Update script
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScriptRequest'
+      responses:
+        '204':
+          description: Updated
+        '400':
+          description: Validation error or invalid ID
+        '404':
+          description: Script not found
+
+    delete:
+      tags: [Scripts]
+      summary: Delete script
+      description: Built-in scripts cannot be deleted.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          description: Invalid ID
+        '403':
+          description: Cannot delete built-in scripts
+        '404':
+          description: Script not found
+
+  /api/tenants/{slug}/scripts/{id}/execute/{sn}/{mtp}:
+    post:
+      tags: [Scripts]
+      summary: Execute script on a device
+      description: |
+        Runs a script's steps against a target device via the specified MTP protocol.
+        Supports variables, conditions, delays, and error handling (abort/continue/skip_to).
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Script MongoDB ObjectID
+        - name: sn
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Device serial number
+        - $ref: '#/components/parameters/Mtp'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteScriptRequest'
+      responses:
+        '200':
+          description: Script execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScriptExecution'
+        '400':
+          description: Bad request (missing variables, invalid ID)
+        '404':
+          description: Script not found
+        '503':
+          description: Device is offline
+
+  /api/tenants/{slug}/scripts/{id}/executions:
+    get:
+      tags: [Scripts]
+      summary: List script execution history
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Execution history (last 50)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScriptExecution'
+
+  /api/tenants/{slug}/scripts/{id}/executions/{execId}:
+    get:
+      tags: [Scripts]
+      summary: Get single execution details
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: execId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Execution details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScriptExecution'
+        '400':
+          description: Invalid ID
+        '404':
+          description: Execution not found
+
+  # =========================================================================
+  # Campaigns
+  # =========================================================================
+  /api/tenants/{slug}/campaigns:
+    get:
+      tags: [Campaigns]
+      summary: List campaigns
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Campaign list sorted by creation date (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Campaign'
+
+    post:
+      tags: [Campaigns]
+      summary: Create campaign
+      description: |
+        Creates a firmware upgrade campaign. Campaigns target devices matching vendor+model+hw_version.
+        Uses vendor/model/hw_version from the firmware if fields are empty or set to "*".
+        If enabled=true, starts running immediately.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+      responses:
+        '201':
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '400':
+          description: Bad request
+        '409':
+          description: Campaign already exists for this vendor+model+hw_version
+
+  /api/tenants/{slug}/campaigns/{id}:
+    put:
+      tags: [Campaigns]
+      summary: Update campaign
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Campaign MongoDB ObjectID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCampaignRequest'
+      responses:
+        '204':
+          description: Updated
+        '400':
+          description: Bad request
+        '404':
+          description: Campaign not found
+
+    delete:
+      tags: [Campaigns]
+      summary: Delete campaign
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          description: Invalid ID
+
+  /api/tenants/{slug}/campaigns/{id}/logs:
+    get:
+      tags: [Campaigns]
+      summary: Get campaign upgrade logs
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Upgrade logs for the campaign
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignLogsResponse'
+
+  # =========================================================================
+  # Mass Actions
+  # =========================================================================
+  /api/tenants/{slug}/mass-actions:
+    get:
+      tags: [Mass Actions]
+      summary: List mass actions
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Mass actions list (last 100)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MassAction'
+
+  /api/tenants/{slug}/mass-actions/script:
+    post:
+      tags: [Mass Actions]
+      summary: Execute script on multiple devices
+      description: Creates a mass action to run a script against selected devices.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MassScriptExecutionRequest'
+      responses:
+        '201':
+          description: Mass action created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MassAction'
+
+  /api/tenants/{slug}/mass-actions/{id}:
+    get:
+      tags: [Mass Actions]
+      summary: Get mass action details
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Mass action MongoDB ObjectID
+      responses:
+        '200':
+          description: Mass action details with device results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MassAction'
+        '400':
+          description: Invalid ID
+        '404':
+          description: Mass action not found
+
+  /api/tenants/{slug}/mass-actions/{id}/cancel:
+    post:
+      tags: [Mass Actions]
+      summary: Cancel a mass action
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancelled
+        '400':
+          description: Invalid ID
+
+
