@@ -83,15 +83,25 @@ const Page = () => {
         redirect: 'follow',
     };
 
-    let result = await (await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/auth/admin/exists`, requestOptions))
-    let content = await result.json()
-    console.log("content: ", content)
-    if (result.status != 200) {
-        throw new Error(content);
-    }else{
-        if (!content){
-          router.push("/auth/register")
-        }
+    try {
+      let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/auth/admin/exists`, requestOptions)
+      let content;
+      try {
+        content = await result.json();
+      } catch {
+        console.error("Failed to parse response:", await result.text());
+        return;
+      }
+      console.log("content: ", content)
+      if (result.status != 200) {
+          throw new Error(typeof content === 'object' ? JSON.stringify(content) : content);
+      } else {
+          if (!content) {
+            router.push("/auth/register")
+          }
+      }
+    } catch (err) {
+      console.error("adminUserExists error:", err);
     }
 }
 

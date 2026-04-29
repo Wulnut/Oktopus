@@ -37,11 +37,12 @@ export const SideNav = (props) => {
   });
 
   const isItemActive = (currentPath, itemPath) => {
+    if (!itemPath) return false;
     if (currentPath === itemPath) {
       return true;
     }
 
-    if (currentPath.includes(itemPath) && itemPath !== '/' && itemPath !== '/mass-actions') {
+    if (currentPath.includes(itemPath) && itemPath !== '/') {
       return true;
     }
 
