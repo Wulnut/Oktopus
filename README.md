@@ -21,6 +21,7 @@ On first run, `generate-secrets.sh` automatically creates `.env.*` files with ra
 | `build.sh` | Build all Docker images from source. Pass service names to build specific ones: `./build.sh controller` |
 | `run.sh` | Deploy all services using locally built images |
 | `run_debug.sh` | Deploy with frontend hot-reload (source mounted, no rebuild needed for frontend changes) |
+| `docker compose ... up -d frontend` | Run only the frontend (hot-reload) in Docker, without other services |
 | `stop.sh` | Stop all services |
 | `package.sh` | Create offline deployment archive (see [Offline Deployment](#offline-deployment)) |
 

@@ -199,6 +199,13 @@ cd deploy/compose && docker compose down -v
 # 仅停止不删除
 cd deploy/compose && docker compose stop
 
+# 停止单个服务（如 frontend）
+cd deploy/compose
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml stop frontend
+
+# 停止并删除单个服务
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml down frontend
+
 # ========== 日志查看 ==========
 
 # 查看所有服务日志
@@ -261,17 +268,37 @@ cd deploy/compose && ./build.sh controller
 cd deploy/compose && docker compose --profile controller up -d controller
 ```
 
-**流程二：修改前端代码（热重载）**
+**流程二：仅运行前端（热重载）**
+
+如果只需要开发前端页面，不涉及后端改动：
 
 ```bash
-# 启动开发模式（前端源码挂载到容器）
-cd deploy/compose && ./run_debug.sh
+cd deploy/compose
 
-# 修改 frontend/src/ 下的文件，Next.js 自动热重载
-# 浏览器默认 http://localhost:3000
+# 方式一：使用 run_debug.sh（已包含所有后端服务）
+./run_debug.sh
+
+# 方式二：只启动前端容器（独立前端开发）
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml up -d frontend
+
+# 方式三：只启动前端 + 核心后端（controller + NATS + MongoDB）
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml \
+  up -d nginx controller frontend
 ```
 
-`run_debug.sh` 的核心逻辑：将前端源码目录挂载到容器内，Next.js 的 dev server 监听文件变化自动重新编译。
+- 修改 `frontend/src/` 下的文件，Next.js 自动热重载，**无需重建镜像**
+- `node_modules` 和 `.next` 缓存位于容器内部，不污染宿主机
+- 前端访问 `http://localhost:3000`，API 请求通过 nginx 转发到 `localhost:8000`
+
+**停止前端容器：**
+```bash
+# 停止并删除容器
+cd deploy/compose
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml down frontend
+
+# 仅停止（不删除）
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml stop frontend
+```
 
 **流程三：仅开发后端 API（不启动前端）**
 

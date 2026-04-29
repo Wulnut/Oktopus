@@ -136,7 +136,6 @@ export const items = [
   },
   {
     title: 'Mass Actions',
-    path: '/mass-actions',
     icon: (
       <SvgIcon fontSize="small">
         <RectangleGroupIcon />

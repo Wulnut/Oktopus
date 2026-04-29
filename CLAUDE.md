@@ -58,13 +58,31 @@ After starting the services:
 
 ## Frontend Development
 
+**推荐：通过 Docker 运行（避免污染宿主机）**
+
+```bash
+# 完整开发栈（所有后端服务 + 前端热重载）
+cd deploy/compose && ./run_debug.sh
+
+# 仅前端热重载（需要后端已运行）
+cd deploy/compose
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml up -d frontend
+```
+
+**本地直接运行（需要先 npm install）**
+
 ```bash
 cd frontend
+npm install         # 安装依赖（node_modules 在本地）
 npm run dev        # Dev server on localhost:3000
 npm run build      # Production build
 npm run lint       # ESLint check
 npm run lint-fix   # Auto-fix ESLint issues
 ```
+
+- Docker 模式下 `node_modules` 和 `.next` 缓存位于容器内，不在本地目录
+- 修改 `frontend/src/` 文件自动热重载，无需重建镜像
+- 需要后端 API 时，至少启动 nginx + controller
 
 ## Building Docker Images
 

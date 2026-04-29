@@ -3,9 +3,15 @@ import PropTypes from 'prop-types';
 import { useRouter } from 'next/router';
 
 function parseJwt(token) {
+  if (!token || typeof token !== 'string') {
+    return null;
+  }
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return null;
+  }
   try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     return JSON.parse(window.atob(base64));
   } catch {
     return null;

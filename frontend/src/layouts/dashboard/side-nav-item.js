@@ -10,20 +10,23 @@ import ArrowTopRightOnSquareIcon from '@heroicons/react/24/solid/ArrowTopRightOn
 export const SideNavItem = (props) => {
   const { active = false, disabled, external, icon, path, title, children, padleft, tooltip, nested = false } = props;
 
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
   const isItemActive = (currentPath, itemPath) => {
+    if (!itemPath) return false;
     if (currentPath === itemPath) {
       return true;
     }
 
-    if (currentPath.includes(itemPath) && itemPath !== '/' && itemPath !== '/mass-actions') {
+    if (currentPath.includes(itemPath) && itemPath !== '/') {
       return true;
     }
 
     return false;
   }
+
+  const hasActiveChild = children?.some((child) => isItemActive(pathname, child.path));
 
   const linkProps = path
     ? external
@@ -158,7 +161,7 @@ export const SideNavItem = (props) => {
         }
       </ButtonBase>
       </Tooltip>
-      <Collapse in={open}>
+      <Collapse in={open || hasActiveChild}>
         {
             children &&
               (

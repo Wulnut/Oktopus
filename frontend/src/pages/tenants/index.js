@@ -49,7 +49,16 @@ const Page = () => {
       );
       if (res.status === 401) return router.push('/auth/login');
       if (res.status === 403) return router.push('/403');
-      const data = await res.json();
+      // Always clone first — body can only be read once
+      const cloned = res.clone();
+      let data;
+      try {
+        data = await cloned.json();
+      } catch {
+        const text = await res.text();
+        console.error('Non-JSON response from /api/tenants:', text);
+        data = [];
+      }
       setTenants(data || []);
     } catch (err) {
       console.error('Error fetching tenants:', err);
@@ -74,8 +83,16 @@ const Page = () => {
       const text = await res.text();
       throw new Error(text);
     }
-    const created = await res.json();
-    setTenants([...tenants, created]);
+    const createdClone = res.clone();
+    let created;
+    try {
+      created = await createdClone.json();
+    } catch {
+      const text = await res.text();
+      console.error('Non-JSON response from POST /api/tenants:', text);
+      created = null;
+    }
+    if (created) setTenants([...tenants, created]);
   };
 
   const deleteTenant = async (slug) => {
