@@ -27,6 +27,10 @@ func main() {
 
 	database := db.NewDatabase(c.Mongo.Ctx, c.Mongo.Uri)
 
+	// Idempotent migration: ensures every existing tenant has up-to-date indexes
+	// (e.g. case-insensitive collation on the campaigns unique index).
+	database.MigrateAllTenantIndexes(c.Mongo.Ctx)
+
 	// Start message interceptor — resolves tenant DB dynamically from NATS subject
 	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, &database, c.Controller.ControllerId)
 

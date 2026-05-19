@@ -116,3 +116,20 @@ func getDevices(w http.ResponseWriter, filter map[string]interface{}, nc *nats.C
 	}
 	return nil, err
 }
+
+// getDevicesNoHTTP queries the adapter device list without writing to an http.ResponseWriter.
+// Argument order mirrors getDevices(w, filter, nc, tenantSlug) minus w.
+func getDevicesNoHTTP(filter map[string]interface{}, nc *nats.Conn, tenantSlug string) (*entity.DevicesList, error) {
+	msg, err := bridge.NatsReqWithoutHttpSet[entity.DevicesList](
+		local.NatsAdapterSubject(tenantSlug)+"devices.retrieve",
+		utils.Marshall(filter),
+		nc,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if msg == nil {
+		return nil, errors.New("empty response from adapter")
+	}
+	return &msg.Msg, nil
+}

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -36,6 +37,12 @@ func (t *TenantDB) ListCampaigns(ctx context.Context) ([]Campaign, error) {
 }
 
 func (t *TenantDB) CreateCampaign(ctx context.Context, c Campaign) (Campaign, error) {
+	// Normalize hardware fields. Combined with the case-insensitive collation
+	// on the unique index, this guarantees consistent dedup semantics regardless
+	// of how callers cased or padded the input.
+	c.Vendor = strings.TrimSpace(c.Vendor)
+	c.Model = strings.TrimSpace(c.Model)
+	c.HWVersion = strings.TrimSpace(c.HWVersion)
 	c.ID = primitive.NewObjectID()
 	c.CreatedAt = time.Now()
 	c.UpdatedAt = time.Now()
@@ -49,13 +56,17 @@ func (t *TenantDB) GetCampaign(ctx context.Context, id primitive.ObjectID) (Camp
 	return c, err
 }
 
+// GetCampaignByHardware looks up a campaign by (vendor, model, hw_version) using a
+// case-insensitive indexed query (matching the campaigns_hardware_ci collation index).
+// Inputs are TrimSpace'd to match the normalization performed on insert.
 func (t *TenantDB) GetCampaignByHardware(ctx context.Context, vendor, model, hwVersion string) (Campaign, error) {
 	var c Campaign
+	opts := options.FindOne().SetCollation(&options.Collation{Locale: "en", Strength: 2})
 	err := t.Campaigns().FindOne(ctx, bson.M{
-		"vendor":     vendor,
-		"model":      model,
-		"hw_version": hwVersion,
-	}).Decode(&c)
+		"vendor":     strings.TrimSpace(vendor),
+		"model":      strings.TrimSpace(model),
+		"hw_version": strings.TrimSpace(hwVersion),
+	}, opts).Decode(&c)
 	return c, err
 }
 
