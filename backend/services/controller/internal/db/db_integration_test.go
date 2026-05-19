@@ -196,6 +196,49 @@ func TestCampaignUniqueConstraint(t *testing.T) {
 	}
 }
 
+func TestCampaignUniqueConstraint_CaseInsensitive(t *testing.T) {
+	hw := fmt.Sprintf("hw-ci-%d", time.Now().UnixNano())
+	first := Campaign{Vendor: "Vendor", Model: "Model", HWVersion: hw, FirmwareID: primitive.NewObjectID(), Concurrency: 10}
+	if _, err := testTDB.CreateCampaign(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	// Case-only difference must still be rejected by the case-insensitive unique index.
+	second := Campaign{Vendor: "vendor", Model: "MODEL", HWVersion: hw, FirmwareID: primitive.NewObjectID(), Concurrency: 10}
+	if _, err := testTDB.CreateCampaign(context.Background(), second); err == nil {
+		t.Error("Expected duplicate key error for case-only difference, got nil")
+	}
+}
+
+func TestGetCampaignByHardware_CaseAndWhitespaceInsensitive(t *testing.T) {
+	hw := fmt.Sprintf("hw-lookup-%d", time.Now().UnixNano())
+	c := Campaign{Vendor: "Huawei", Model: "HG8145", HWVersion: hw, FirmwareID: primitive.NewObjectID(), Concurrency: 10}
+	if _, err := testTDB.CreateCampaign(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := testTDB.GetCampaignByHardware(context.Background(), "  HUAWEI  ", "hg8145", hw)
+	if err != nil {
+		t.Fatalf("expected case+whitespace-insensitive lookup to find campaign, got %v", err)
+	}
+	if got.Vendor != "Huawei" {
+		t.Errorf("stored vendor mismatch: got %q want %q", got.Vendor, "Huawei")
+	}
+}
+
+func TestCreateCampaign_TrimsHardwareFields(t *testing.T) {
+	hw := fmt.Sprintf("  hw-trim-%d  ", time.Now().UnixNano())
+	c := Campaign{Vendor: "  Vendor  ", Model: "  Model  ", HWVersion: hw, FirmwareID: primitive.NewObjectID(), Concurrency: 10}
+	created, err := testTDB.CreateCampaign(context.Background(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Vendor != "Vendor" || created.Model != "Model" {
+		t.Errorf("CreateCampaign did not trim: got vendor=%q model=%q", created.Vendor, created.Model)
+	}
+	if got := created.HWVersion; got[0] == ' ' || got[len(got)-1] == ' ' {
+		t.Errorf("CreateCampaign did not trim hw_version: %q", got)
+	}
+}
+
 // --- Upgrade Log ---
 
 func TestCreateUpgradeLog_And_UpdateStatus(t *testing.T) {
@@ -346,7 +389,7 @@ func TestStoreAndGetMetrics(t *testing.T) {
 // This test documents the expected behavior after fix.
 func TestFindAllUsers_ReturnsUsers(t *testing.T) {
 	// Register a user first
-	u := User{Email: fmt.Sprintf("test-%d@test.com", time.Now().UnixNano()), Level: AdminUser}
+	u := User{Email: fmt.Sprintf("test-%d@test.com", time.Now().UnixNano()), Level: TenantAdmin}
 	u.Password = "testpassword123"
 	if err := testDB.RegisterUser(u); err != nil {
 		t.Fatal(err)

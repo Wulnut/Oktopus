@@ -28,3 +28,8 @@ node_modules/
 # .env.*.example files are tracked; actual .env.* files are ignored
 deploy/compose/.env.*
 !deploy/compose/.env.*.example
+.agents
+.claude
+skills-lock.json
+.cursor/
+.serena/

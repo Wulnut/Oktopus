@@ -241,10 +241,20 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 		return fmt.Errorf("device_info index: %w", err)
 	}
 
-	// campaigns: unique (vendor, model, hw_version)
+	// campaigns: case-insensitive unique (vendor, model, hw_version).
+	// Best-effort drop of the legacy case-sensitive index (auto-generated name) before
+	// creating the new collation-aware one. Both ops are idempotent on a fresh tenant.
+	_, _ = tdb.Campaigns().Indexes().DropOne(ctx, "vendor_1_model_1_hw_version_1")
 	_, err = tdb.Campaigns().Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys:    bson.D{{Key: "vendor", Value: 1}, {Key: "model", Value: 1}, {Key: "hw_version", Value: 1}},
-		Options: options.Index().SetUnique(true),
+		Keys: bson.D{
+			{Key: "vendor", Value: 1},
+			{Key: "model", Value: 1},
+			{Key: "hw_version", Value: 1},
+		},
+		Options: options.Index().
+			SetUnique(true).
+			SetName("campaigns_hardware_ci").
+			SetCollation(&options.Collation{Locale: "en", Strength: 2}),
 	})
 	if err != nil {
 		return fmt.Errorf("campaigns index: %w", err)
@@ -312,6 +322,26 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 
 	log.Printf("Provisioned databases for tenant %q", slug)
 	return nil
+}
+
+// MigrateAllTenantIndexes ensures indexes on every existing tenant DB are up to date.
+// Calls ProvisionTenantDBs for every tenant. Safe to invoke on each controller start —
+// MongoDB CreateOne is a no-op when the index already exists with matching options.
+// Errors are logged per-tenant and never abort the loop.
+func (d *Database) MigrateAllTenantIndexes(ctx context.Context) {
+	tenants, err := d.FindAllTenants(ctx)
+	if err != nil {
+		log.Printf("MigrateAllTenantIndexes: list tenants: %v", err)
+		return
+	}
+	for _, t := range tenants {
+		if t.Slug == "" {
+			continue
+		}
+		if err := d.ProvisionTenantDBs(ctx, t.Slug); err != nil {
+			log.Printf("MigrateAllTenantIndexes: tenant %q: %v", t.Slug, err)
+		}
+	}
 }
 
 // DropTenantDBs drops all databases for a tenant.

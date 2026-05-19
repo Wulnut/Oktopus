@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -52,6 +53,7 @@ func (a *Api) tenantKV(r *http.Request) (jetstream.KeyValue, error) {
 
 func (a *Api) StartApi() {
 	r := mux.NewRouter()
+	setJSONNotFoundHandler(r)
 
 	/* ----- Auth routes (no middleware) ----- */
 	authentication := r.PathPrefix("/api/auth").Subrouter()
@@ -194,4 +196,16 @@ func (a *Api) StartApi() {
 		}
 	}()
 	log.Println("Running REST API at port", a.port)
+}
+
+func setJSONNotFoundHandler(r *mux.Router) {
+	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":  "route not registered",
+			"path":   req.URL.Path,
+			"method": req.Method,
+		})
+	})
 }

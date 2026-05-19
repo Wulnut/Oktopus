@@ -9,16 +9,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leandrofars/oktopus/internal/bridge"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/entity"
-	local "github.com/leandrofars/oktopus/internal/nats"
 	"github.com/nats-io/nats.go"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-const maxRetries = 3
+const (
+	maxRetries              = 3
+	campaignBatchPageSize   = 500  // online-device page size when listing from the adapter
+	campaignBatchMaxDevices = 5000 // hard cap on total devices scanned per batch run
+)
 
 // onConnectSem limits concurrent handleDeviceOnline goroutines.
 var onConnectSem = make(chan struct{}, 50)
@@ -240,6 +242,15 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlu
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	if !campaign.Enabled {
+		log.Printf("campaign_engine: campaign %s is disabled, skipping batch", campaign.ID.Hex())
+		return
+	}
+	if !isWithinTimeWindow(campaign) {
+		log.Printf("campaign_engine: outside time window, skipping batch for campaign %s (matching devices will be picked up by on_connect when they reconnect inside the window)", campaign.ID.Hex())
+		return
+	}
+
 	fw, err := tdb.GetFirmware(ctx, campaign.FirmwareID)
 	if err != nil {
 		log.Printf("campaign_engine: firmware not found for campaign %s: %v", campaign.ID.Hex(), err)
@@ -309,25 +320,64 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlu
 }
 
 func (a *Api) getMatchingOnlineDevices(campaign db.Campaign, tenantSlug string) ([]entity.Device, error) {
-	msg, err := bridge.NatsReqWithoutHttpSet[entity.DevicesList](
-		local.NatsAdapterSubject(tenantSlug)+"devices",
-		[]byte(""),
-		a.nc,
+	// The adapter subscribes to "devices.retrieve" (see mtp/adapter/internal/reqs/reqs.go).
+	// We do NOT push vendor/model down to the adapter because that filter is case-sensitive
+	// on Mongo, which would silently drop devices whose stored casing differs from the
+	// Campaign's. Instead we paginate all online devices and match case-insensitively here.
+
+	var (
+		matched []entity.Device
+		scanned int
+		skip    int
 	)
-	if err != nil || msg == nil {
-		return nil, fmt.Errorf("failed to query devices from adapter: %v", err)
+
+	for scanned < campaignBatchMaxDevices {
+		filter := map[string]interface{}{
+			"status_order": -1,
+			"limit":        campaignBatchPageSize,
+			"skip":         skip,
+			"status":       int(entity.Online),
+		}
+
+		list, err := getDevicesNoHTTP(filter, a.nc, tenantSlug)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query devices from adapter: %w", err)
+		}
+		if list == nil {
+			return nil, fmt.Errorf("failed to query devices from adapter: empty response")
+		}
+
+		got := len(list.Devices)
+		scanned += got
+		for _, d := range list.Devices {
+			if d.Status != entity.Online {
+				continue
+			}
+			if deviceMatchesCampaignHardware(d, campaign) {
+				matched = append(matched, d)
+			}
+		}
+
+		if got < campaignBatchPageSize {
+			break
+		}
+		skip += campaignBatchPageSize
 	}
 
-	var matched []entity.Device
-	for _, d := range msg.Msg.Devices {
-		if d.Status != entity.Online {
-			continue
-		}
-		if d.Vendor == campaign.Vendor && d.Model == campaign.Model && d.HWVersion == campaign.HWVersion {
-			matched = append(matched, d)
-		}
+	if scanned >= campaignBatchMaxDevices {
+		log.Printf("campaign_engine: device scan capped at %d for campaign %s; remaining online devices will be picked up by on_connect",
+			campaignBatchMaxDevices, campaign.ID.Hex())
 	}
+	log.Printf("campaign_engine: %d device(s) match campaign %s hardware (scanned %d online)",
+		len(matched), campaign.ID.Hex(), scanned)
 	return matched, nil
+}
+
+// deviceMatchesCampaignHardware compares device and campaign hardware fields case-insensitively.
+func deviceMatchesCampaignHardware(d entity.Device, c db.Campaign) bool {
+	return strings.EqualFold(strings.TrimSpace(d.Vendor), strings.TrimSpace(c.Vendor)) &&
+		strings.EqualFold(strings.TrimSpace(d.Model), strings.TrimSpace(c.Model)) &&
+		strings.EqualFold(strings.TrimSpace(d.HWVersion), strings.TrimSpace(c.HWVersion))
 }
 
 func isWithinTimeWindow(campaign db.Campaign) bool {
