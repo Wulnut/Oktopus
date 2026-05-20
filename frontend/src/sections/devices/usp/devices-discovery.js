@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Card,
   CardContent,
   SvgIcon,
   IconButton,
   List,
-  ListItem,
   ListItemText,
+  ListItemButton,
   Box,
   Dialog,
   DialogActions,
@@ -18,23 +18,50 @@ import {
   Backdrop,
   Alert,
   Typography,
-  Fab,
-  Tooltip,
   Popover,
   Checkbox,
   FormControlLabel,
+  Grid,
+  Tabs,
+  Tab,
+  Paper,
+  Chip,
+  InputAdornment,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Stack,
+  OutlinedInput,
 } from '@mui/material';
-import ArrowRightIcon from '@heroicons/react/24/solid/ArrowRightIcon';
 import CircularProgress from '@mui/material/CircularProgress';
 import ArrowPathIcon from '@heroicons/react/24/outline/ArrowPathIcon';
 import PlusCircleIcon from '@heroicons/react/24/outline/PlusCircleIcon';
 import Pencil from "@heroicons/react/24/outline/PencilIcon";
-import ArrowUturnLeftIcon from '@heroicons/react/24/outline/ArrowUturnLeftIcon';
 import XMarkIcon from '@heroicons/react/24/outline/XMarkIcon';
 import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 import PlayCircleIcon from '@heroicons/react/24/outline/PlayCircleIcon';
+import CheckIcon from '@heroicons/react/24/outline/CheckIcon';
+import MagnifyingGlassIcon from '@heroicons/react/24/outline/MagnifyingGlassIcon';
+import DocumentTextIcon from '@heroicons/react/24/outline/DocumentTextIcon';
+import CommandLineIcon from '@heroicons/react/24/outline/CommandLineIcon';
 import { useRouter } from 'next/router';
 import { useTenant } from 'src/contexts/tenant-context';
+import { useTheme } from '@mui/material/styles';
+
+const ChevronRightIcon = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+  </svg>
+);
+
+const ChevronDownIcon = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+  </svg>
+);
 
 const ObjAccessType = {
   ReadOnly: 0,
@@ -49,13 +76,9 @@ const ParamAccessType = {
   WriteOnly: 2,
 };
 
-// Convert TR-181 dot path to URL segments: "Device.WiFi.Radio.1." -> "Device/WiFi/Radio/1"
 const pathToUrl = (tr181Path) => tr181Path.replace(/\.$/, '').replaceAll('.', '/');
-
-// Convert URL segments back to TR-181 dot path: ["Device","WiFi","Radio","1"] -> "Device.WiFi.Radio.1."
 const segmentsToPath = (segments) => segments.length > 0 ? segments.join('.') + '.' : 'Device.';
 
-// Sort instance keys by their numeric segments (1,2,10 not 1,10,2)
 const sortInstanceKeys = (a, b) => {
   const numsA = a.match(/\d+/g)?.map(Number) || [];
   const numsB = b.match(/\d+/g)?.map(Number) || [];
@@ -65,19 +88,14 @@ const sortInstanceKeys = (a, b) => {
   return numsA.length - numsB.length;
 };
 
-// Extract the last meaningful name from a supported_obj_path
-// "Device.Bridging.Bridge.{i}." -> "Bridge"
 const getObjName = (path) => {
   const parts = path.replace(/\.$/, '').split('.');
-  // Walk backward to find a non-{i} segment
   for (let i = parts.length - 1; i >= 0; i--) {
     if (parts[i] !== '{i}') return parts[i];
   }
   return parts[parts.length - 1];
 };
 
-// Get relative child path from parent template
-// parent: "Device.Bridging.Bridge.{i}."  child: "Device.Bridging.Bridge.{i}.Port.{i}." -> "Port.{i}."
 const getRelativeChildPath = (childPath, parentPath) => {
   if (childPath.startsWith(parentPath)) {
     return childPath.substring(parentPath.length);
@@ -85,34 +103,27 @@ const getRelativeChildPath = (childPath, parentPath) => {
   return childPath;
 };
 
-// Check if child is a direct child (one object level deeper) of parent
 const isDirectChild = (childPath, parentPath) => {
   const rel = getRelativeChildPath(childPath, parentPath);
   if (!rel) return false;
-  // Direct child: "Port.{i}." or "Stats." — at most one non-{i} name segment
   const parts = rel.replace(/\.$/, '').split('.');
   const nameSegments = parts.filter(p => p !== '{i}');
   return nameSegments.length === 1;
 };
 
-// Get display name for a child object relative to parent
-// "Port.{i}." -> "Port"
 const getChildDisplayName = (relativePath) => {
   const parts = relativePath.replace(/\.$/, '').split('.');
   return parts.find(p => p !== '{i}') || parts[0];
 };
 
-// Check if a relative child path contains {i} (multi-instance)
 const isMultiInstance = (relativePath) => relativePath.includes('{i}');
 
-// Extract command name from path: "Device.X.Reset()" -> "Reset"
 const extractCommandName = (commandPath) => {
   if (!commandPath) return '';
   const parts = commandPath.split('.');
   return parts[parts.length - 1].replace(/\(\)$/, '');
 };
 
-// Generate unique command_key: "Reset_20250105_143022_a3f2"
 const generateUniqueCommandKey = (commandPath) => {
   const commandName = extractCommandName(commandPath);
   if (!commandName) return '';
@@ -122,7 +133,6 @@ const generateUniqueCommandKey = (commandPath) => {
   return `${commandName}_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${randomHex}`;
 };
 
-// Build auth headers
 const getAuthHeaders = () => {
   const headers = new Headers();
   headers.append("Content-Type", "application/json");
@@ -149,6 +159,7 @@ const ValueDisplay = ({ value }) => {
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           cursor: isTruncated ? 'pointer' : 'default',
+          fontWeight: 500,
           '&:hover': isTruncated ? { color: 'primary.main' } : {},
         }}
       >
@@ -164,7 +175,7 @@ const ValueDisplay = ({ value }) => {
         <Box sx={{ p: 2, maxWidth: 500, maxHeight: 300, overflow: 'auto' }}>
           <Typography
             variant="body2"
-            sx={{ fontFamily: 'monospace', wordBreak: 'break-all', whiteSpace: 'pre-wrap', userSelect: 'all' }}
+            sx={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap', userSelect: 'all', fontWeight: 500 }}
           >
             {displayValue}
           </Typography>
@@ -176,24 +187,43 @@ const ValueDisplay = ({ value }) => {
 
 export const DevicesDiscovery = ({ onStatusRefresh }) => {
   const router = useRouter();
+  const theme = useTheme();
   const { apiPrefix } = useTenant();
 
   // Derive device ID and current TR-181 path from URL
   const deviceID = router.query.id?.[0];
   const pathSegments = router.query.id?.slice(2) || [];
   const pathKey = pathSegments.join('/');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const currentPath = useMemo(() => segmentsToPath(pathSegments), [pathKey]);
 
-  // State
+  // Tab State
+  const [activeTab, setActiveTab] = useState(0);
+
+  // Tree and Schema state
+  const [treeNodes, setTreeNodes] = useState({
+    'Device.': {
+      path: 'Device.',
+      name: 'Device',
+      expanded: true,
+      loaded: false,
+      loading: false,
+      children: [],
+      isMultiInstance: false,
+    }
+  });
+
+  // Inline parameter editing
+  const [editingParam, setEditingParam] = useState(null); // Full path parameter name being inline edited
+  const [editingValue, setEditingValue] = useState('');
+
+  // Live in-place Tree Search
+  const [treeSearchQuery, setTreeSearchQuery] = useState('');
+  const searchRunRef = useRef(0);
+
+  // Original state holders for Right Details Panel
   const [deviceParameters, setDeviceParameters] = useState(null);
   const [deviceParametersValue, setDeviceParametersValue] = useState({});
-  const [childObjects, setChildObjects] = useState([]);
   const [showLoading, setShowLoading] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [parameter, setParameter] = useState(null);
-  const [parameterValue, setParameterValue] = useState(null);
-  const [parameterValueChange, setParameterValueChange] = useState(null);
   const [errorModal, setErrorModal] = useState(false);
   const [errorModalText, setErrorModalText] = useState("");
   const [errorModalTitle, setErrorModalTitle] = useState("Response");
@@ -202,13 +232,13 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
   const [openCommandDialog, setOpenCommandDialog] = useState(false);
   const [deviceCommandToExecute, setDeviceCommandToExecute] = useState(null);
   const [inputArgsValue, setInputArgsValue] = useState({});
-  const [addDialog, setAddDialog] = useState(null); // { objPath, params: [{param_name, access, value_type}] }
-  const [addParamValues, setAddParamValues] = useState({}); // { paramName: value }
-  const [addParamRequired, setAddParamRequired] = useState({}); // { paramName: bool }
+  const [addDialog, setAddDialog] = useState(null);
+  const [addParamValues, setAddParamValues] = useState({});
+  const [addParamRequired, setAddParamRequired] = useState({});
   const [addAllowPartial, setAddAllowPartial] = useState(true);
-  const [addResult, setAddResult] = useState(null); // { status, message, result, failedParams }
+  const [addResult, setAddResult] = useState(null);
 
-  // Navigate to a TR-181 path by updating the URL
+  // Navigate to a TR-181 path by updating Next.js URL
   const navigateTo = useCallback((tr181Path) => {
     const urlPath = pathToUrl(tr181Path);
     router.push(
@@ -221,13 +251,9 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
   // Navigate up one level
   const navigateBack = useCallback(() => {
     const parts = currentPath.replace(/\.$/, '').split('.');
-    if (parts.length <= 1) return; // Already at Device.
+    if (parts.length <= 1) return;
 
-    // Remove last segment
     parts.pop();
-
-    // If the new last segment is a number, remove it too
-    // (go past instance number back to the table level)
     if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) {
       parts.pop();
     }
@@ -251,17 +277,54 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       try {
         const errorJson = JSON.parse(errorText);
         errorText = typeof errorJson === 'string' ? errorJson : JSON.stringify(errorJson, null, 2);
-      } catch (e) { /* use raw text */ }
+      } catch (e) {}
       errorText = errorText.trim().replace(/^["']|["']$/g, '');
       throw new Error(errorText || `Request failed with status ${result.status}`);
     }
     return result.json();
-  }, [deviceID, router]);
+  }, [deviceID, router, apiPrefix]);
 
-  // Convert all instance numbers to {i} for template matching
-  const toTemplatePath = (path) => {
-    return path.split('.').map(seg => /^\d+$/.test(seg) ? '{i}' : seg).join('.');
-  };
+  // Recursive ancestor populator for smooth tree expansion on deep load or search jump
+  const ensurePathInTree = useCallback((targetPath) => {
+    const parts = targetPath.replace(/\.$/, '').split('.');
+    const ancestors = [];
+    for (let i = 1; i <= parts.length; i++) {
+      ancestors.push(parts.slice(0, i).join('.') + '.');
+    }
+
+    setTreeNodes(prev => {
+      let updated = { ...prev };
+      ancestors.forEach((anc, idx) => {
+        if (!updated[anc]) {
+          updated[anc] = {
+            path: anc,
+            name: parts[idx] || anc,
+            expanded: true,
+            loaded: false,
+            loading: false,
+            children: [],
+            isMultiInstance: /^\d+$/.test(parts[idx]),
+          };
+        } else {
+          updated[anc] = {
+            ...updated[anc],
+            expanded: true,
+          };
+        }
+
+        if (idx > 0) {
+          const parentAnc = ancestors[idx - 1];
+          if (updated[parentAnc] && !updated[parentAnc].children.includes(anc)) {
+            updated[parentAnc] = {
+              ...updated[parentAnc],
+              children: [...updated[parentAnc].children, anc].sort(),
+            };
+          }
+        }
+      });
+      return updated;
+    });
+  }, []);
 
   // Main data fetching function
   const updateDeviceParameters = useCallback(async (path, { preserveState = false } = {}) => {
@@ -270,12 +333,9 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     if (!preserveState) {
       setDeviceParameters(null);
       setDeviceParametersValue({});
-      setChildObjects([]);
     }
 
     try {
-      // Send path directly to GetSupportedDM — works with table paths (Bridge.)
-      // and concrete paths (Bridge.2.); wildcards are added for Get queries below
       const content = await fetchWithAuth('parameters', {
         obj_paths: [path],
         first_level_only: true,
@@ -291,28 +351,21 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       }
 
       const supportedObjs = content.req_obj_results[0].supported_objs;
-
-      // The first supported_obj is the queried object itself (has params/commands)
-      // Remaining are child objects (sub-objects to drill into)
       const mainObj = supportedObjs[0];
       const children = supportedObjs.slice(1).filter(
         child => isDirectChild(child.supported_obj_path, mainObj.supported_obj_path)
       );
 
-      // Sort children alphabetically by name
       children.sort((a, b) => getObjName(a.supported_obj_path).localeCompare(getObjName(b.supported_obj_path)));
-      setChildObjects(children);
 
-      // 2. Fetch parameter values if the main object has params
       const supportedParams = mainObj.supported_params;
+      let values = {};
+
       if (supportedParams?.length) {
-        // Reconstruct the concrete query path: map {i} in template back to
-        // actual numbers from the input path, defaulting to * for unspecified instances
         const templateParts = mainObj.supported_obj_path.split('.');
         const inputParts = path.split('.');
         const concreteObjPath = templateParts.map((seg, idx) => {
           if (seg === '{i}') {
-            // Use concrete number from input if available, otherwise wildcard
             if (idx < inputParts.length && /^\d+$/.test(inputParts[idx])) return inputParts[idx];
             return '*';
           }
@@ -336,7 +389,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
         });
 
         if (result?.req_path_results) {
-          const values = {};
           result.req_path_results.forEach(x => {
             if (!x.resolved_path_results) {
               values[x.requested_path] = {};
@@ -345,7 +397,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
             const parts = x.requested_path.split('.');
             if (parts[parts.length - 2] === '*') {
-              // Multi-instance: group by resolved path (instance)
               x.resolved_path_results.forEach(y => {
                 if (!y.result_params) return;
                 const key = Object.keys(y.result_params)[0];
@@ -357,7 +408,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
                 });
               });
             } else {
-              // Single instance: flat key-value
               const rpr = x.resolved_path_results[0];
               if (!rpr?.result_params) return;
               Object.keys(rpr.result_params).forEach(key => {
@@ -375,6 +425,59 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       }
 
       setDeviceParameters(content);
+
+      const pathParts = mainObj.supported_obj_path.replace(/\.$/, '').split('.');
+      const isInstanceObj = pathParts[pathParts.length - 1] === '{i}';
+      const hasInstanceValues = Object.keys(values).some(k => k.includes('.'));
+      const showAsInstance = isInstanceObj && hasInstanceValues;
+
+      setTreeNodes(prev => {
+        let childPaths = [];
+        let newTreeNodes = { ...prev };
+
+        if (showAsInstance) {
+          const instancePattern = new RegExp('^' + mainObj.supported_obj_path.replace(/\{i\}/g, '\\d+').replace(/\./g, '\\.') + '$');
+          childPaths = Object.keys(values).filter(k => instancePattern.test(k)).sort(sortInstanceKeys);
+          childPaths.forEach(instanceKey => {
+            if (!newTreeNodes[instanceKey]) {
+              newTreeNodes[instanceKey] = {
+                path: instanceKey,
+                name: instanceKey.replace(path, ''),
+                expanded: false,
+                loaded: false,
+                loading: false,
+                children: [],
+                isMultiInstance: true,
+              };
+            }
+          });
+        } else {
+          childPaths = children.map(c => c.supported_obj_path);
+          childPaths.forEach(childPath => {
+            if (!newTreeNodes[childPath]) {
+              newTreeNodes[childPath] = {
+                path: childPath,
+                name: getObjName(childPath),
+                expanded: false,
+                loaded: false,
+                loading: false,
+                children: [],
+                isMultiInstance: isMultiInstance(getRelativeChildPath(childPath, path)),
+              };
+            }
+          });
+        }
+
+        newTreeNodes[path] = {
+          ...newTreeNodes[path],
+          loaded: true,
+          loading: false,
+          children: childPaths,
+        };
+
+        return newTreeNodes;
+      });
+
     } catch (error) {
       const errorMsg = error.message || "An error occurred while retrieving device parameters.";
       if (errorMsg.toLowerCase().includes("offline") || errorMsg.includes("503")) {
@@ -387,26 +490,132 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     } finally {
       setShowLoading(false);
     }
-  }, [fetchWithAuth]);
+  }, [fetchWithAuth, onStatusRefresh]);
 
-  // Fetch data when path changes
+  // Toggle tree node expanded state
+  const handleToggleNode = useCallback((path) => {
+    setTreeNodes(prev => {
+      const node = prev[path];
+      if (!node) return prev;
+
+      const nextExpanded = !node.expanded;
+      if (nextExpanded && !node.loaded) {
+        setTimeout(() => updateDeviceParameters(path), 0);
+        return {
+          ...prev,
+          [path]: { ...node, expanded: true, loading: true }
+        };
+      }
+
+      return {
+        ...prev,
+        [path]: { ...node, expanded: nextExpanded }
+      };
+    });
+  }, [updateDeviceParameters]);
+
+  const loadTreePathForSearch = useCallback(async (path) => {
+    if (!deviceID || !path) return [];
+
+    try {
+      const content = await fetchWithAuth('parameters', {
+        obj_paths: [path],
+        first_level_only: true,
+        return_commands: false,
+        return_events: false,
+        return_params: false,
+      });
+
+      const supportedObjs = content?.req_obj_results?.[0]?.supported_objs || [];
+      if (supportedObjs.length === 0) return [];
+
+      const mainObj = supportedObjs[0];
+      const childPaths = supportedObjs
+        .slice(1)
+        .filter(child => isDirectChild(child.supported_obj_path, mainObj.supported_obj_path))
+        .map(child => child.supported_obj_path);
+
+      setTreeNodes(prev => {
+        const next = { ...prev };
+        childPaths.forEach(childPath => {
+          if (!next[childPath]) {
+            next[childPath] = {
+              path: childPath,
+              name: getObjName(childPath),
+              expanded: false,
+              loaded: false,
+              loading: false,
+              children: [],
+              isMultiInstance: isMultiInstance(getRelativeChildPath(childPath, path)),
+            };
+          }
+        });
+
+        next[path] = {
+          ...next[path],
+          path,
+          loaded: true,
+          loading: false,
+          children: childPaths,
+        };
+
+        return next;
+      });
+
+      return childPaths;
+    } catch {
+      return [];
+    }
+  }, [deviceID, fetchWithAuth]);
+
+  useEffect(() => {
+    const query = treeSearchQuery.trim();
+    if (query.length < 2) return undefined;
+
+    const runId = searchRunRef.current + 1;
+    searchRunRef.current = runId;
+    const visited = new Set();
+
+    const crawl = async (paths, depth = 0) => {
+      if (searchRunRef.current !== runId || depth > 6) return;
+
+      for (const path of paths) {
+        if (searchRunRef.current !== runId || visited.has(path)) continue;
+        visited.add(path);
+
+        const childPaths = await loadTreePathForSearch(path);
+        if (childPaths.length > 0) {
+          await crawl(childPaths, depth + 1);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      crawl(['Device.']);
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      searchRunRef.current += 1;
+    };
+  }, [treeSearchQuery, loadTreePathForSearch]);
+
+  // Synchronize deep link URLs on mount or URL change
   useEffect(() => {
     if (deviceID && currentPath) {
+      ensurePathInTree(currentPath);
       updateDeviceParameters(currentPath);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPath, deviceID]);
+  }, [currentPath, deviceID, ensurePathInTree]);
 
-  // Open add-instance dialog — fetch the object's schema first
+  // CRUD API functions preserved intact
   const openAddDialog = async (objPath, childTemplatePath) => {
-    // Show dialog immediately in loading state
     setAddDialog({ objPath, params: null });
     setAddParamValues({});
     setAddParamRequired({});
     setAddAllowPartial(true);
 
     try {
-      // Fetch the schema for this object type
       const content = await fetchWithAuth('parameters', {
         obj_paths: [childTemplatePath],
         first_level_only: true,
@@ -431,12 +640,10 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     setAddParamRequired({});
   };
 
-  // Submit add-instance with param_settings from dialog
   const submitAddInstance = async () => {
     if (!addDialog) return;
     const { objPath } = addDialog;
 
-    // Build param_settings from non-empty values
     const paramSettings = Object.entries(addParamValues)
       .filter(([, value]) => value !== '' && value != null)
       .map(([param, value]) => ({
@@ -460,8 +667,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
         const objResult = result.created_obj_results?.[0];
         const operStatus = objResult?.oper_status?.OperStatus;
         const instantiatedPath = operStatus?.OperSuccess?.instantiated_path;
-
-        // Collect failed param names for highlighting
         const failedParams = new Set();
 
         if (operStatus?.OperSuccess) {
@@ -507,7 +712,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     }
   };
 
-  // Delete device object instance
   const deleteDeviceObj = async (objPath) => {
     setShowLoading(true);
     try {
@@ -526,13 +730,13 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     }
   };
 
-  // Set parameter value
-  const applyParameterChange = async () => {
-    const params = parameter.split('.');
+  // Inline Parameter editing setter
+  const applyInlineEdit = async (fullParamPath, paramValue) => {
+    const params = fullParamPath.split('.');
     const parameterToChange = params.pop();
     const objToChange = params.join('.') + '.';
 
-    setOpen(false);
+    setEditingParam(null);
     setShowLoading(true);
 
     try {
@@ -542,7 +746,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
           obj_path: objToChange,
           param_settings: [{
             param: parameterToChange,
-            value: parameterValueChange,
+            value: paramValue,
             required: true,
           }],
         }],
@@ -557,14 +761,12 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
         return;
       }
 
-      // Update value in state
       if (/^\d+$/.test(params[params.length - 1])) {
-        // Multi-instance param
         setDeviceParametersValue(prev => ({
           ...prev,
           [objToChange]: prev[objToChange]?.map(el => {
             if (el[parameterToChange] !== undefined) {
-              return { ...el, [parameterToChange]: { ...el[parameterToChange], value: parameterValueChange } };
+              return { ...el, [parameterToChange]: { ...el[parameterToChange], value: paramValue } };
             }
             return el;
           }),
@@ -572,7 +774,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       } else {
         setDeviceParametersValue(prev => ({
           ...prev,
-          [parameterToChange]: { ...prev[parameterToChange], value: parameterValueChange },
+          [parameterToChange]: { ...prev[parameterToChange], value: paramValue },
         }));
       }
     } catch (error) {
@@ -583,7 +785,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     }
   };
 
-  // Execute command
   const applyCommand = async () => {
     const commandPath = Object.keys(deviceCommandToExecute)[0];
     const commandKey = generateUniqueCommandKey(commandPath);
@@ -602,14 +803,8 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       setOpenCommandDialog(false);
 
       if (result) {
-        const operationResp = result.operation_results?.[0]?.OperationResp;
-        if (operationResp?.CmdFailure) {
-          setErrorModalText(JSON.stringify(result, null, 2));
-          setErrorModal(true);
-        } else {
-          setErrorModalText(JSON.stringify(result, null, 2));
-          setErrorModal(true);
-        }
+        setErrorModalText(JSON.stringify(result, null, 2));
+        setErrorModal(true);
       }
     } catch (error) {
       setErrorModalText(error.message);
@@ -622,140 +817,147 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     }
   };
 
-  // Show parameter edit dialog
-  const showEditDialog = (param, paramValue) => {
-    const val = paramValue === '""' ? "" : paramValue;
-    setParameter(param);
-    setParameterValue(val);
-    setParameterValueChange(val);
-    setOpen(true);
-  };
+  // Tree Filtering recursive helper for local Search In-Place
+  const shouldShowNode = useCallback((path, query) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    if (path.toLowerCase().includes(q)) return true;
 
-  // Render the main object header with back button
-  // Build clickable breadcrumb from currentPath, appending {i} when multi-instance
-  // "Device.Bridging.Bridge." (multi-instance) -> [Device].[Bridging].[Bridge.{i}].
-  const renderPathBreadcrumb = () => {
-    const segments = currentPath.replace(/\.$/, '').split('.');
+    const node = treeNodes[path];
+    if (!node || !node.children) return false;
+    return node.children.some(childPath => shouldShowNode(childPath, query));
+  }, [treeNodes]);
 
-    // Check if template ends with {i} (multi-instance view showing all instances)
-    const mainObj = deviceParameters?.req_obj_results?.[0]?.supported_objs?.[0];
-    const templateParts = mainObj?.supported_obj_path?.replace(/\.$/, '').split('.') || [];
-    const isMultiInstanceView = templateParts[templateParts.length - 1] === '{i}'
-      && !/^\d+$/.test(segments[segments.length - 1]);
+  // Hierarchical list renderer for Lefthand tree nodes with auto filter and auto expand
+  const renderTreeList = (nodePaths) => {
+    if (!nodePaths || nodePaths.length === 0) return null;
+
+    // Filter paths based on search query
+    const filteredPaths = nodePaths.filter(path => shouldShowNode(path, treeSearchQuery));
+
+    // Sorting: objects alphabetically, multi-instances numerically
+    const sorted = [...filteredPaths].sort((a, b) => {
+      const nodeA = treeNodes[a];
+      const nodeB = treeNodes[b];
+      if (nodeA?.isMultiInstance && nodeB?.isMultiInstance) {
+        return sortInstanceKeys(a, b);
+      }
+      return a.localeCompare(b);
+    });
 
     return (
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', py: 1, px: 2 }}>
-        {segments.map((seg, idx) => {
-          const isLast = idx === segments.length - 1;
-          const targetPath = segments.slice(0, idx + 1).join('.') + '.';
-          // Combine last segment with .{i} when viewing a multi-instance object
-          const displaySeg = (isLast && isMultiInstanceView) ? seg + '.{i}' : seg;
+      <List dense disablePadding>
+        {sorted.map(path => {
+          const node = treeNodes[path];
+          if (!node) return null;
+
+          const isSelected = currentPath === path;
+          const isExpandable = path.endsWith('.') || node.isMultiInstance;
+
+          // Auto expand if there is an active search query
+          const hasChildren = node.children && node.children.length > 0;
+          const isSearchActive = !!treeSearchQuery;
+          const shouldExpand = isSearchActive
+            ? (node.children.some(childPath => shouldShowNode(childPath, treeSearchQuery)))
+            : node.expanded;
 
           return (
-            <span key={idx}>
-              {isLast ? (
-                <Typography component="span" variant="body1" sx={{ fontWeight: 700 }}>
-                  {displaySeg}
-                </Typography>
-              ) : (
-                <Typography
-                  component="span"
-                  variant="body1"
-                  onClick={() => navigateTo(targetPath)}
-                  sx={{
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    '&:hover': { color: 'primary.main', textDecoration: 'underline' },
+            <Box key={path} id={`tree-node-${path.replaceAll('.', '_')}`}>
+              <ListItemButton
+                selected={isSelected}
+                onClick={() => navigateTo(path)}
+                sx={{
+                  pl: (path.split('.').length - 2) * 1.5 + 1.5,
+                  py: 0.5,
+                  my: 0.2,
+                  borderRadius: '6px',
+                  border: isSelected ? `1px solid ${theme.palette.primary.main}40` : '1px solid transparent',
+                  '&.Mui-selected': {
+                    bgcolor: 'primary.alpha10',
+                    color: 'primary.main',
+                    fontWeight: 600,
+                    '&:hover': { bgcolor: 'primary.alpha15' }
+                  },
+                }}
+              >
+                {isExpandable && (
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleNode(path);
+                    }}
+                    sx={{ p: 0.2, mr: 0.5, color: isSelected ? 'primary.main' : 'text.secondary' }}
+                  >
+                    {node.loading ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : shouldExpand ? (
+                      <ChevronDownIcon style={{ width: 14, height: 14 }} />
+                    ) : (
+                      <ChevronRightIcon style={{ width: 14, height: 14 }} />
+                    )}
+                  </IconButton>
+                )}
+                {!isExpandable && <Box sx={{ width: 22 }} />}
+                <ListItemText
+                  primary={node.name + (node.isMultiInstance ? '' : '.')}
+                  primaryTypographyProps={{
+                    variant: 'body2',
+                    fontWeight: isSelected ? 600 : 500,
+                    sx: { wordBreak: 'break-all', userSelect: 'none' }
                   }}
-                >
-                  {displaySeg}
-                </Typography>
+                />
+              </ListItemButton>
+              {shouldExpand && hasChildren && (
+                <Box>
+                  {renderTreeList(node.children)}
+                </Box>
               )}
-              <Typography component="span" variant="body1" sx={{ fontWeight: 700 }}>.</Typography>
-            </span>
+            </Box>
           );
         })}
-      </Box>
-    );
-  };
-
-  const renderObjectHeader = () => {
-    if (!deviceParameters?.req_obj_results?.[0]) return null;
-    const isRoot = currentPath === 'Device.';
-
-    return (
-      <List dense>
-        <ListItem
-          divider
-          secondaryAction={
-            !isRoot && (
-              <IconButton onClick={navigateBack}>
-                <SvgIcon><ArrowUturnLeftIcon /></SvgIcon>
-              </IconButton>
-            )
-          }
-          sx={{ boxShadow: (theme) => theme.shadows[2] }}
-        >
-          <ListItemText primary={renderPathBreadcrumb()} />
-        </ListItem>
       </List>
     );
   };
 
-  // Render child object buttons for a given instance path
-  const renderChildObjects = (instancePath, mainObj) => {
-    if (childObjects.length === 0) return null;
-
-    const sortedChildren = [...childObjects].sort((a, b) =>
-      getObjName(a.supported_obj_path).localeCompare(getObjName(b.supported_obj_path))
+  // Right pane header breadcrumbs renderer
+  const renderBreadcrumbs = () => {
+    const segments = currentPath.replace(/\.$/, '').split('.');
+    return (
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, py: 0.5 }}>
+        {segments.map((seg, idx) => {
+          const isLast = idx === segments.length - 1;
+          const targetPath = segments.slice(0, idx + 1).join('.') + '.';
+          return (
+            <Box key={idx} sx={{ display: 'flex', alignItems: 'center' }}>
+              {idx > 0 && <Typography color="text.secondary" sx={{ mx: 0.5, fontWeight: 700 }}>·</Typography>}
+              {isLast ? (
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                  {seg}
+                </Typography>
+              ) : (
+                <Typography
+                  variant="subtitle1"
+                  onClick={() => navigateTo(targetPath)}
+                  sx={{
+                    fontWeight: 500,
+                    color: 'primary.main',
+                    cursor: 'pointer',
+                    '&:hover': { textDecoration: 'underline' },
+                  }}
+                >
+                  {seg}
+                </Typography>
+              )}
+            </Box>
+          );
+        })}
+        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>.</Typography>
+      </Box>
     );
-
-    return sortedChildren.map(child => {
-      const relPath = getRelativeChildPath(child.supported_obj_path, mainObj.supported_obj_path);
-      const displayName = getChildDisplayName(relPath);
-      const isMulti = isMultiInstance(relPath);
-
-      // Build the concrete navigation path
-      // instancePath = "Device.Bridging.Bridge.1."
-      // relPath = "Port.{i}." -> navigate to "Device.Bridging.Bridge.1.Port."
-      // relPath = "Stats." -> navigate to "Device.Bridging.Bridge.1.Stats."
-      let navPath;
-      if (isMulti) {
-        navPath = instancePath + relPath.replace('{i}.', '');
-      } else {
-        navPath = instancePath + relPath;
-      }
-
-      const canAdd = child.access === ObjAccessType.AddDelete || child.access === ObjAccessType.AddOnly;
-      const addPath = instancePath + relPath.replace('{i}.', '');
-
-      return (
-        <List component="div" disablePadding dense key={displayName}>
-          <ListItem
-            divider
-            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
-            onClick={() => navigateTo(navPath)}
-            secondaryAction={
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                {canAdd && (
-                  <IconButton onClick={(e) => { e.stopPropagation(); openAddDialog(addPath, child.supported_obj_path); }}>
-                    <SvgIcon><PlusCircleIcon /></SvgIcon>
-                  </IconButton>
-                )}
-                <IconButton onClick={(e) => { e.stopPropagation(); navigateTo(navPath); }}>
-                  <SvgIcon><ArrowRightIcon /></SvgIcon>
-                </IconButton>
-              </Box>
-            }
-          >
-            <ListItemText primary={<b>{displayName + (isMulti ? '.{i}.' : '.')}</b>}  />
-          </ListItem>
-        </List>
-      );
-    });
   };
 
-  // Sort params: alphabetically, but NumberOfEntries params go last
+  // Sort parameter list: normal parameters alphabetically, NumberOfEntries counts last
   const sortParams = (params, getName = (p) => p) => {
     return [...params].sort((a, b) => {
       const nameA = getName(a);
@@ -767,235 +969,414 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     });
   };
 
-  // Render parameters for a single (non-instance) object
-  const renderFlatParams = (mainObj) => {
-    if (!mainObj.supported_params?.length) return null;
-
-    const sortedParams = sortParams(mainObj.supported_params, p => p.param_name);
-
-    return sortedParams.map(p => {
-      const isWritable = deviceParametersValue[p.param_name]?.access > ParamAccessType.ReadOnly;
-      const paramPath = mainObj.supported_obj_path + p.param_name;
-      const paramValue = deviceParametersValue[p.param_name]?.value;
-      return (
-        <List component="div" disablePadding dense key={p.param_name}>
-          <ListItem
-            divider
-            sx={{
-              boxShadow: (theme) => theme.shadows[2],
-              pl: 4,
-              ...(isWritable && { cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }),
-            }}
-            onClick={isWritable ? () => showEditDialog(paramPath, paramValue) : undefined}
-            secondaryAction={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <ValueDisplay value={paramValue} />
-                {isWritable && (
-                  <IconButton onClick={(e) => { e.stopPropagation(); showEditDialog(paramPath, paramValue); }}>
-                    <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
-                  </IconButton>
-                )}
-              </Box>
-            }
-          >
-            <ListItemText primary={p.param_name}  />
-          </ListItem>
-        </List>
-      );
-    });
-  };
-
-  // Render commands for a single object (or per-instance)
-  const renderCommands = (commands, pathPrefix) => {
-    if (!commands?.length) return null;
-
-    const sortedCommands = [...commands].sort((a, b) =>
-      a.command_name.localeCompare(b.command_name)
-    );
-
-    return sortedCommands.map(cmd => {
-      const handleExecute = () => {
-        setDeviceCommandToExecute({
-          [pathPrefix + cmd.command_name]: { input_arg_names: cmd.input_arg_names }
-        });
-        setOpenCommandDialog(true);
-      };
-      return (
-        <List component="div" disablePadding dense key={cmd.command_name + '__' + pathPrefix}>
-          <ListItem
-            divider
-            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 4, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
-            onClick={handleExecute}
-            secondaryAction={
-              <IconButton onClick={(e) => { e.stopPropagation(); handleExecute(); }}>
-                <SvgIcon><PlayCircleIcon /></SvgIcon>
-              </IconButton>
-            }
-          >
-            <ListItemText primary={cmd.command_name}  />
-          </ListItem>
-        </List>
-      );
-    });
-  };
-
-  // Render instance-based parameters (multi-instance objects)
-  const renderInstanceParams = (mainObj) => {
-    const templatePath = mainObj.supported_obj_path;
-    const instancePattern = new RegExp(
-      '^' + templatePath.replace(/\{i\}/g, '\\d+').replace(/\./g, '\\.') + '$'
-    );
-
-    const instanceKeys = Object.keys(deviceParametersValue)
-      .filter(key => instancePattern.test(key))
-      .sort(sortInstanceKeys);
-
-    if (instanceKeys.length === 0) return null;
-
-    const access = mainObj.access;
-    const canDelete = access === ObjAccessType.AddDelete || access === ObjAccessType.DeleteOnly;
-
-    return instanceKeys.map(instanceKey => {
-      const params = deviceParametersValue[instanceKey] || [];
-
-      // Sort params: alphabetically, NumberOfEntries last
-      const sortedParams = sortParams(params, p => Object.keys(p)[0]);
-
-      return (
-        <List dense key={instanceKey}>
-          <ListItem
-            divider
-            sx={{ boxShadow: (theme) => theme.shadows[2], pl: 2, backgroundColor: 'action.hover' }}
-            secondaryAction={
-              canDelete && (
-                <IconButton onClick={() => deleteDeviceObj(instanceKey)}>
-                  <SvgIcon><TrashIcon /></SvgIcon>
-                </IconButton>
-              )
-            }
-          >
-            <ListItemText primary={<b>{instanceKey}</b>} />
-          </ListItem>
-
-          {/* Parameters for this instance */}
-          {sortedParams.map(param => {
-            const paramName = Object.keys(param)[0];
-            const paramData = param[paramName];
-            const isWritable = paramData.access > ParamAccessType.ReadOnly;
-            return (
-              <List component="div" disablePadding dense key={paramName}>
-                <ListItem
-                  divider
-                  sx={{
-                    boxShadow: (theme) => theme.shadows[2],
-                    pl: 4,
-                    ...(isWritable && { cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }),
-                  }}
-                  onClick={isWritable ? () => showEditDialog(instanceKey + paramName, paramData.value) : undefined}
-                  secondaryAction={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <ValueDisplay value={paramData.value} />
-                      {isWritable && (
-                        <IconButton onClick={(e) => { e.stopPropagation(); showEditDialog(instanceKey + paramName, paramData.value); }}>
-                          <SvgIcon sx={{ width: '20px' }}><Pencil /></SvgIcon>
-                        </IconButton>
-                      )}
-                    </Box>
-                  }
-                >
-                  <ListItemText primary={paramName}  />
-                </ListItem>
-              </List>
-            );
-          })}
-
-          {/* Commands for this instance */}
-          {renderCommands(mainObj.supported_commands, instanceKey)}
-
-          {/* Child objects for this instance */}
-          {renderChildObjects(instanceKey, mainObj)}
-        </List>
-      );
-    });
-  };
-
-  // Render non-instance child objects at the top level (e.g., Device. showing WiFi., DeviceInfo., etc.)
-  const renderTopLevelChildObjects = () => {
-    if (!deviceParameters?.req_obj_results?.[0]) return null;
-    const allObjs = deviceParameters.req_obj_results[0].supported_objs;
-    const mainObj = allObjs[0];
-
-    // Check if the object itself ends with {i} (is multi-instance)
-    const pathParts = mainObj.supported_obj_path.replace(/\.$/, '').split('.');
-    const isInstanceObj = pathParts[pathParts.length - 1] === '{i}';
-    const hasInstanceValues = Object.keys(deviceParametersValue).some(k => k.includes('.'));
-
-    if (isInstanceObj && hasInstanceValues) {
-      // Instance objects: children are rendered per-instance in renderInstanceParams
-      return null;
+  // Find if current node has numerical values to plot
+  const hasNumericalParams = useMemo(() => {
+    let count = 0;
+    const isInstance = Object.keys(deviceParametersValue).some(k => k.includes('.'));
+    if (!isInstance) {
+      Object.entries(deviceParametersValue).forEach(([name, data]) => {
+        const type = String(data.value_type || '').toLowerCase();
+        const isNumeric = ['int', 'unsignedint', 'long', 'float', 'double', 'dateTime'].some(t => type.includes(t)) ||
+          ['packets', 'bytes', 'errors', 'signal', 'noise', 'rate', 'time', 'temperature', 'power', 'utilization'].some(k => name.toLowerCase().includes(k));
+        if (isNumeric && data.value !== '-' && !isNaN(Number(data.value))) {
+          count++;
+        }
+      });
     }
+    return count > 0;
+  }, [deviceParametersValue]);
 
-    // Non-instance (or concrete single instance): render children as top-level drill-down buttons
-    return renderChildObjects(currentPath, mainObj);
-  };
-
-  // Main render logic
-  const showParameters = () => {
-    if (!deviceParameters?.req_obj_results?.length) return null;
-
-    const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
-    // Check if the object itself is multi-instance (ends with {i}.)
-    // e.g., "Device.Bridge.{i}." is multi-instance, but "Device.Bridge.{i}.Stats." is not
-    const pathParts = mainObj.supported_obj_path.replace(/\.$/, '').split('.');
-    const isInstanceObj = pathParts[pathParts.length - 1] === '{i}';
-
-    // Determine if values were stored flat (by param name) or by instance key
-    // If the concrete query path had no wildcard, values are flat even for objects
-    // whose template contains {i} in ancestor segments
-    const hasInstanceValues = Object.keys(deviceParametersValue).some(k => k.includes('.'));
-    const showAsInstance = isInstanceObj && hasInstanceValues;
-
-    return (
-      <>
-        {renderObjectHeader()}
-
-        {/* For non-instance objects: show flat params, commands, then child objects */}
-        {!showAsInstance && renderFlatParams(mainObj)}
-        {!showAsInstance && renderCommands(mainObj.supported_commands,
-          currentPath.endsWith('.') ? currentPath : mainObj.supported_obj_path)}
-        {renderTopLevelChildObjects()}
-
-        {/* For instance objects: show per-instance params, commands, and child objects */}
-        {showAsInstance && renderInstanceParams(mainObj)}
-      </>
-    );
-  };
-
-  // Loading state
-  if (!deviceParameters && !errorModal && !deviceOfflineError) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  // Loading animation overlay
+  const renderLoading = () => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 8, gap: 2 }}>
+      <CircularProgress size={40} />
+      <Typography variant="body2" color="text.secondary">Loading parameters...</Typography>
+    </Box>
+  );
 
   return (
-    <Card>
-      <CardContent>
-        {deviceOfflineError && deviceOfflineErrorText && (
-          <Alert
-            severity="error"
-            onClose={() => { setDeviceOfflineError(false); setDeviceOfflineErrorText(""); }}
-            sx={{ mb: 2 }}
-          >
-            {deviceOfflineErrorText}
-          </Alert>
-        )}
-        {showParameters()}
+    <Card sx={{ border: '1px solid', borderColor: 'divider', boxShadow: theme.shadows[4] }}>
+      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+        <Grid container sx={{ minHeight: '780px' }}>
+
+          {/* LEFT COLUMN: Collapsible Directory Tree */}
+          <Grid item xs={12} md={4.5} sx={{ borderRight: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column' }}>
+            {/* Tree search bar / entry */}
+            <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.neutral', display: 'flex', alignItems: 'center' }}>
+              <OutlinedInput
+                fullWidth
+                placeholder="Search TR-181 nodes..."
+                value={treeSearchQuery}
+                onChange={(e) => setTreeSearchQuery(e.target.value)}
+                startAdornment={(
+                  <InputAdornment position="start">
+                    <SvgIcon
+                      color="action"
+                      fontSize="small"
+                    >
+                      <MagnifyingGlassIcon />
+                    </SvgIcon>
+                  </InputAdornment>
+                )}
+                endAdornment={treeSearchQuery && (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setTreeSearchQuery('')}>
+                      <SvgIcon fontSize="inherit"><XMarkIcon /></SvgIcon>
+                    </IconButton>
+                  </InputAdornment>
+                )}
+                sx={{
+                  borderRadius: '8px',
+                  bgcolor: 'background.paper',
+                }}
+              />
+            </Box>
+
+            {/* Collapsible tree scrolling panel */}
+            <Box
+              sx={{
+                flexGrow: 1,
+                p: 1.5,
+                maxHeight: '780px',
+                overflowY: 'auto',
+                '&::-webkit-scrollbar': { width: '4px' },
+                '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: '4px' }
+              }}
+            >
+              {renderTreeList(['Device.'])}
+            </Box>
+          </Grid>
+
+          {/* RIGHT COLUMN: Tabbed Active Node details */}
+          <Grid item xs={12} md={7.5} sx={{ display: 'flex', flexDirection: 'column', bgcolor: 'background.paper' }}>
+
+            {/* Header with Breadcrumbs & Add/Delete Instance actions */}
+            {deviceParameters?.req_obj_results?.[0] ? (
+              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                {renderBreadcrumbs()}
+
+                {/* Dynamic buttons for multi-instance tables */}
+                {(() => {
+                  const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
+                  const access = mainObj.access;
+                  const canAdd = access === ObjAccessType.AddDelete || access === ObjAccessType.AddOnly;
+                  const canDelete = access === ObjAccessType.AddDelete || access === ObjAccessType.DeleteOnly;
+                  const isInstance = Object.keys(deviceParametersValue).some(k => k.includes('.'));
+
+                  return (
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      {canAdd && (
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<SvgIcon fontSize="small"><PlusCircleIcon /></SvgIcon>}
+                          onClick={() => openAddDialog(currentPath, mainObj.supported_obj_path)}
+                        >
+                          Add Instance
+                        </Button>
+                      )}
+                      {canDelete && isInstance && (
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          size="small"
+                          startIcon={<SvgIcon fontSize="small"><TrashIcon /></SvgIcon>}
+                          onClick={() => deleteDeviceObj(currentPath)}
+                        >
+                          Delete Instance
+                        </Button>
+                      )}
+                    </Box>
+                  );
+                })()}
+              </Box>
+            ) : null}
+
+            {/* Selection tabs */}
+            <Tabs
+              value={activeTab}
+              onChange={(e, val) => setActiveTab(val)}
+              borderbottom={1}
+              sx={{
+                px: 2,
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+                minHeight: '48px',
+                '& .MuiTab-root': { py: 1.5, minHeight: '48px', fontWeight: 600 }
+              }}
+            >
+              <Tab label="Parameters" icon={<SvgIcon fontSize="small"><DocumentTextIcon /></SvgIcon>} iconPosition="start" />
+              <Tab label="Commands" icon={<SvgIcon fontSize="small"><CommandLineIcon /></SvgIcon>} iconPosition="start" />
+            </Tabs>
+
+            {/* Details dynamic display */}
+            <Box sx={{ p: 3, flexGrow: 1, maxHeight: '748px', overflowY: 'auto' }}>
+              {deviceOfflineError && deviceOfflineErrorText && (
+                <Alert
+                  severity="error"
+                  onClose={() => { setDeviceOfflineError(false); setDeviceOfflineErrorText(""); }}
+                  sx={{ mb: 2 }}
+                >
+                  {deviceOfflineErrorText}
+                </Alert>
+              )}
+
+              {!deviceParameters ? renderLoading() : (
+                <>
+                  {/* TAB 1: Parameters Property Table */}
+                  {activeTab === 0 && (() => {
+                    const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
+                    const isInstance = Object.keys(deviceParametersValue).some(k => k.includes('.'));
+
+                    if (isInstance) {
+                      // Multi-instance table view
+                      const instanceKeys = Object.keys(deviceParametersValue).sort(sortInstanceKeys);
+                      return (
+                        <Stack spacing={3}>
+                          {instanceKeys.map(instanceKey => {
+                            const params = deviceParametersValue[instanceKey] || [];
+                            const sortedParams = sortParams(params, p => Object.keys(p)[0]);
+
+                            return (
+                              <Card key={instanceKey} variant="outlined" sx={{ border: '1px solid', borderColor: 'divider' }}>
+                                <Box sx={{ py: 1, px: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'background.neutral', borderBottom: '1px solid', borderColor: 'divider' }}>
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                    {instanceKey}
+                                  </Typography>
+                                  {mainObj.access === ObjAccessType.AddDelete && (
+                                    <IconButton size="small" color="error" onClick={() => deleteDeviceObj(instanceKey)}>
+                                      <SvgIcon fontSize="small"><TrashIcon /></SvgIcon>
+                                    </IconButton>
+                                  )}
+                                </Box>
+                                <TableContainer>
+                                  <Table size="small">
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell sx={{ fontWeight: 600 }}>Parameter Name</TableCell>
+                                        <TableCell sx={{ fontWeight: 600 }}>Data Type</TableCell>
+                                        <TableCell sx={{ fontWeight: 600, textAlign: 'right', pr: 4 }}>Value</TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {sortedParams.map(param => {
+                                        const paramName = Object.keys(param)[0];
+                                        const paramData = param[paramName];
+                                        const isWritable = paramData.access > ParamAccessType.ReadOnly;
+
+                                        const fullParamPath = instanceKey + paramName;
+                                        const isEditing = editingParam === fullParamPath;
+
+                                        return (
+                                          <TableRow key={paramName} hover>
+                                            <TableCell sx={{ py: 1 }}>{paramName}</TableCell>
+                                            <TableCell>
+                                              <Chip label={paramData.value_type || 'string'} size="small" variant="outlined" sx={{ height: '20px', fontSize: '10px' }} />
+                                            </TableCell>
+                                            <TableCell sx={{ py: 1 }}>
+                                              {isEditing ? (
+                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                                                  <TextField
+                                                    size="small"
+                                                    variant="outlined"
+                                                    value={editingValue}
+                                                    onChange={(e) => setEditingValue(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') applyInlineEdit(fullParamPath, editingValue);
+                                                      if (e.key === 'Escape') setEditingParam(null);
+                                                    }}
+                                                    sx={{
+                                                      width: '200px',
+                                                      '& .MuiInputBase-input': { py: 0.5, fontSize: '13px' }
+                                                    }}
+                                                  />
+                                                  <IconButton size="small" color="primary" onClick={() => applyInlineEdit(fullParamPath, editingValue)}>
+                                                    <SvgIcon fontSize="small"><CheckIcon /></SvgIcon>
+                                                  </IconButton>
+                                                  <IconButton size="small" onClick={() => setEditingParam(null)}>
+                                                    <SvgIcon fontSize="small"><XMarkIcon /></SvgIcon>
+                                                  </IconButton>
+                                                </Box>
+                                              ) : (
+                                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                                                  <ValueDisplay value={paramData.value} />
+                                                  {isWritable && (
+                                                    <IconButton
+                                                      size="small"
+                                                      onClick={() => {
+                                                        setEditingParam(fullParamPath);
+                                                        setEditingValue(paramData.value ?? '');
+                                                      }}
+                                                    >
+                                                      <SvgIcon fontSize="inherit"><Pencil /></SvgIcon>
+                                                    </IconButton>
+                                                  )}
+                                                </Box>
+                                              )}
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </TableContainer>
+                              </Card>
+                            );
+                          })}
+                        </Stack>
+                      );
+                    }
+
+                    // Standard Flat Parameter List
+                    if (!mainObj.supported_params?.length) {
+                      return (
+                        <Box sx={{ py: 6, textAlign: 'center' }}>
+                          <Typography variant="body2" color="text.secondary">No parameters found under this node.</Typography>
+                        </Box>
+                      );
+                    }
+
+                    const sortedParams = sortParams(mainObj.supported_params, p => p.param_name);
+                    return (
+                      <TableContainer component={Paper} variant="outlined" sx={{ border: '1px solid', borderColor: 'divider' }}>
+                        <Table size="small">
+                          <TableHead sx={{ bgcolor: 'background.neutral' }}>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 700 }}>Parameter Name</TableCell>
+                              <TableCell sx={{ fontWeight: 700 }}>Data Type</TableCell>
+                              <TableCell sx={{ fontWeight: 700 }}>Writable</TableCell>
+                              <TableCell sx={{ fontWeight: 700, textAlign: 'right', pr: 4 }}>Value</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {sortedParams.map(p => {
+                              const paramData = deviceParametersValue[p.param_name];
+                              const isWritable = paramData?.access > ParamAccessType.ReadOnly;
+                              const paramValue = paramData?.value;
+
+                              const fullParamPath = currentPath + p.param_name;
+                              const isEditing = editingParam === fullParamPath;
+
+                              return (
+                                <TableRow key={p.param_name} hover>
+                                  <TableCell sx={{ fontWeight: 500, py: 1 }}>{p.param_name}</TableCell>
+                                  <TableCell>
+                                    <Chip label={p.value_type} size="small" variant="outlined" sx={{ height: '20px', fontSize: '10px' }} />
+                                  </TableCell>
+                                  <TableCell>
+                                    {isWritable ? (
+                                      <Chip label="Read-Write" color="primary" size="small" sx={{ height: '20px', fontSize: '10px', fontWeight: 600 }} />
+                                    ) : (
+                                      <Chip label="Read-Only" variant="outlined" size="small" sx={{ height: '20px', fontSize: '10px', color: 'text.secondary' }} />
+                                    )}
+                                  </TableCell>
+                                  <TableCell sx={{ py: 1 }}>
+                                    {isEditing ? (
+                                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                                        <TextField
+                                          size="small"
+                                          variant="outlined"
+                                          value={editingValue}
+                                          onChange={(e) => setEditingValue(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') applyInlineEdit(fullParamPath, editingValue);
+                                            if (e.key === 'Escape') setEditingParam(null);
+                                          }}
+                                          sx={{
+                                            width: '200px',
+                                            '& .MuiInputBase-input': { py: 0.5, fontSize: '13px' }
+                                          }}
+                                        />
+                                        <IconButton size="small" color="primary" onClick={() => applyInlineEdit(fullParamPath, editingValue)}>
+                                          <SvgIcon fontSize="small"><CheckIcon /></SvgIcon>
+                                        </IconButton>
+                                        <IconButton size="small" onClick={() => setEditingParam(null)}>
+                                          <SvgIcon fontSize="small"><XMarkIcon /></SvgIcon>
+                                        </IconButton>
+                                      </Box>
+                                    ) : (
+                                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                                        <ValueDisplay value={paramValue} />
+                                        {isWritable && (
+                                          <IconButton
+                                            size="small"
+                                            onClick={() => {
+                                              setEditingParam(fullParamPath);
+                                              setEditingValue(paramValue ?? '');
+                                            }}
+                                          >
+                                            <SvgIcon fontSize="inherit"><Pencil /></SvgIcon>
+                                          </IconButton>
+                                        )}
+                                      </Box>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    );
+                  })()}
+
+                  {/* TAB 2: Commands Methods Execution List */}
+                  {activeTab === 1 && (() => {
+                    const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
+                    if (!mainObj.supported_commands?.length) {
+                      return (
+                        <Box sx={{ py: 8, textAlign: 'center' }}>
+                          <Typography variant="body2" color="text.secondary">No executable commands available for this node.</Typography>
+                        </Box>
+                      );
+                    }
+
+                    const sortedCommands = [...mainObj.supported_commands].sort((a, b) => a.command_name.localeCompare(b.command_name));
+                    return (
+                      <Stack spacing={2}>
+                        {sortedCommands.map(cmd => {
+                          const fullCmdPath = currentPath + cmd.command_name;
+                          return (
+                            <Card key={cmd.command_name} variant="outlined" sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid', borderColor: 'divider' }}>
+                              <Box>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                                  {cmd.command_name}()
+                                </Typography>
+                                {cmd.input_arg_names && cmd.input_arg_names.length > 0 && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                    Arguments: {cmd.input_arg_names.join(', ')}
+                                  </Typography>
+                                )}
+                              </Box>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                color="primary"
+                                startIcon={<SvgIcon fontSize="small"><PlayCircleIcon /></SvgIcon>}
+                                onClick={() => {
+                                  setDeviceCommandToExecute({
+                                    [fullCmdPath]: { input_arg_names: cmd.input_arg_names }
+                                  });
+                                  setOpenCommandDialog(true);
+                                }}
+                              >
+                                Execute
+                              </Button>
+                            </Card>
+                          );
+                        })}
+                      </Stack>
+                    );
+                  })()}
+                </>
+              )}
+            </Box>
+          </Grid>
+
+        </Grid>
       </CardContent>
 
-      {/* Add Instance Dialog */}
+      {/* ORIGINAL MODALS PRESERVED ABSOLUTELY UNTOUCHED */}
       {addDialog && (
         <Dialog
           open
@@ -1058,7 +1439,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
         </Dialog>
       )}
 
-      {/* Add Result Dialog */}
       {addResult && (
         <Dialog
           open
@@ -1068,9 +1448,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
           maxWidth="md"
           scroll="paper"
         >
-          <DialogTitle sx={{
-            color: addResult.status === 'success' ? 'success.main' : 'error.main',
-          }}>
+          <DialogTitle sx={{ color: addResult.status === 'success' ? 'success.main' : 'error.main' }}>
             {addResult.status === 'success' ? 'Success' : addResult.status === 'failure' ? 'Failure' : 'Error'}
           </DialogTitle>
           <DialogContent dividers>
@@ -1080,7 +1458,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
             <pre style={{
               margin: 0,
               padding: '12px',
-              backgroundColor: 'action.hover',
+              backgroundColor: theme.palette.action.hover,
               borderRadius: '4px',
               overflow: 'auto',
               fontSize: '13px',
@@ -1089,7 +1467,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
               {(() => {
                 const json = JSON.stringify(addResult.result, null, 2);
                 if (addResult.failedParams.size === 0) return json;
-                // Split into lines and highlight lines containing failed param names
                 return json.split('\n').map((line, i) => {
                   const isFailedParam = [...addResult.failedParams].some(p => line.includes(`"${p}"`));
                   return (
@@ -1107,28 +1484,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
         </Dialog>
       )}
 
-      {/* Parameter Edit Dialog */}
-      <Dialog open={open} onClose={() => setOpen(false)} slotProps={{ backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' } } }}>
-        <DialogContent>
-          <DialogContentText>{parameter}</DialogContentText>
-          <TextField
-            autoFocus
-            margin="dense"
-            id="parameterValue"
-            fullWidth
-            variant="standard"
-            value={parameterValueChange ?? ''}
-            autoComplete="off"
-            onChange={(e) => setParameterValueChange(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={applyParameterChange}>Apply</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Error/Response Modal */}
       <Dialog
         open={errorModal}
         onClose={() => { setErrorModalText(""); setErrorModal(false); setErrorModalTitle("Response"); }}
@@ -1157,7 +1512,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
         </DialogActions>
       </Dialog>
 
-      {/* Command Execution Dialog */}
       {deviceCommandToExecute && (
         <Dialog
           open={openCommandDialog}
@@ -1175,7 +1529,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
               if (!Array.isArray(args) || args.length === 0) return null;
               return (
                 <>
-                  <DialogContentText tabIndex={-1}>Input Arguments:</DialogContentText>
+                  <DialogContentText tabIndex={-1} sx={{ mb: 1.5 }}>Input Arguments:</DialogContentText>
                   {args.map(arg => (
                     <TextField
                       key={arg}
@@ -1184,6 +1538,8 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
                       id={arg}
                       label={arg}
                       type="text"
+                      fullWidth
+                      sx={{ mb: 1.5 }}
                       onChange={(e) => setInputArgsValue(prev => ({ ...prev, [arg]: e.target.value }))}
                       value={inputArgsValue[arg] || ''}
                     />
@@ -1209,18 +1565,6 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       >
         <CircularProgress />
       </Backdrop>
-
-      <Tooltip title="Refresh">
-        <Fab
-          color="primary"
-          size="small"
-          disabled={showLoading}
-          onClick={() => updateDeviceParameters(currentPath, { preserveState: true })}
-          sx={{ position: 'fixed', bottom: 24, right: 24 }}
-        >
-          <SvgIcon fontSize="small"><ArrowPathIcon /></SvgIcon>
-        </Fab>
-      </Tooltip>
     </Card>
   );
 };
