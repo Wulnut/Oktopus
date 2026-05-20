@@ -157,6 +157,7 @@ All backend services live in `backend/services/` and communicate exclusively thr
 - `internal/usp/` — USP protocol (protobuf) message handling, interception, and storage
 - `internal/entity/` — shared data models (`MsgAnswer[T]` generic wrapper for all NATS responses)
 - Entry point: `cmd/controller/main.go`
+- **Campaign scheduler** (`StartCampaignScheduler`): ticks every `CAMPAIGN_SCHEDULER_INTERVAL_SEC` (default 60), runs `RunCampaignBatch` once per UTC time-window occurrence for enabled campaigns with `time_window_start/end` set. Env: `CAMPAIGN_SCHEDULER_ENABLED` (default true). Upgrade logs use `trigger_type=campaign_scheduled`.
 
 **TenantDB pattern** — all handlers that access tenant data use:
 ```go

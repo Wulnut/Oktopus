@@ -37,6 +37,7 @@ func main() {
 	a := api.NewApi(c, js, nc, bridge, database)
 	a.StartApi()
 	a.StartCampaignEngine()
+	a.StartCampaignScheduler()
 
 	<-done
 

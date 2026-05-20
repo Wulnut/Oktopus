@@ -22,7 +22,33 @@ type Campaign struct {
 	Enabled         bool               `bson:"enabled"            json:"enabled"`
 	CreatedAt       time.Time          `bson:"created_at"         json:"created_at"`
 	UpdatedAt       time.Time          `bson:"updated_at"         json:"updated_at"`
+
+	// Scheduled batch state (time-window auto batch).
+	LastScheduledWindowKey  string    `bson:"last_scheduled_window_key,omitempty"  json:"last_scheduled_window_key,omitempty"`
+	ScheduledBatchStatus    string    `bson:"scheduled_batch_status,omitempty"     json:"scheduled_batch_status,omitempty"`
+	ScheduledBatchWindowKey string    `bson:"scheduled_batch_window_key,omitempty" json:"scheduled_batch_window_key,omitempty"`
+	ScheduledBatchStartedAt time.Time `bson:"scheduled_batch_started_at,omitempty" json:"scheduled_batch_started_at,omitempty"`
 }
+
+const (
+	ScheduledBatchInProgress = "in_progress"
+	ScheduledBatchSuccess    = "success"
+	ScheduledBatchFailed     = "failed"
+	ScheduledBatchSkipped    = "skipped"
+)
+
+// IsScheduledBatchTerminal returns true when status indicates the window has been processed
+// and the scheduler must not retry within the same window.
+func IsScheduledBatchTerminal(status string) bool {
+	switch status {
+	case ScheduledBatchSuccess, ScheduledBatchFailed, ScheduledBatchSkipped:
+		return true
+	}
+	return false
+}
+
+// ScheduledBatchLease is how long an in_progress scheduled batch lock is held before another instance may take over.
+const ScheduledBatchLease = 10 * time.Minute
 
 func (t *TenantDB) ListCampaigns(ctx context.Context) ([]Campaign, error) {
 	cursor, err := t.Campaigns().Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
@@ -89,6 +115,50 @@ func (t *TenantDB) UpdateCampaign(ctx context.Context, id primitive.ObjectID, c 
 
 func (t *TenantDB) DeleteCampaign(ctx context.Context, id primitive.ObjectID) error {
 	_, err := t.Campaigns().DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
+// TryAcquireScheduledBatch sets in_progress for windowKey when this window has not completed
+// and no other holder has a fresh lease. Returns true if this caller won the lock.
+func (t *TenantDB) TryAcquireScheduledBatch(ctx context.Context, campaignID primitive.ObjectID, windowKey string, now time.Time) (bool, error) {
+	leaseCutoff := now.Add(-ScheduledBatchLease)
+	filter := bson.M{
+		"_id": campaignID,
+		"last_scheduled_window_key": bson.M{"$ne": windowKey},
+		"$or": []bson.M{
+			{"scheduled_batch_status": bson.M{"$ne": ScheduledBatchInProgress}},
+			{"scheduled_batch_window_key": bson.M{"$ne": windowKey}},
+			{"scheduled_batch_started_at": bson.M{"$lt": leaseCutoff}},
+		},
+	}
+	update := bson.M{"$set": bson.M{
+		"scheduled_batch_status":     ScheduledBatchInProgress,
+		"scheduled_batch_window_key": windowKey,
+		"scheduled_batch_started_at": now,
+	}}
+	result, err := t.Campaigns().UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, err
+	}
+	return result.ModifiedCount == 1, nil
+}
+
+// CompleteScheduledBatch marks a scheduled window batch as terminal. status must be one of
+// ScheduledBatchSuccess / ScheduledBatchFailed / ScheduledBatchSkipped. last_scheduled_window_key
+// is set in every terminal case so a single window never reruns automatically.
+func (t *TenantDB) CompleteScheduledBatch(ctx context.Context, campaignID primitive.ObjectID, windowKey, status string, now time.Time) error {
+	if !IsScheduledBatchTerminal(status) {
+		status = ScheduledBatchFailed
+	}
+	set := bson.M{
+		"last_scheduled_window_key":  windowKey,
+		"scheduled_batch_window_key": windowKey,
+		"scheduled_batch_status":     status,
+	}
+	_, err := t.Campaigns().UpdateOne(ctx,
+		bson.M{"_id": campaignID},
+		bson.M{"$set": set},
+	)
 	return err
 }
 
