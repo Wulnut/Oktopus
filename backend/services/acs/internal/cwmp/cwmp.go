@@ -152,6 +152,43 @@ func InformResponse(mustUnderstand string) string {
 </soap:Envelope>`
 }
 
+func GetRPCMethodsResponse(mustUnderstand string) string {
+	methods := []string{
+		"GetRPCMethods",
+		"SetParameterValues",
+		"GetParameterValues",
+		"GetParameterNames",
+		"GetParameterAttributes",
+		"SetParameterAttributes",
+		"AddObject",
+		"DeleteObject",
+		"Reboot",
+		"Download",
+		"Upload",
+		"FactoryReset",
+		"ScheduleInform",
+	}
+	methodList := ""
+	for _, m := range methods {
+		methodList += "<string>" + m + "</string>"
+	}
+
+	mustUnderstandHeader := ""
+	if mustUnderstand != "" {
+		mustUnderstandHeader = `<cwmp:ID soap:mustUnderstand="1">` + mustUnderstand + `</cwmp:ID>`
+	}
+
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:cwmp="urn:dslforum-org:cwmp-1-0" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:schemaLocation="urn:dslforum-org:cwmp-1-0 ..\schemas\wt121.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soap:Header>` + mustUnderstandHeader + `</soap:Header>
+  <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <cwmp:GetRPCMethodsResponse>
+      <MethodList soapenc:arrayType="xsd:string[` + strconv.Itoa(len(methods)) + `]">` + methodList + `</MethodList>
+    </cwmp:GetRPCMethodsResponse>
+  </soap:Body>
+</soap:Envelope>`
+}
+
 func GetParameterValues(leaf string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:cwmp="urn:dslforum-org:cwmp-1-0" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:schemaLocation="urn:dslforum-org:cwmp-1-0 ..\schemas\wt121.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -215,7 +252,7 @@ func SetParameterMultiValues(data map[string]string) string {
   <soap:Header/>
   <soap:Body soap:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <cwmp:SetParameterValues>
-      <ParameterList soapenc:arrayType="cwmp:ParameterValueStruct[` + string(len(data)) + `]">`
+      <ParameterList soapenc:arrayType="cwmp:ParameterValueStruct[` + strconv.Itoa(len(data)) + `]">`
 
 	for key, value := range data {
 		msg += `<ParameterValueStruct>

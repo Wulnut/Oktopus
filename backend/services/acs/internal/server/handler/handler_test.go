@@ -176,3 +176,86 @@ func Test_CWMPHandler_ValidInform_ProcessesSuccessfully(t *testing.T) {
 		t.Error("Published data was empty")
 	}
 }
+
+func Test_CWMPHandler_GetRPCMethods_ReturnsResponse(t *testing.T) {
+	h := newTestHandler()
+	sn := "TEST-RPC"
+	informXML := cwmp.Inform(sn)
+
+	informReq := httptest.NewRequest(http.MethodPost, "/acs/sei/", strings.NewReader(informXML))
+	informRec := httptest.NewRecorder()
+	h.CwmpHandler(informRec, informReq)
+
+	rpcBody := `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cwmp="urn:dslforum-org:cwmp-1-0">
+  <soap:Header><cwmp:ID>1</cwmp:ID></soap:Header>
+  <soap:Body><cwmp:GetRPCMethods/></soap:Body>
+</soap:Envelope>`
+	rpcReq := httptest.NewRequest(http.MethodPost, "/acs/sei/", strings.NewReader(rpcBody))
+	rpcReq.Header.Set("Cookie", "oktopus="+sn)
+	rpcRec := httptest.NewRecorder()
+	h.CwmpHandler(rpcRec, rpcReq)
+
+	if rpcRec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rpcRec.Code)
+	}
+	if !strings.Contains(rpcRec.Body.String(), "GetRPCMethodsResponse") {
+		t.Errorf("Expected GetRPCMethodsResponse, got: %s", rpcRec.Body.String())
+	}
+}
+
+func Test_CWMPHandler_EmptyPostWithCookie_DrainsSession(t *testing.T) {
+	h := newTestHandler()
+	sn := "TEST-EMPTY-POST"
+	informXML := cwmp.Inform(sn)
+
+	informReq := httptest.NewRequest(http.MethodPost, "/acs/sei/", strings.NewReader(informXML))
+	informRec := httptest.NewRecorder()
+	h.CwmpHandler(informRec, informReq)
+
+	emptyReq := httptest.NewRequest(http.MethodPost, "/acs/sei/", strings.NewReader(""))
+	emptyReq.Header.Set("Cookie", "oktopus="+sn)
+	emptyRec := httptest.NewRecorder()
+	h.CwmpHandler(emptyRec, emptyReq)
+
+	if emptyRec.Code != http.StatusNoContent {
+		t.Fatalf("Expected empty session poll with cookie to return 204, got %d", emptyRec.Code)
+	}
+	if emptyRec.Header().Get("Connection") != "close" {
+		t.Errorf("Expected Connection: close on empty queue, got %q", emptyRec.Header().Get("Connection"))
+	}
+}
+
+func Test_HandleCpeStatusOnce_PublishesTenantOffline(t *testing.T) {
+	var publishedSubject string
+	var publishedData []byte
+	pub := func(subject string, data []byte) error {
+		publishedSubject = subject
+		publishedData = data
+		return nil
+	}
+	sub := func(subject string, cb func(*nats.Msg)) error { return nil }
+	h := NewHandler(pub, sub, config.Acs{
+		KeepAliveInterval: time.Millisecond,
+	})
+
+	sn := "TEST-OFFLINE"
+	h.Cpes[sn] = CPE{
+		SerialNumber:   sn,
+		TenantSlug:     "sei",
+		LastConnection: time.Now().Add(-time.Second),
+	}
+
+	h.handleCpeStatusOnce()
+
+	expectedSubject := cwmpStatusSubject("sei", sn)
+	if publishedSubject != expectedSubject {
+		t.Errorf("Published to subject %q, want %q", publishedSubject, expectedSubject)
+	}
+	if string(publishedData) != "0" {
+		t.Errorf("Published data = %q, want %q", string(publishedData), "0")
+	}
+	if _, exists := h.Cpes[sn]; exists {
+		t.Fatal("Expected offline CPE to be removed")
+	}
+}

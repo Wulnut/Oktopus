@@ -96,6 +96,21 @@ func DeleteTenantKVBucket(js jetstream.JetStream, slug string) error {
 	return js.DeleteKeyValue(context.Background(), "devices-auth-"+slug)
 }
 
+// CreateTenantCwmpConnRqBucket creates or updates the per-tenant KV bucket
+// that the ACS uses to persist HTTP Digest credentials it has provisioned to
+// each CPE for Connection Request authentication. Key = SN, value = JSON.
+func CreateTenantCwmpConnRqBucket(js jetstream.JetStream, slug string) (jetstream.KeyValue, error) {
+	return js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
+		Bucket:      "cwmp-conn-rq-" + slug,
+		Description: "CWMP Connection Request credentials for tenant " + slug,
+	})
+}
+
+// DeleteTenantCwmpConnRqBucket removes the tenant's CWMP Connection Request KV bucket.
+func DeleteTenantCwmpConnRqBucket(js jetstream.JetStream, slug string) error {
+	return js.DeleteKeyValue(context.Background(), "cwmp-conn-rq-"+slug)
+}
+
 func defineOptions(c config.Nats) []nats.Option {
 	var opts []nats.Option
 

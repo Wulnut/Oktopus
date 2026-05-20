@@ -21,7 +21,7 @@ import EnvelopeIconOutline from '@heroicons/react/24/outline/EnvelopeIcon';
 import ClockIcon from '@heroicons/react/24/outline/ClockIcon';
 import BuildingOfficeIcon from '@heroicons/react/24/solid/BuildingOfficeIcon';
 
-export const getDeviceSubItems = (protocol, deviceID) => [
+const uspDeviceSubItems = (protocol, deviceID) => [
   {
     title: 'Info',
     path: `/devices/${protocol}/${deviceID}/info`,
@@ -68,6 +68,36 @@ export const getDeviceSubItems = (protocol, deviceID) => [
     icon: <SvgIcon fontSize="small"><ClockIcon /></SvgIcon>,
   },
 ];
+
+const cwmpDeviceSubItems = (protocol, deviceID) => [
+  {
+    title: 'Info',
+    path: `/devices/${protocol}/${deviceID}/info`,
+    icon: <SvgIcon fontSize="small"><InformationCircleIcon /></SvgIcon>,
+  },
+  {
+    title: 'Data Model',
+    path: `/devices/${protocol}/${deviceID}/discovery`,
+    icon: <SvgIcon fontSize="small"><MagnifyingGlassIcon /></SvgIcon>,
+  },
+  {
+    title: 'Messages',
+    path: `/devices/${protocol}/${deviceID}/msg`,
+    icon: <SvgIcon fontSize="small"><EnvelopeIconOutline /></SvgIcon>,
+  },
+  {
+    title: 'History',
+    path: `/devices/${protocol}/${deviceID}/history`,
+    icon: <SvgIcon fontSize="small"><ClockIcon /></SvgIcon>,
+  },
+];
+
+export const getDeviceSubItems = (protocol, deviceID) => {
+  if (protocol === 'cwmp') {
+    return cwmpDeviceSubItems(protocol, deviceID);
+  }
+  return uspDeviceSubItems(protocol, deviceID);
+};
 
 export const items = [
   {

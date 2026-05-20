@@ -11,8 +11,16 @@ import (
 
 func (h *Handler) HandleDeviceInfo(device, tenantSlug string, data []byte, ack func()) {
 	defer ack()
+	if tenantSlug == "" {
+		log.Printf("WARNING: empty tenant for CWMP device %s, skipping info message", device)
+		return
+	}
 	log.Printf("Device %s info, tenant: %s", device, tenantSlug)
 	deviceInfo := parseDeviceInfoMsg(data)
+	if deviceInfo.SN == "" {
+		log.Printf("WARNING: empty SN for CWMP device %s, skipping info message", device)
+		return
+	}
 	deviceInfo.TenantID = tenantSlug
 	if deviceExists, _ := h.db.DeviceExists(deviceInfo.SN); !deviceExists {
 		fmtDeviceInfo, _ := json.Marshal(deviceInfo)
@@ -41,6 +49,7 @@ func parseDeviceInfoMsg(data []byte) db.Device {
 	device.SN = inform.DeviceId.SerialNumber
 	device.Cwmp = db.Online
 	device.Status = db.Online
+	device.DataModel = inform.GetDataModelType()
 
 	return device
 }

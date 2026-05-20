@@ -1,6 +1,6 @@
-FROM golang:1.23 as builder
+FROM golang:1.23 AS builder
 WORKDIR /app
-COPY ../ .
+COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o adapter cmd/adapter/main.go
 
 FROM alpine:3.21

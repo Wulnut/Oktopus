@@ -56,7 +56,12 @@ func (b *Bridge) StartBridge() {
 		cpe, ok := b.cpes[device]
 		if !ok {
 			log.Printf("Device %s not found", device)
-			respondMsg(msg.Respond, http.StatusNotFound, "Device not found")
+			if tenant := handler.TenantFromCwmpAdapterSubject(msg.Subject); tenant != "" {
+				if err := b.pub(handler.NATS_CWMP_SUBJECT_PREFIX+tenant+"."+device+".status", []byte("0")); err != nil {
+					log.Printf("Failed to publish offline status for unknown CPE %s: %v", device, err)
+				}
+			}
+			respondMsg(msg.Respond, http.StatusNotFound, "Device not found in ACS memory; wait for the next Inform before sending CWMP RPCs")
 			return
 		}
 		if cpe.Queue.Size() > 0 {
@@ -101,21 +106,24 @@ func (b *Bridge) StartBridge() {
 	})
 
 	b.sub(handler.NATS_CWMP_ADAPTER_SUBJECT_PREFIX+"*.rtt", func(msg *nats.Msg) {
-		log.Printf("Received message on rtt subject")
-		url := "127.0.0.1" + b.conf.Port
-		conn, err := net.Dial("tcp", url)
+		addr := "127.0.0.1" + b.conf.Port
+		start := time.Now()
+		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 		if err != nil {
+			log.Printf("CWMP RTT dial %s failed: %v", addr, err)
 			respondMsg(msg.Respond, 500, err.Error())
 			return
 		}
 		defer conn.Close()
 
-		info, err := tcpInfo(conn.(*net.TCPConn))
-		if err != nil {
-			respondMsg(msg.Respond, 500, err.Error())
-			return
+		var rtt time.Duration
+		if info, err := tcpInfo(conn.(*net.TCPConn)); err != nil {
+			// GetsockoptTCPInfo can fail on loopback; dial success still means ACS is up.
+			rtt = time.Since(start)
+			log.Printf("CWMP RTT tcpInfo fallback for %s: %v", addr, err)
+		} else {
+			rtt = time.Duration(info.Rtt) * time.Microsecond
 		}
-		rtt := time.Duration(info.Rtt) * time.Microsecond
 
 		respondMsg(msg.Respond, 200, rtt/1000)
 	})

@@ -1,3 +1,13 @@
+# Host shells often export HTTP_PROXY for external access. Compose passes those into
+# containers; in-stack HTTP (e.g. controller -> firmware-upload) must not use them.
+x-clear-docker-proxy: &clear-docker-proxy
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+  ALL_PROXY: ""
+  all_proxy: ""
+
 services:
   #/* ----------------------------- Message Broker ----------------------------- */
   msg_broker:
@@ -34,6 +44,8 @@ services:
       - mongo_usp
     env_file:
       - .env.controller
+    environment:
+      <<: *clear-docker-proxy
     volumes:
       - ./nats_config:/tmp/nats/config
     networks:
@@ -230,9 +242,11 @@ services:
     image: "oktopusp/acs"
     container_name: acs
     ports:
-      - 127.0.0.1:9292:9292
+      - 0.0.0.0:9292:9292
     env_file:
       - .env.acs
+    environment:
+      <<: *clear-docker-proxy
     volumes:
       - ./nats_config:/tmp/nats/config
     networks:
@@ -289,6 +303,8 @@ services:
       - ./firmwares:/app/firmwares
     env_file:
       - .env.firmware-upload
+    environment:
+      <<: *clear-docker-proxy
     networks:
       usp_network:
         ipv4_address: 172.16.235.21
@@ -306,8 +322,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - REGISTRY=127.0.0.1:443
-      - UPLOAD_SERVICE_PORT=8005
+      REGISTRY: 127.0.0.1:443
+      UPLOAD_SERVICE_PORT: "8005"
+      <<: *clear-docker-proxy
     networks:
       usp_network:
         ipv4_address: 172.16.235.19

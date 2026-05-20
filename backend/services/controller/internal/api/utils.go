@@ -12,7 +12,10 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-var errInvalidMtp = errors.New("Invalid MTP, valid options are: mqtt, ws, stomp")
+var (
+	errInvalidMtp     = errors.New("Invalid MTP, valid options are: mqtt, ws, stomp")
+	errDeviceNotFound = errors.New("device not found")
+)
 
 func deviceStateOK(w http.ResponseWriter, nc *nats.Conn, sn, tenantSlug string) (string, bool) {
 
@@ -90,6 +93,12 @@ func getDeviceInfo(w http.ResponseWriter, sn string, nc *nats.Conn, tenantSlug s
 	)
 	if msg != nil {
 		return &msg.Msg, err
+	}
+	if err == nil {
+		// bridge.NatsReq returned (nil, nil): adapter answered but had no device.
+		// NatsReq has already written an error status to w; surface an error so
+		// callers stop and never dereference a nil device pointer.
+		err = errDeviceNotFound
 	}
 	return nil, err
 }

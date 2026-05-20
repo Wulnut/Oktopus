@@ -14,6 +14,7 @@ type Device struct {
 	Stomp        Status
 	Websockets   Status
 	Cwmp         Status
+	DataModel    string // TR098 or TR181 from CWMP Inform
 }
 
 type VendorsCount struct {

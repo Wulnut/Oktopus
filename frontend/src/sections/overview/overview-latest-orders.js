@@ -49,11 +49,10 @@ const status = (s)=>{
 }
 
 const getDeviceProtocol = (order) => {
-  if (order.Mqtt == 0 && order.Websockets == 0 && order.Stomp == 0) {
+  if (order.Cwmp == 2) {
     return "cwmp"
-  }else {
-    return "usp"
   }
+  return "usp"
 }
 
 export const OverviewLatestOrders = (props) => {
@@ -179,11 +178,7 @@ export const OverviewLatestOrders = (props) => {
                       <Tooltip title="Access the device">
                         <Button
                           onClick={()=>{
-                            if (getDeviceProtocol(order) == "usp"){
-                              router.push("devices/"+ getDeviceProtocol(order) +"/"+order.SN+"/info")
-                            }else {
-                              router.push("devices/"+ getDeviceProtocol(order) +"/"+order.SN+"/wifi")
-                            }
+                            router.push("devices/"+ getDeviceProtocol(order) +"/"+order.SN+"/info")
                           }}
                         >
                           <SvgIcon 
