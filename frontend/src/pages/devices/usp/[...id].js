@@ -86,7 +86,7 @@ const Page = () => {
                 py: 2,
             }}
         >
-            <Container maxWidth="lg">
+            <Container maxWidth={false}>
                 <Stack spacing={3}>
                     <Breadcrumbs separator="›" aria-label="breadcrumb">
                     {[<Link underline="hover" key="1" color="inherit" href="/devices">
