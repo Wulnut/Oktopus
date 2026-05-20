@@ -71,10 +71,10 @@ const getProtocolParams = (protocol, host, tenantSlug) => {
 };
 
 const protocols = [
-  { name: 'MQTT', rttKey: 'MqttRtt' },
-  { name: 'WebSocket', rttKey: 'WebsocketsRtt' },
-  { name: 'STOMP', rttKey: 'StompRtt' },
-  { name: 'CWMP', rttKey: 'AcsRtt' },
+  { name: 'MQTT', rttKey: 'MqttRtt', statusPrefix: '' },
+  { name: 'WebSocket', rttKey: 'WebsocketsRtt', statusPrefix: '' },
+  { name: 'STOMP', rttKey: 'StompRtt', statusPrefix: '' },
+  { name: 'CWMP', rttKey: 'AcsRtt', statusPrefix: 'ACS ' },
 ];
 
 export const OverviewCpeSettings = (props) => {
@@ -114,7 +114,7 @@ export const OverviewCpeSettings = (props) => {
         <CardContent>
           {protocols.map((proto) => {
             const rttValue = generalInfo?.[proto.rttKey];
-            const isOnline = rttValue && rttValue !== '';
+            const isOnline = rttValue != null && rttValue !== '';
 
             return (
               <Box
@@ -147,7 +147,7 @@ export const OverviewCpeSettings = (props) => {
                   <Typography variant="body1">{proto.name}</Typography>
                 </Box>
                 <Typography variant="body2" color="text.secondary">
-                  {isOnline ? rttValue : 'offline'}
+                  {isOnline ? `${proto.statusPrefix}${rttValue}` : `${proto.statusPrefix}offline`}
                 </Typography>
               </Box>
             );
@@ -199,5 +199,6 @@ export const OverviewCpeSettings = (props) => {
 
 OverviewCpeSettings.propTypes = {
   generalInfo: PropTypes.object,
+  tenantSlug: PropTypes.string,
   sx: PropTypes.object,
 };

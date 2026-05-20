@@ -13,11 +13,23 @@ import (
 
 const (
 	CWMP_STREAM_NAME = "cwmp"
+
+	// CwmpConnReqBucketPrefix is the per-tenant NATS KV bucket holding
+	// HTTP Digest credentials provisioned to each CPE for the ACS to use when
+	// triggering Connection Requests. Bucket name: cwmp-conn-rq-<tenant>.
+	CwmpConnReqBucketPrefix = "cwmp-conn-rq-"
 )
 
 type NatsActions struct {
 	Publish   func(string, []byte) error
 	Subscribe func(string, func(*nats.Msg)) error
+	JS        jetstream.JetStream
+}
+
+// CwmpConnReqBucket returns the per-tenant KV bucket name for CWMP Connection
+// Request credentials.
+func CwmpConnReqBucket(tenantSlug string) string {
+	return CwmpConnReqBucketPrefix + tenantSlug
 }
 
 func StartNatsClient(c config.Nats) NatsActions {
@@ -61,6 +73,7 @@ func StartNatsClient(c config.Nats) NatsActions {
 	return NatsActions{
 		Publish:   publisher(js),
 		Subscribe: subscriber(nc),
+		JS:        js,
 	}
 }
 

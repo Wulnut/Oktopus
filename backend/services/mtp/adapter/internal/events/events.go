@@ -46,12 +46,15 @@ func StartEventsListener(ctx context.Context, js jetstream.JetStream, uspHandler
 				log.Printf("Received message, subject: %s", msg.Subject())
 
 				subject := strings.Split(msg.Subject(), ".")
+				if len(subject) < 6 {
+					log.Printf("Malformed USP event subject received: %s", msg.Subject())
+					msg.Ack()
+					continue
+				}
 				msgType := subject[len(subject)-1]
 				device := subject[len(subject)-2]
-				tenantSlug := ""
-				if len(subject) >= 4 {
-					tenantSlug = subject[3]
-				}
+				// <mtp>.usp.v1.<tenant>.<sn>.<type> — tenant is index 3.
+				tenantSlug := subject[3]
 
 				switch msgType {
 				case "status":
@@ -95,12 +98,15 @@ func StartEventsListener(ctx context.Context, js jetstream.JetStream, uspHandler
 				log.Printf("Received message, subject: %s", msg.Subject())
 
 				subject := strings.Split(msg.Subject(), ".")
+				if len(subject) < 5 {
+					log.Printf("Malformed CWMP event subject received: %s", msg.Subject())
+					msg.Ack()
+					continue
+				}
 				msgType := subject[len(subject)-1]
 				device := subject[len(subject)-2]
-				cwmpTenantSlug := ""
-				if len(subject) >= 4 {
-					cwmpTenantSlug = subject[3]
-				}
+				// cwmp.v1.<tenant>.<sn>.<type> — tenant is index 2.
+				cwmpTenantSlug := subject[2]
 
 				switch msgType {
 				case "status":

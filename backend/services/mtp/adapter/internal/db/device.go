@@ -42,6 +42,7 @@ type Device struct {
 	Stomp        Status
 	Websockets   Status
 	Cwmp         Status
+	DataModel    string // TR098 or TR181 from CWMP Inform
 }
 
 type DevicesList struct {
@@ -94,6 +95,9 @@ func (d *Database) CreateDevice(device Device) error {
 	/* ------------------------- Do not overwrite alias ------------------------- */
 	if deviceExistent.Alias != "" {
 		device.Alias = deviceExistent.Alias
+	}
+	if deviceExistent.DataModel != "" && device.DataModel == "" {
+		device.DataModel = deviceExistent.DataModel
 	}
 	/* -------------------------------------------------------------------------- */
 

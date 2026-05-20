@@ -88,6 +88,13 @@ func (a *Api) createTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create tenant KV bucket for CWMP Connection Request credentials.
+	// ACS lazily falls back to CreateOrUpdate if missing, so a failure here
+	// is non-fatal — log and continue.
+	if _, err := local.CreateTenantCwmpConnRqBucket(a.js, slug); err != nil {
+		log.Printf("warning: failed to create CWMP Connection Request KV bucket for tenant %s: %v", slug, err)
+	}
+
 	// Create initial TenantAdmin user if credentials provided
 	if body.AdminEmail != "" && body.AdminPass != "" {
 		adminUser := db.User{
@@ -252,6 +259,11 @@ func (a *Api) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	// 6. Delete tenant KV bucket (device credentials)
 	if err := local.DeleteTenantKVBucket(a.js, slug); err != nil {
 		// Non-fatal: bucket may not exist
+	}
+
+	// 6b. Delete tenant KV bucket for CWMP Connection Request credentials.
+	if err := local.DeleteTenantCwmpConnRqBucket(a.js, slug); err != nil {
+		// Non-fatal: bucket may not exist (older tenants pre-dating this feature).
 	}
 
 	// 7. Delete tenant record
