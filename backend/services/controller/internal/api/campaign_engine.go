@@ -169,8 +169,6 @@ func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device
 	existingLog, err := tdb.GetLatestUpgradeLog(ctx, device.SN, fw.ID)
 	if err == nil {
 		switch existingLog.Status {
-		case "success":
-			return
 		case "pending", "downloading":
 			if time.Since(existingLog.TriggeredAt) <= 15*time.Minute {
 				return
@@ -267,25 +265,41 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlu
 	for _, d := range devices {
 		policy, err := tdb.GetDeviceFWPolicy(ctx, d.SN)
 		if err != nil {
+			log.Printf("campaign_engine: skip %s: fw policy lookup failed: %v", d.SN, err)
 			continue
 		}
 		if policy.Policy == "skip" {
+			log.Printf("campaign_engine: skip %s: fw policy is skip", d.SN)
 			continue
 		}
 		if d.Version == fw.BuildVersion {
+			log.Printf("campaign_engine: skip %s: already on target version %s", d.SN, fw.BuildVersion)
 			continue
 		}
 
+		// Do not skip solely because a past upgrade log is "success": the device may have
+		// been downgraded, the campaign target may have changed, or adapter version may be stale.
 		existingLog, err := tdb.GetLatestUpgradeLog(ctx, d.SN, fw.ID)
-		if err == nil && (existingLog.Status == "success" || existingLog.Status == "pending" || existingLog.Status == "downloading") {
-			continue
+		if err == nil {
+			switch existingLog.Status {
+			case "pending", "downloading":
+				if time.Since(existingLog.TriggeredAt) <= 15*time.Minute {
+					log.Printf("campaign_engine: skip %s: upgrade in progress (%s)", d.SN, existingLog.Status)
+					continue
+				}
+			case "failed":
+				if existingLog.RetryCount >= maxRetries {
+					log.Printf("campaign_engine: skip %s: max retries (%d) for firmware %s", d.SN, maxRetries, fw.ID.Hex())
+					continue
+				}
+			}
 		}
 
 		targets = append(targets, d)
 	}
 
 	if len(targets) == 0 {
-		log.Printf("campaign_engine: no eligible devices for campaign %s", campaign.ID.Hex())
+		log.Printf("campaign_engine: no eligible devices for campaign %s (target firmware %s)", campaign.ID.Hex(), fw.BuildVersion)
 		return
 	}
 
