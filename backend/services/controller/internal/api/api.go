@@ -18,24 +18,28 @@ import (
 )
 
 type Api struct {
-	port   string
-	js     jetstream.JetStream
-	nc     *nats.Conn
-	bridge bridge.Bridge
-	db     db.Database
-	ctx    context.Context
+	port                      string
+	js                        jetstream.JetStream
+	nc                        *nats.Conn
+	bridge                    bridge.Bridge
+	db                        db.Database
+	ctx                       context.Context
+	campaignSchedulerEnabled  bool
+	campaignSchedulerInterval time.Duration
 }
 
 const REQUEST_TIMEOUT = time.Second * 30
 
 func NewApi(c *config.Config, js jetstream.JetStream, nc *nats.Conn, bridge bridge.Bridge, d db.Database) Api {
 	return Api{
-		port:   c.RestApi.Port,
-		js:     js,
-		nc:     nc,
-		ctx:    c.RestApi.Ctx,
-		bridge: bridge,
-		db:     d,
+		port:                      c.RestApi.Port,
+		js:                        js,
+		nc:                        nc,
+		ctx:                       c.RestApi.Ctx,
+		bridge:                    bridge,
+		db:                        d,
+		campaignSchedulerEnabled:  c.CampaignScheduler.Enabled,
+		campaignSchedulerInterval: c.CampaignScheduler.Interval,
 	}
 }
 

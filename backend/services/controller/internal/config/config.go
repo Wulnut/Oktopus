@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -34,11 +35,17 @@ type Controller struct {
 	ControllerId string
 }
 
+type CampaignScheduler struct {
+	Enabled  bool
+	Interval time.Duration
+}
+
 type Config struct {
-	RestApi   RestApi
-	Nats      Nats
-	Mongo     Mongo
-	Controller Controller
+	RestApi           RestApi
+	Nats              Nats
+	Mongo             Mongo
+	Controller        Controller
+	CampaignScheduler CampaignScheduler
 }
 
 type Tls struct {
@@ -61,6 +68,8 @@ func NewConfig() *Config {
 	flApiPort := flag.String("api_port", lookupEnvOrString("REST_API_PORT", "8000"), "Rest api port")
 	mongoUri := flag.String("mongo_uri", lookupEnvOrString("MONGO_URI", "mongodb://localhost:27017"), "uri for mongodb server")
 	controllerId := flag.String("controller_id", lookupEnvOrString("CONTROLLER_ID", "oktopusController"), "usp controller endpoint id")
+	campaignSchedulerEnabled := flag.Bool("campaign_scheduler_enabled", lookupEnvOrBool("CAMPAIGN_SCHEDULER_ENABLED", true), "enable automatic campaign batch at time window start")
+	campaignSchedulerIntervalSec := flag.Int("campaign_scheduler_interval_sec", lookupEnvOrInt("CAMPAIGN_SCHEDULER_INTERVAL_SEC", 60), "campaign scheduler tick interval in seconds (min 30)")
 	flHelp := flag.Bool("help", false, "Help")
 
 	/*
@@ -102,6 +111,10 @@ func NewConfig() *Config {
 		Controller: Controller{
 			ControllerId: *controllerId,
 		},
+		CampaignScheduler: CampaignScheduler{
+			Enabled:  *campaignSchedulerEnabled,
+			Interval: time.Duration(*campaignSchedulerIntervalSec) * time.Second,
+		},
 	}
 }
 
@@ -133,6 +146,17 @@ func lookupEnvOrBool(key string, defaultVal bool) bool {
 		v, err := strconv.ParseBool(val)
 		if err != nil {
 			log.Fatalf("LookupEnvOrBool[%s]: %v", key, err)
+		}
+		return v
+	}
+	return defaultVal
+}
+
+func lookupEnvOrInt(key string, defaultVal int) int {
+	if val, ok := os.LookupEnv(key); ok && val != "" {
+		v, err := strconv.Atoi(val)
+		if err != nil {
+			log.Fatalf("lookupEnvOrInt[%s]: %v", key, err)
 		}
 		return v
 	}

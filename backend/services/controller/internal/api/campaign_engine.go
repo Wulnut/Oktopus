@@ -235,31 +235,70 @@ func (a *Api) executeFirmwareUpgrade(tdb *db.TenantDB, sn string, fw db.Firmware
 	tdb.UpdateUpgradeLogStatus(ctx, logID, "downloading", "")
 }
 
+// CampaignBatchResult summarizes a batch run for logging and scheduler completion.
+type CampaignBatchResult struct {
+	Skipped  bool
+	Err      error
+	Matched  int
+	Eligible int
+}
+
+// campaignBatchLocks serializes batch runs per campaign (manual save + scheduler).
+var campaignBatchLocks sync.Map
+
+func campaignBatchLock(campaignID primitive.ObjectID) *sync.Mutex {
+	key := campaignID.Hex()
+	if v, ok := campaignBatchLocks.Load(key); ok {
+		return v.(*sync.Mutex)
+	}
+	mu := &sync.Mutex{}
+	actual, _ := campaignBatchLocks.LoadOrStore(key, mu)
+	return actual.(*sync.Mutex)
+}
+
 // RunCampaignBatch scans online devices matching a campaign and triggers upgrades.
+// The provided campaign argument is only used for its ID; the latest record is re-read inside the lock.
 func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlug string) {
+	a.runCampaignBatchLocked(tdb, campaign.ID, tenantSlug, "campaign_start")
+}
+
+func (a *Api) runCampaignBatchLocked(tdb *db.TenantDB, campaignID primitive.ObjectID, tenantSlug, triggerType string) CampaignBatchResult {
+	mu := campaignBatchLock(campaignID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	// Re-read the campaign inside the lock so we use the latest firmware/window/enabled values
+	// even if multiple batches were queued (scheduler tick + manual save).
+	campaign, err := tdb.GetCampaign(ctx, campaignID)
+	if err != nil {
+		log.Printf("campaign_engine: campaign %s no longer exists, skipping batch: %v", campaignID.Hex(), err)
+		return CampaignBatchResult{Skipped: true}
+	}
+
 	if !campaign.Enabled {
 		log.Printf("campaign_engine: campaign %s is disabled, skipping batch", campaign.ID.Hex())
-		return
+		return CampaignBatchResult{Skipped: true}
 	}
 	if !isWithinTimeWindow(campaign) {
 		log.Printf("campaign_engine: outside time window, skipping batch for campaign %s (matching devices will be picked up by on_connect when they reconnect inside the window)", campaign.ID.Hex())
-		return
+		return CampaignBatchResult{Skipped: true}
 	}
 
 	fw, err := tdb.GetFirmware(ctx, campaign.FirmwareID)
 	if err != nil {
 		log.Printf("campaign_engine: firmware not found for campaign %s: %v", campaign.ID.Hex(), err)
-		return
+		return CampaignBatchResult{Err: err}
 	}
 
 	devices, err := a.getMatchingOnlineDevices(campaign, tenantSlug)
 	if err != nil {
 		log.Printf("campaign_engine: failed to query devices for campaign %s: %v", campaign.ID.Hex(), err)
-		return
+		return CampaignBatchResult{Err: err}
 	}
+	result := CampaignBatchResult{Matched: len(devices)}
 
 	var targets []entity.Device
 	for _, d := range devices {
@@ -300,8 +339,9 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlu
 
 	if len(targets) == 0 {
 		log.Printf("campaign_engine: no eligible devices for campaign %s (target firmware %s)", campaign.ID.Hex(), fw.BuildVersion)
-		return
+		return result
 	}
+	result.Eligible = len(targets)
 
 	concurrency := campaign.Concurrency
 	if concurrency <= 0 {
@@ -325,12 +365,13 @@ func (a *Api) RunCampaignBatch(tdb *db.TenantDB, campaign db.Campaign, tenantSlu
 			defer func() { <-sem }()
 			deviceCtx, deviceCancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer deviceCancel()
-			a.triggerUpgrade(deviceCtx, tdb, device, fw, campaign.ID, "campaign_start", tenantSlug)
+			a.triggerUpgrade(deviceCtx, tdb, device, fw, campaign.ID, triggerType, tenantSlug)
 		}(d)
 	}
 
 	wg.Wait()
-	log.Printf("campaign_engine: batch upgrade completed for campaign %s", campaign.ID.Hex())
+	log.Printf("campaign_engine: batch upgrade completed for campaign %s (trigger=%s)", campaign.ID.Hex(), triggerType)
+	return result
 }
 
 func (a *Api) getMatchingOnlineDevices(campaign db.Campaign, tenantSlug string) ([]entity.Device, error) {
@@ -392,29 +433,6 @@ func deviceMatchesCampaignHardware(d entity.Device, c db.Campaign) bool {
 	return strings.EqualFold(strings.TrimSpace(d.Vendor), strings.TrimSpace(c.Vendor)) &&
 		strings.EqualFold(strings.TrimSpace(d.Model), strings.TrimSpace(c.Model)) &&
 		strings.EqualFold(strings.TrimSpace(d.HWVersion), strings.TrimSpace(c.HWVersion))
-}
-
-func isWithinTimeWindow(campaign db.Campaign) bool {
-	if campaign.TimeWindowStart == "" || campaign.TimeWindowEnd == "" {
-		return true
-	}
-
-	now := time.Now().UTC()
-	currentMinutes := now.Hour()*60 + now.Minute()
-
-	startMinutes, err := parseTimeHHMM(campaign.TimeWindowStart)
-	if err != nil {
-		return true
-	}
-	endMinutes, err := parseTimeHHMM(campaign.TimeWindowEnd)
-	if err != nil {
-		return true
-	}
-
-	if startMinutes <= endMinutes {
-		return currentMinutes >= startMinutes && currentMinutes < endMinutes
-	}
-	return currentMinutes >= startMinutes || currentMinutes < endMinutes
 }
 
 func parseTimeHHMM(s string) (int, error) {

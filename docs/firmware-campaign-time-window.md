@@ -10,7 +10,7 @@
 
 Firmware Campaign 的 **Time Window（时间窗口）** 用于限制固件升级**只允许在指定 UTC 时段内执行**，避免在用户活跃时段批量升级导致断网、重启或服务中断。
 
-**重要：** Time Window 是**允许升级的时间段（门禁）**，**不是**「到点自动开始升级」的定时任务。系统不会在窗口开始时自动扫描所有设备。
+**重要：** Time Window 限制**允许升级**的 UTC 时段。自 controller 调度器启用后，**每个窗口周期会自动触发一次 batch**（无需在窗口内手动 Save）。仍建议在窗口外 Save 时预期会跳过 batch；`on_connect` 路径不变。
 
 ---
 
@@ -113,9 +113,29 @@ Controller 启动时只订阅 `device.v1.*.online`，**不会**对已有 enabled
 
 ---
 
-## 6. 是否有「定时升级」功能？
+## 6. 时间窗口自动 Batch（Campaign Scheduler）
 
-**没有。** 当前 Oktopus 无「到指定时间自动开始升级」的调度器。
+Controller 启动后运行 **Campaign Scheduler**（默认每 60 秒 tick，可通过环境变量配置）：
+
+| 环境变量 | 默认 | 说明 |
+|----------|------|------|
+| `CAMPAIGN_SCHEDULER_ENABLED` | `true` | 是否启用 |
+| `CAMPAIGN_SCHEDULER_INTERVAL_SEC` | `60` | tick 间隔（最小 30 秒） |
+
+行为：
+
+- 仅处理 **enabled** 且配置了 **Time Window** 的 Campaign
+- 当前 UTC 在窗口内且本窗口周期尚未成功执行过 → 自动 `RunCampaignBatch`（`trigger_type=campaign_scheduled`）
+- 使用 Mongo 字段 `last_scheduled_window_key` / `scheduled_batch_status` 去重；失败可在同一窗口内重试；`in_progress` 超过 10 分钟 lease 可被接管
+- Controller **窗口内重启**可补跑（若本周期尚未 success）
+
+日志前缀：`campaign_scheduler:`
+
+---
+
+## 6b. 历史说明（调度器之前）
+
+在调度器加入之前，平台**没有**「到点自动开始升级」；下列变通仍适用于关闭调度器的环境：
 
 | 能力 | 实际行为 | 是否定时 |
 |------|----------|----------|
