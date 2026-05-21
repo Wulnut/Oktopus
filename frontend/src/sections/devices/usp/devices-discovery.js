@@ -118,6 +118,194 @@ const getChildDisplayName = (relativePath) => {
 
 const isMultiInstance = (relativePath) => relativePath.includes('{i}');
 
+const buildInstancePattern = (templatePath) =>
+  new RegExp('^' + templatePath.replace(/\{i\}/g, '\\d+').replace(/\./g, '\\.') + '$');
+
+const isMultiInstanceTemplate = (supportedObjPath) => {
+  if (!supportedObjPath) return false;
+  const parts = supportedObjPath.replace(/\.$/, '').split('.');
+  return parts[parts.length - 1] === '{i}';
+};
+
+const getMultiInstanceTablePath = (path) => {
+  if (!path?.includes('{i}')) return path;
+  // Remove the instance template segment: "....Foo.{i}." -> "....Foo."
+  const withoutTemplate = path.replace(/\.\{i\}(\.$|$)/, (_, suffix) => suffix || '.');
+  return withoutTemplate.replace(/\.{2,}/g, '.');
+};
+
+const normalizeNavigationPath = (path) => getMultiInstanceTablePath(path);
+
+const resolveTreeChildPath = (childPath) => getMultiInstanceTablePath(childPath);
+
+const getInstanceLabel = (instancePath) => {
+  const parts = instancePath.replace(/\.$/, '').split('.');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (/^\d+$/.test(parts[i])) return parts[i];
+  }
+  return getObjName(instancePath);
+};
+
+const getInstanceKeys = (values, templatePath) => {
+  if (!templatePath || !values) return [];
+  const pattern = buildInstancePattern(templatePath);
+  return Object.keys(values)
+    .filter(k => pattern.test(k) && Array.isArray(values[k]))
+    .sort(sortInstanceKeys);
+};
+
+const isMultiInstanceView = (mainObj, values) =>
+  isMultiInstanceTemplate(mainObj?.supported_obj_path) &&
+  getInstanceKeys(values, mainObj.supported_obj_path).length > 0;
+
+const isConcreteInstancePath = (path, templatePath) =>
+  isMultiInstanceTemplate(templatePath) && buildInstancePattern(templatePath).test(path);
+
+const getConcreteInstanceTablePath = (path) =>
+  /\.\d+\.$/.test(path) ? path.replace(/\.\d+\.$/, '.') : null;
+
+const mergeChildPaths = (paths) => {
+  const unique = [...new Set(
+    paths.filter(Boolean).filter(p => !p.includes('..') && !p.includes('{i}'))
+  )];
+  return unique.sort((a, b) => {
+    if (/\.\d+\.$/.test(a) && /\.\d+\.$/.test(b)) return sortInstanceKeys(a, b);
+    return a.localeCompare(b);
+  });
+};
+
+const buildSchemaChildPaths = (supportedObjs, mainObj, parentPath) =>
+  mergeChildPaths(
+    supportedObjs
+      .slice(1)
+      .filter(child => isDirectChild(child.supported_obj_path, mainObj.supported_obj_path))
+      .map(child => resolveTreeChildPath(child.supported_obj_path))
+      .filter(childPath => childPath !== parentPath)
+  );
+
+const buildGetValues = (supportedParams, templatePath, fetchPath, getResult) => {
+  const values = {};
+  if (!supportedParams?.length || !getResult?.req_path_results) return values;
+
+  const templateParts = templatePath.split('.');
+  const inputParts = fetchPath.split('.');
+  const concreteObjPath = templateParts.map((seg, idx) => {
+    if (seg === '{i}') {
+      if (idx < inputParts.length && /^\d+$/.test(inputParts[idx])) return inputParts[idx];
+      return '*';
+    }
+    return seg;
+  }).join('.');
+
+  const paramsInfo = {};
+  supportedParams.forEach(p => {
+    paramsInfo[p.param_name] = {
+      value_change: p.value_change,
+      value_type: p.value_type,
+      access: p.access,
+      value: '-',
+    };
+  });
+
+  getResult.req_path_results.forEach(x => {
+    if (!x.resolved_path_results) return;
+
+    const parts = x.requested_path.split('.');
+    if (parts[parts.length - 2] === '*') {
+      x.resolved_path_results.forEach(y => {
+        if (!y.result_params) return;
+        const key = Object.keys(y.result_params)[0];
+        if (!key) return;
+        if (!values[y.resolved_path]) values[y.resolved_path] = [];
+        const val = y.result_params[key] === '' ? '""' : y.result_params[key];
+        values[y.resolved_path].push({
+          [key]: { ...paramsInfo[key], value: val },
+        });
+      });
+    } else {
+      const rpr = x.resolved_path_results[0];
+      if (!rpr?.result_params) return;
+      Object.keys(rpr.result_params).forEach(key => {
+        const val = rpr.result_params[key];
+        values[key] = {
+          ...paramsInfo[key],
+          value: val === '' ? '""' : val,
+        };
+      });
+    }
+  });
+
+  return values;
+};
+
+const upsertInstanceTreeNodes = (treeNodes, values, templatePath, tablePath) => {
+  const childPaths = getInstanceKeys(values, templatePath);
+  let next = { ...treeNodes };
+
+  childPaths.forEach(instanceKey => {
+    next[instanceKey] = {
+      ...(next[instanceKey] || {
+        path: instanceKey,
+        expanded: false,
+        loaded: false,
+        loading: false,
+        children: [],
+      }),
+      path: instanceKey,
+      name: getInstanceLabel(instanceKey),
+      isMultiInstance: true,
+    };
+  });
+
+  next[tablePath] = {
+    ...(next[tablePath] || { path: tablePath, name: getObjName(tablePath) }),
+    path: tablePath,
+    expanded: true,
+    instancesLoaded: true,
+    children: mergeChildPaths(childPaths),
+  };
+
+  return linkNodeToAncestors(next, tablePath);
+};
+
+const linkNodeToAncestors = (treeNodes, targetPath) => {
+  const parts = targetPath.replace(/\.$/, '').split('.');
+  let next = { ...treeNodes };
+
+  for (let i = 1; i <= parts.length; i++) {
+    const seg = parts[i - 1];
+    if (seg === '{i}') continue;
+
+    const anc = parts.slice(0, i).join('.') + '.';
+    const isInstance = /^\d+$/.test(seg);
+
+    if (!next[anc]) {
+      next[anc] = {
+        path: anc,
+        name: isInstance ? seg : seg,
+        expanded: !isInstance,
+        loaded: false,
+        loading: false,
+        children: [],
+        isMultiInstance: isInstance,
+      };
+    }
+
+    if (i > 1) {
+      const parentAnc = parts.slice(0, i - 1).join('.') + '.';
+      if (next[parentAnc]) {
+        next[parentAnc] = {
+          ...next[parentAnc],
+          expanded: true,
+          children: mergeChildPaths([...(next[parentAnc].children || []), anc]),
+        };
+      }
+    }
+  }
+
+  return next;
+};
+
 const extractCommandName = (commandPath) => {
   if (!commandPath) return '';
   const parts = commandPath.split('.');
@@ -240,7 +428,8 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
   // Navigate to a TR-181 path by updating Next.js URL
   const navigateTo = useCallback((tr181Path) => {
-    const urlPath = pathToUrl(tr181Path);
+    const normalizedPath = normalizeNavigationPath(tr181Path);
+    const urlPath = pathToUrl(normalizedPath);
     router.push(
       `/devices/usp/${deviceID}/discovery/${urlPath}`,
       undefined,
@@ -286,38 +475,44 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
   // Recursive ancestor populator for smooth tree expansion on deep load or search jump
   const ensurePathInTree = useCallback((targetPath) => {
-    const parts = targetPath.replace(/\.$/, '').split('.');
+    const normalizedPath = normalizeNavigationPath(targetPath);
+    const parts = normalizedPath.replace(/\.$/, '').split('.');
     const ancestors = [];
     for (let i = 1; i <= parts.length; i++) {
+      if (parts[i - 1] === '{i}') continue;
       ancestors.push(parts.slice(0, i).join('.') + '.');
     }
 
     setTreeNodes(prev => {
       let updated = { ...prev };
       ancestors.forEach((anc, idx) => {
+        const seg = parts[idx] || anc;
+        if (seg === '{i}') return;
+        const isInstance = /^\d+$/.test(seg);
+
         if (!updated[anc]) {
           updated[anc] = {
             path: anc,
-            name: parts[idx] || anc,
-            expanded: true,
+            name: seg,
+            expanded: !isInstance,
             loaded: false,
             loading: false,
             children: [],
-            isMultiInstance: /^\d+$/.test(parts[idx]),
+            isMultiInstance: isInstance,
           };
         } else {
           updated[anc] = {
             ...updated[anc],
-            expanded: true,
+            expanded: isInstance ? updated[anc].expanded : true,
           };
         }
 
         if (idx > 0) {
           const parentAnc = ancestors[idx - 1];
-          if (updated[parentAnc] && !updated[parentAnc].children.includes(anc)) {
+          if (updated[parentAnc]) {
             updated[parentAnc] = {
               ...updated[parentAnc],
-              children: [...updated[parentAnc].children, anc].sort(),
+              children: mergeChildPaths([...(updated[parentAnc].children || []), anc]),
             };
           }
         }
@@ -326,8 +521,57 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     });
   }, []);
 
+  const loadTableInstanceChildren = useCallback(async (tablePath) => {
+    let alreadyLoaded = false;
+    setTreeNodes(prev => {
+      alreadyLoaded = !!prev[tablePath]?.instancesLoaded;
+      return prev;
+    });
+    if (alreadyLoaded) return;
+
+    try {
+      const content = await fetchWithAuth('parameters', {
+        obj_paths: [tablePath],
+        first_level_only: true,
+        return_commands: false,
+        return_events: false,
+        return_params: true,
+      });
+
+      const mainObj = content?.req_obj_results?.[0]?.supported_objs?.[0];
+      const supportedParams = mainObj?.supported_params;
+      const templatePath = mainObj?.supported_obj_path;
+      if (!mainObj || !supportedParams?.length || !isMultiInstanceTemplate(templatePath)) return;
+
+      const templateParts = templatePath.split('.');
+      const inputParts = tablePath.split('.');
+      const concreteObjPath = templateParts.map((seg, idx) => {
+        if (seg === '{i}') {
+          if (idx < inputParts.length && /^\d+$/.test(inputParts[idx])) return inputParts[idx];
+          return '*';
+        }
+        return seg;
+      }).join('.');
+      const paramsToFetch = supportedParams.map(p => concreteObjPath + p.param_name);
+
+      const result = await fetchWithAuth('get', {
+        param_paths: paramsToFetch,
+        max_depth: 1,
+      });
+
+      const values = buildGetValues(supportedParams, templatePath, tablePath, result);
+      setTreeNodes(prev => {
+        if (prev[tablePath]?.instancesLoaded) return prev;
+        return upsertInstanceTreeNodes(prev, values, templatePath, tablePath);
+      });
+    } catch {
+      // Tree enrichment is best-effort; the details panel already loaded.
+    }
+  }, [fetchWithAuth]);
+
   // Main data fetching function
   const updateDeviceParameters = useCallback(async (path, { preserveState = false } = {}) => {
+    const fetchPath = normalizeNavigationPath(path);
     onStatusRefresh?.();
     setShowLoading(true);
     if (!preserveState) {
@@ -337,7 +581,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
     try {
       const content = await fetchWithAuth('parameters', {
-        obj_paths: [path],
+        obj_paths: [fetchPath],
         first_level_only: true,
         return_commands: true,
         return_events: true,
@@ -362,25 +606,17 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       let values = {};
 
       if (supportedParams?.length) {
-        const templateParts = mainObj.supported_obj_path.split('.');
-        const inputParts = path.split('.');
-        const concreteObjPath = templateParts.map((seg, idx) => {
-          if (seg === '{i}') {
-            if (idx < inputParts.length && /^\d+$/.test(inputParts[idx])) return inputParts[idx];
-            return '*';
-          }
-          return seg;
-        }).join('.');
-        const paramsToFetch = supportedParams.map(p => concreteObjPath + p.param_name);
-
-        const paramsInfo = {};
-        supportedParams.forEach(p => {
-          paramsInfo[p.param_name] = {
-            value_change: p.value_change,
-            value_type: p.value_type,
-            access: p.access,
-            value: "-",
-          };
+        const paramsToFetch = supportedParams.map(p => {
+          const templateParts = mainObj.supported_obj_path.split('.');
+          const inputParts = fetchPath.split('.');
+          const concreteObjPath = templateParts.map((seg, idx) => {
+            if (seg === '{i}') {
+              if (idx < inputParts.length && /^\d+$/.test(inputParts[idx])) return inputParts[idx];
+              return '*';
+            }
+            return seg;
+          }).join('.');
+          return concreteObjPath + p.param_name;
         });
 
         const result = await fetchWithAuth('get', {
@@ -388,72 +624,34 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
           max_depth: 1,
         });
 
-        if (result?.req_path_results) {
-          result.req_path_results.forEach(x => {
-            if (!x.resolved_path_results) {
-              values[x.requested_path] = {};
-              return;
-            }
-
-            const parts = x.requested_path.split('.');
-            if (parts[parts.length - 2] === '*') {
-              x.resolved_path_results.forEach(y => {
-                if (!y.result_params) return;
-                const key = Object.keys(y.result_params)[0];
-                if (!key) return;
-                if (!values[y.resolved_path]) values[y.resolved_path] = [];
-                const val = y.result_params[key] === "" ? '""' : y.result_params[key];
-                values[y.resolved_path].push({
-                  [key]: { ...paramsInfo[key], value: val }
-                });
-              });
-            } else {
-              const rpr = x.resolved_path_results[0];
-              if (!rpr?.result_params) return;
-              Object.keys(rpr.result_params).forEach(key => {
-                const val = rpr.result_params[key];
-                values[key] = {
-                  ...paramsInfo[key],
-                  value: val === "" ? '""' : val,
-                };
-              });
-            }
-          });
-
-          setDeviceParametersValue(values);
-        }
+        values = buildGetValues(supportedParams, mainObj.supported_obj_path, fetchPath, result);
+        setDeviceParametersValue(values);
       }
 
       setDeviceParameters(content);
 
-      const pathParts = mainObj.supported_obj_path.replace(/\.$/, '').split('.');
-      const isInstanceObj = pathParts[pathParts.length - 1] === '{i}';
-      const hasInstanceValues = Object.keys(values).some(k => k.includes('.'));
-      const showAsInstance = isInstanceObj && hasInstanceValues;
+      const templatePath = mainObj.supported_obj_path;
+      const tablePath = isMultiInstanceTemplate(templatePath)
+        ? getMultiInstanceTablePath(templatePath)
+        : null;
+      const onConcreteInstance = tablePath && isConcreteInstancePath(fetchPath, templatePath);
+      const treeUpdatePath = onConcreteInstance ? fetchPath : (tablePath || fetchPath);
+      const showAsInstance = isMultiInstanceView(mainObj, values);
 
       setTreeNodes(prev => {
         let childPaths = [];
         let newTreeNodes = { ...prev };
 
-        if (showAsInstance) {
-          const instancePattern = new RegExp('^' + mainObj.supported_obj_path.replace(/\{i\}/g, '\\d+').replace(/\./g, '\\.') + '$');
-          childPaths = Object.keys(values).filter(k => instancePattern.test(k)).sort(sortInstanceKeys);
-          childPaths.forEach(instanceKey => {
-            if (!newTreeNodes[instanceKey]) {
-              newTreeNodes[instanceKey] = {
-                path: instanceKey,
-                name: instanceKey.replace(path, ''),
-                expanded: false,
-                loaded: false,
-                loading: false,
-                children: [],
-                isMultiInstance: true,
-              };
-            }
-          });
-        } else {
-          childPaths = children.map(c => c.supported_obj_path);
-          childPaths.forEach(childPath => {
+        const upsertSchemaChildren = (parentPath) => {
+          const paths = buildSchemaChildPaths(supportedObjs, mainObj, parentPath);
+          paths.forEach(childPath => {
+            const schemaChild = children.find(
+              c => resolveTreeChildPath(c.supported_obj_path) === childPath
+            );
+            const relPath = schemaChild
+              ? getRelativeChildPath(schemaChild.supported_obj_path, templatePath)
+              : getRelativeChildPath(childPath, parentPath);
+
             if (!newTreeNodes[childPath]) {
               newTreeNodes[childPath] = {
                 path: childPath,
@@ -462,21 +660,58 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
                 loaded: false,
                 loading: false,
                 children: [],
-                isMultiInstance: isMultiInstance(getRelativeChildPath(childPath, path)),
+                isMultiInstance: isMultiInstance(relPath),
               };
             }
           });
-        }
-
-        newTreeNodes[path] = {
-          ...newTreeNodes[path],
-          loaded: true,
-          loading: false,
-          children: childPaths,
+          return paths;
         };
+
+        if (showAsInstance && tablePath) {
+          newTreeNodes = upsertInstanceTreeNodes(newTreeNodes, values, templatePath, tablePath);
+          newTreeNodes[tablePath] = {
+            ...newTreeNodes[tablePath],
+            loaded: true,
+            loading: false,
+          };
+        } else if (onConcreteInstance && tablePath) {
+          childPaths = upsertSchemaChildren(fetchPath);
+          newTreeNodes[fetchPath] = {
+            ...(newTreeNodes[fetchPath] || {
+              path: fetchPath,
+              name: getInstanceLabel(fetchPath),
+              isMultiInstance: true,
+            }),
+            path: fetchPath,
+            name: getInstanceLabel(fetchPath),
+            isMultiInstance: true,
+            loaded: true,
+            loading: false,
+            children: childPaths,
+          };
+
+          if (newTreeNodes[tablePath]) {
+            newTreeNodes[tablePath] = {
+              ...newTreeNodes[tablePath],
+              expanded: true,
+            };
+          }
+        } else {
+          childPaths = upsertSchemaChildren(treeUpdatePath);
+          newTreeNodes[treeUpdatePath] = {
+            ...(newTreeNodes[treeUpdatePath] || { path: treeUpdatePath, name: getObjName(treeUpdatePath) }),
+            loaded: true,
+            loading: false,
+            children: childPaths,
+          };
+        }
 
         return newTreeNodes;
       });
+
+      if (onConcreteInstance && tablePath) {
+        await loadTableInstanceChildren(tablePath);
+      }
 
     } catch (error) {
       const errorMsg = error.message || "An error occurred while retrieving device parameters.";
@@ -490,7 +725,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     } finally {
       setShowLoading(false);
     }
-  }, [fetchWithAuth, onStatusRefresh]);
+  }, [fetchWithAuth, loadTableInstanceChildren, onStatusRefresh]);
 
   // Toggle tree node expanded state
   const handleToggleNode = useCallback((path) => {
@@ -500,7 +735,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
       const nextExpanded = !node.expanded;
       if (nextExpanded && !node.loaded) {
-        setTimeout(() => updateDeviceParameters(path), 0);
+        setTimeout(() => updateDeviceParameters(normalizeNavigationPath(path)), 0);
         return {
           ...prev,
           [path]: { ...node, expanded: true, loading: true }
@@ -530,14 +765,30 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       if (supportedObjs.length === 0) return [];
 
       const mainObj = supportedObjs[0];
-      const childPaths = supportedObjs
-        .slice(1)
-        .filter(child => isDirectChild(child.supported_obj_path, mainObj.supported_obj_path))
-        .map(child => child.supported_obj_path);
+      const treePath = normalizeNavigationPath(path);
+      let childPaths = buildSchemaChildPaths(supportedObjs, mainObj, treePath);
 
       setTreeNodes(prev => {
         const next = { ...prev };
+
+        if (isMultiInstanceTemplate(mainObj.supported_obj_path)) {
+          const tablePath = getMultiInstanceTablePath(mainObj.supported_obj_path);
+          const existingChildren = next[tablePath]?.children || [];
+          const instancePattern = buildInstancePattern(mainObj.supported_obj_path);
+          const instanceChildren = existingChildren.filter(k => instancePattern.test(k));
+          if (instanceChildren.length > 0) {
+            childPaths = mergeChildPaths([...childPaths, ...instanceChildren]);
+          }
+        }
+
         childPaths.forEach(childPath => {
+          const schemaChild = supportedObjs
+            .slice(1)
+            .find(c => resolveTreeChildPath(c.supported_obj_path) === childPath);
+          const relPath = schemaChild
+            ? getRelativeChildPath(schemaChild.supported_obj_path, mainObj.supported_obj_path)
+            : getRelativeChildPath(childPath, treePath);
+
           if (!next[childPath]) {
             next[childPath] = {
               path: childPath,
@@ -546,14 +797,18 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
               loaded: false,
               loading: false,
               children: [],
-              isMultiInstance: isMultiInstance(getRelativeChildPath(childPath, path)),
+              isMultiInstance: isMultiInstance(relPath),
             };
           }
         });
 
-        next[path] = {
-          ...next[path],
-          path,
+        const updatePath = isMultiInstanceTemplate(mainObj.supported_obj_path)
+          ? getMultiInstanceTablePath(mainObj.supported_obj_path)
+          : treePath;
+
+        next[updatePath] = {
+          ...(next[updatePath] || { path: updatePath, name: getObjName(updatePath) }),
+          path: updatePath,
           loaded: true,
           loading: false,
           children: childPaths,
@@ -600,13 +855,23 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     };
   }, [treeSearchQuery, loadTreePathForSearch]);
 
-  // Synchronize deep link URLs on mount or URL change
+  // Redirect legacy/template URLs and sync tree + details panel
   useEffect(() => {
-    if (deviceID && currentPath) {
-      ensurePathInTree(currentPath);
-      updateDeviceParameters(currentPath);
+    if (!deviceID || !currentPath) return;
+
+    const normalizedPath = normalizeNavigationPath(currentPath);
+    if (normalizedPath !== currentPath) {
+      router.replace(
+        `/devices/usp/${deviceID}/discovery/${pathToUrl(normalizedPath)}`,
+        undefined,
+        { shallow: true }
+      );
+      return;
     }
-  }, [currentPath, deviceID, ensurePathInTree]);
+
+    ensurePathInTree(normalizedPath);
+    updateDeviceParameters(normalizedPath);
+  }, [currentPath, deviceID, ensurePathInTree, updateDeviceParameters, router]);
 
   // CRUD API functions preserved intact
   const openAddDialog = async (objPath, childTemplatePath) => {
@@ -851,11 +1116,9 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
           const node = treeNodes[path];
           if (!node) return null;
 
-          const isSelected = currentPath === path;
-          const isExpandable = path.endsWith('.') || node.isMultiInstance;
-
-          // Auto expand if there is an active search query
+          const isSelected = normalizeNavigationPath(currentPath) === path;
           const hasChildren = node.children && node.children.length > 0;
+          const isExpandable = hasChildren || (!node.loaded && path.endsWith('.') && !node.isMultiInstance);
           const isSearchActive = !!treeSearchQuery;
           const shouldExpand = isSearchActive
             ? (node.children.some(childPath => shouldShowNode(childPath, treeSearchQuery)))
@@ -922,7 +1185,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
   // Right pane header breadcrumbs renderer
   const renderBreadcrumbs = () => {
-    const segments = currentPath.replace(/\.$/, '').split('.');
+    const segments = currentPath.replace(/\.$/, '').split('.').filter(seg => seg !== '{i}');
     return (
       <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.5, py: 0.5 }}>
         {segments.map((seg, idx) => {
@@ -959,7 +1222,8 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
   // Sort parameter list: normal parameters alphabetically, NumberOfEntries counts last
   const sortParams = (params, getName = (p) => p) => {
-    return [...params].sort((a, b) => {
+    const list = Array.isArray(params) ? params : [];
+    return list.sort((a, b) => {
       const nameA = getName(a);
       const nameB = getName(b);
       const aIsCount = nameA.endsWith('NumberOfEntries');
@@ -969,11 +1233,12 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
     });
   };
 
+  const mainObjForView = deviceParameters?.req_obj_results?.[0]?.supported_objs?.[0];
+
   // Find if current node has numerical values to plot
   const hasNumericalParams = useMemo(() => {
     let count = 0;
-    const isInstance = Object.keys(deviceParametersValue).some(k => k.includes('.'));
-    if (!isInstance) {
+    if (!isMultiInstanceView(mainObjForView, deviceParametersValue)) {
       Object.entries(deviceParametersValue).forEach(([name, data]) => {
         const type = String(data.value_type || '').toLowerCase();
         const isNumeric = ['int', 'unsignedint', 'long', 'float', 'double', 'dateTime'].some(t => type.includes(t)) ||
@@ -984,7 +1249,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
       });
     }
     return count > 0;
-  }, [deviceParametersValue]);
+  }, [deviceParametersValue, mainObjForView]);
 
   // Loading animation overlay
   const renderLoading = () => (
@@ -1061,21 +1326,24 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
                   const access = mainObj.access;
                   const canAdd = access === ObjAccessType.AddDelete || access === ObjAccessType.AddOnly;
                   const canDelete = access === ObjAccessType.AddDelete || access === ObjAccessType.DeleteOnly;
-                  const isInstance = Object.keys(deviceParametersValue).some(k => k.includes('.'));
+                  const onConcreteInstance = isConcreteInstancePath(currentPath, mainObj.supported_obj_path);
+                  const addPath = isMultiInstanceTemplate(mainObj.supported_obj_path)
+                    ? getMultiInstanceTablePath(mainObj.supported_obj_path)
+                    : currentPath;
 
                   return (
                     <Box sx={{ display: 'flex', gap: 1 }}>
-                      {canAdd && (
+                      {canAdd && !onConcreteInstance && (
                         <Button
                           variant="contained"
                           size="small"
                           startIcon={<SvgIcon fontSize="small"><PlusCircleIcon /></SvgIcon>}
-                          onClick={() => openAddDialog(currentPath, mainObj.supported_obj_path)}
+                          onClick={() => openAddDialog(addPath, mainObj.supported_obj_path)}
                         >
                           Add Instance
                         </Button>
                       )}
-                      {canDelete && isInstance && (
+                      {canDelete && onConcreteInstance && (
                         <Button
                           variant="outlined"
                           color="error"
@@ -1126,11 +1394,10 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
                   {/* TAB 1: Parameters Property Table */}
                   {activeTab === 0 && (() => {
                     const mainObj = deviceParameters.req_obj_results[0].supported_objs[0];
-                    const isInstance = Object.keys(deviceParametersValue).some(k => k.includes('.'));
+                    const showInstanceTable = isMultiInstanceView(mainObj, deviceParametersValue);
 
-                    if (isInstance) {
-                      // Multi-instance table view
-                      const instanceKeys = Object.keys(deviceParametersValue).sort(sortInstanceKeys);
+                    if (showInstanceTable) {
+                      const instanceKeys = getInstanceKeys(deviceParametersValue, mainObj.supported_obj_path);
                       return (
                         <Stack spacing={3}>
                           {instanceKeys.map(instanceKey => {
@@ -1141,7 +1408,7 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
                               <Card key={instanceKey} variant="outlined" sx={{ border: '1px solid', borderColor: 'divider' }}>
                                 <Box sx={{ py: 1, px: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'background.neutral', borderBottom: '1px solid', borderColor: 'divider' }}>
                                   <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                    {instanceKey}
+                                    {getInstanceLabel(instanceKey)}
                                   </Typography>
                                   {mainObj.access === ObjAccessType.AddDelete && (
                                     <IconButton size="small" color="error" onClick={() => deleteDeviceObj(instanceKey)}>

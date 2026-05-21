@@ -208,10 +208,7 @@ services:
 
   #/* -------------------------------- Frontend -------------------------------- */
   frontend:
-    build:
-      context: ../../frontend
-      dockerfile: build/Dockerfile
-    # Don't specify image name to force local build instead of pulling from registry
+    image: "oktopusp/frontend"
     container_name: frontend
     ports:
       - 127.0.0.1:3001:3000
