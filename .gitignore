@@ -33,3 +33,4 @@ deploy/compose/.env.*
 skills-lock.json
 .cursor/
 .serena/
+.playwright-mcp

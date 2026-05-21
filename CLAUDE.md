@@ -276,6 +276,7 @@ All scripts are in `deploy/compose/`:
 | `run_debug.sh` | Deploy with frontend hot-reload |
 | `stop.sh` | Stop all services |
 | `package.sh` | Create offline deployment archive (`oktopus-deploy.tar.gz`) |
+| `image-deploy.sh` | Build, verify, save, scp, and deploy individual service images |
 
 ### Build & Test Rules
 
