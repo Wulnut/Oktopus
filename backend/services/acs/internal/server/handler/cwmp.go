@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/xml"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -267,14 +268,17 @@ func (h *Handler) ConnectionRequest(cpe CPE) error {
 
 	user, pass := h.connectionRequestCreds(cpe)
 	ok, err := auth.Auth(user, pass, cpe.ConnectionRequestURL)
-	if !ok {
-		cpe.Queue.Dequeue()
+	if err != nil {
 		log.Println("Error while authenticating to CPE, err:", err)
-	} else {
-		log.Println("<-- Successfully authenticated to CPE", cpe.SerialNumber)
+		return err
+	}
+	if !ok {
+		log.Println("Error while authenticating to CPE: authentication failed")
+		return fmt.Errorf("connection request authentication failed")
 	}
 
-	return err
+	log.Println("<-- Successfully authenticated to CPE", cpe.SerialNumber)
+	return nil
 }
 
 func msgAnswer(
@@ -283,9 +287,16 @@ func msgAnswer(
 	timeOut time.Duration,
 	msgAnswer []byte,
 ) {
+	if callback == nil {
+		return
+	}
 	if time.Since(timeMsgWasSent) > timeOut {
 		log.Println("CPE took too long to answer the request, the message will be discarded")
-	} else {
-		callback <- msgAnswer
+		return
+	}
+	select {
+	case callback <- msgAnswer:
+	default:
+		log.Println("CPE response callback channel full, discarding late response")
 	}
 }

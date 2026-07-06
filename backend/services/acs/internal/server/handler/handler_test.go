@@ -226,6 +226,34 @@ func Test_CWMPHandler_EmptyPostWithCookie_DrainsSession(t *testing.T) {
 	}
 }
 
+func Test_msgAnswer_DeliversToBufferedChannel(t *testing.T) {
+	ch := make(chan []byte, 1)
+	payload := []byte("<response/>")
+	msgAnswer(ch, time.Now(), time.Second, payload)
+
+	select {
+	case got := <-ch:
+		if string(got) != string(payload) {
+			t.Fatalf("got %q, want %q", got, payload)
+		}
+	default:
+		t.Fatal("expected response on callback channel")
+	}
+}
+
+func Test_msgAnswer_DropsWhenChannelFull(t *testing.T) {
+	ch := make(chan []byte, 1)
+	ch <- []byte("first")
+	msgAnswer(ch, time.Now(), time.Second, []byte("second"))
+
+	if len(ch) != 1 {
+		t.Fatalf("expected one buffered message, got %d", len(ch))
+	}
+	if string(<-ch) != "first" {
+		t.Fatal("expected original buffered message to remain")
+	}
+}
+
 func Test_HandleCpeStatusOnce_PublishesTenantOffline(t *testing.T) {
 	var publishedSubject string
 	var publishedData []byte

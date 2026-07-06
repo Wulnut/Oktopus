@@ -276,7 +276,7 @@ verify_service() {
       ;;
     acs)
       docker run --rm --entrypoint sh "$ref" -c \
-        'grep -aq "cwmp-conn-rq-" /acs && echo OK || echo FAIL'
+        'grep -aq "waiting for active CWMP session" /acs && echo OK || echo FAIL'
       ;;
     adapter)
       docker run --rm --entrypoint sh "$ref" -c \

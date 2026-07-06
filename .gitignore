@@ -31,6 +31,7 @@ deploy/compose/.env.*
 .agents
 .claude
 skills-lock.json
-.cursor/
+.cursor/*
 .serena/
 .playwright-mcp
+.codegraph

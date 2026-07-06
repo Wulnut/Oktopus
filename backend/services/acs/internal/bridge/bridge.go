@@ -72,8 +72,10 @@ func (b *Bridge) StartBridge() {
 			return
 		}
 
-		deviceAnswer := make(chan []byte)
-		defer close(deviceAnswer)
+		// Buffered so CwmpHandler can deliver the CPE response without blocking on
+		// this goroutine. Do not close the channel: ConnectionRequest may fail while
+		// an active CWMP session still returns RPC data (NAT CPEs).
+		deviceAnswer := make(chan []byte, 1)
 
 		cpe.Queue.Enqueue(handler.Request{ //TODO: pass user and password too
 			Id:       uuid.NewString(),
@@ -81,16 +83,17 @@ func (b *Bridge) StartBridge() {
 			Callback: deviceAnswer,
 			Time:     time.Now(),
 		})
-
-		err := b.h.ConnectionRequest(cpe)
-		if err != nil {
-			log.Println("Failed to do connection request", err)
-			cpe.Queue.Dequeue()
-			respondMsg(msg.Respond, http.StatusBadRequest, err.Error())
-			return
-		}
-
 		defer cpe.Queue.Dequeue()
+
+		go func(cpe handler.CPE) {
+			if err := b.h.ConnectionRequest(cpe); err != nil {
+				log.Printf("Connection request failed for %s (waiting for active CWMP session): %v",
+					cpe.SerialNumber, err)
+			}
+		}(cpe)
+
+		timeout := time.NewTimer(b.conf.DeviceAnswerTimeout)
+		defer timeout.Stop()
 
 		select {
 		case response := <-deviceAnswer:
@@ -98,7 +101,7 @@ func (b *Bridge) StartBridge() {
 				log.Printf("Received response from cpe: %s payload: %s ", cpe.SerialNumber, string(response))
 			}
 			respondMsg(msg.Respond, http.StatusOK, response)
-		case <-time.After(b.conf.DeviceAnswerTimeout):
+		case <-timeout.C:
 			log.Println("Device response timed out")
 			respondMsg(msg.Respond, http.StatusRequestTimeout, "Request timeout")
 		}
