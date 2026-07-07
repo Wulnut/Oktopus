@@ -1,5 +1,8 @@
 # Oktopus CI — runs existing Docker-based test suite via host docker.sock (no DinD).
 # Runner: oktopus-docker (oktopus-docker-runner, see /home/liangyz/gitlab-docker/config/config.toml)
+#
+# Tests run serially within each job to avoid overloading a single host Docker daemon.
+# Runner config must mount: /var/run/docker.sock:/var/run/docker.sock
 
 workflow:
   rules:
@@ -28,64 +31,38 @@ stages:
 .docker_compose_test:
   before_script:
     - docker info
+    - mkdir -p test-reports
     - cd "$COMPOSE_DIR"
   after_script:
     - cd "$COMPOSE_DIR"
     - docker compose -f "$COMPOSE_FILE" --profile unit --profile integration down -v --remove-orphans || true
+  artifacts:
+    when: always
+    paths:
+      - test-reports/
+    expire_in: 1 week
 
 # ---------------------------------------------------------------------------
-# Unit tests (no MongoDB/NATS)
+# Unit tests — serial within one job
 # ---------------------------------------------------------------------------
-test:unit:controller:
+test:unit:
   extends: .docker_compose_test
   stage: test-unit
   script:
-    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-controller-unit
-
-test:unit:acs:
-  extends: .docker_compose_test
-  stage: test-unit
-  script:
-    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-acs
-
-test:unit:adapter:
-  extends: .docker_compose_test
-  stage: test-unit
-  script:
-    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-adapter
-
-test:unit:infra:
-  extends: .docker_compose_test
-  stage: test-unit
-  script:
-    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-infra
-
-test:unit:frontend:
-  extends: .docker_compose_test
-  stage: test-unit
-  script:
-    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-frontend
+    - sh ci-test-unit.sh
+  artifacts:
+    when: always
+    paths:
+      - test-reports/
+    reports:
+      junit: test-reports/*-junit.xml
+    expire_in: 1 week
 
 # ---------------------------------------------------------------------------
-# Integration tests (MongoDB + NATS via compose profiles)
+# Integration tests — serial within one job
 # ---------------------------------------------------------------------------
-test:integration:db:
+test:integration:
   extends: .docker_compose_test
   stage: test-integration
-  needs: []
   script:
-    - docker compose -f "$COMPOSE_FILE" --profile integration run --rm test-db
-
-test:integration:bridge:
-  extends: .docker_compose_test
-  stage: test-integration
-  needs: []
-  script:
-    - docker compose -f "$COMPOSE_FILE" --profile integration run --rm test-bridge
-
-test:integration:handlers:
-  extends: .docker_compose_test
-  stage: test-integration
-  needs: []
-  script:
-    - docker compose -f "$COMPOSE_FILE" --profile integration run --rm test-handlers
+    - sh ci-test-integration.sh
