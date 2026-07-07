@@ -195,13 +195,13 @@ build:images:
 # ---------------------------------------------------------------------------
 deploy:staging:
   stage: deploy
-  image: alpine:3.20
+  image: debian:bookworm-slim
   needs:
     - build:images
   rules:
     - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
   before_script:
-    - apk add --no-cache openssh-client tar
+    - apt-get update -qq && apt-get install -y -qq openssh-client tar > /dev/null
     - eval $(ssh-agent -s)
     - |
       if [ -f "$SSH_PRIVATE_KEY" ]; then
