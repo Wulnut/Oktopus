@@ -109,7 +109,7 @@ services:
     working_dir: /app
     volumes:
       - ../../frontend:/app
-    command: sh -c "npm ci && JEST_JUNIT_OUTPUT_FILE=/test-reports/frontend-junit.xml npm test -- --verbose --ci --reporters=default --reporters=jest-junit"
+    command: sh -c "npm ci && npm test -- --verbose"
     networks:
       - test_network
     profiles: [unit]

@@ -1,8 +1,6 @@
-# Oktopus CI — runs existing Docker-based test suite via host docker.sock (no DinD).
-# Runner: oktopus-docker (oktopus-docker-runner, see /home/liangyz/gitlab-docker/config/config.toml)
-#
-# Tests run serially within each job to avoid overloading a single host Docker daemon.
-# Runner config must mount: /var/run/docker.sock:/var/run/docker.sock
+# Oktopus CI — tests run in job containers (checkout mounted by GitLab Runner).
+# Local tests still use: deploy/compose/docker-compose.test.yaml
+# Runner tag: oktopus-docker
 
 workflow:
   rules:
@@ -15,27 +13,17 @@ workflow:
 default:
   tags:
     - oktopus-docker
-  image: docker:24-cli
 
 variables:
-  DOCKER_HOST: "unix:///var/run/docker.sock"
-  COMPOSE_DIR: "deploy/compose"
-  COMPOSE_FILE: "docker-compose.test.yaml"
-  # Override in GitLab CI/CD Variables if the default proxy is unreachable.
   GOPROXY: "https://goproxy.cn,direct"
+  MONGO_TEST_URI: "mongodb://mongo_test:27017"
+  NATS_TEST_URL: "nats://nats_test:4222"
 
 stages:
   - test-unit
   - test-integration
 
-.docker_compose_test:
-  before_script:
-    - docker info
-    - mkdir -p test-reports
-    - cd "$COMPOSE_DIR"
-  after_script:
-    - cd "$COMPOSE_DIR"
-    - docker compose -f "$COMPOSE_FILE" --profile unit --profile integration down -v --remove-orphans || true
+.test_artifacts:
   artifacts:
     when: always
     paths:
@@ -43,26 +31,49 @@ stages:
     expire_in: 1 week
 
 # ---------------------------------------------------------------------------
-# Unit tests — serial within one job
+# Unit tests — backend then frontend (serial stages)
 # ---------------------------------------------------------------------------
-test:unit:
-  extends: .docker_compose_test
+test:unit:backend:
+  extends: .test_artifacts
   stage: test-unit
+  image: golang:1.23
+  before_script:
+    - mkdir -p test-reports
   script:
-    - sh ci-test-unit.sh
+    - sh deploy/compose/ci-test-unit.sh
+
+test:unit:frontend:
+  extends: .test_artifacts
+  stage: test-unit
+  image: node:22-alpine
+  needs:
+    - test:unit:backend
+  before_script:
+    - mkdir -p test-reports
+  script:
+    - sh deploy/compose/ci-test-frontend.sh
   artifacts:
     when: always
     paths:
       - test-reports/
     reports:
-      junit: test-reports/*-junit.xml
+      junit: test-reports/frontend-junit.xml
     expire_in: 1 week
 
 # ---------------------------------------------------------------------------
-# Integration tests — serial within one job
+# Integration tests — GitLab service containers for MongoDB + NATS
 # ---------------------------------------------------------------------------
 test:integration:
-  extends: .docker_compose_test
+  extends: .test_artifacts
   stage: test-integration
+  image: golang:1.23
+  services:
+    - name: mongo:7.0
+      alias: mongo_test
+    - name: nats:2.10
+      alias: nats_test
+      command: ["--js"]
+  before_script:
+    - mkdir -p test-reports
   script:
-    - sh ci-test-integration.sh
+    - sh deploy/compose/ci-test-integration.sh
