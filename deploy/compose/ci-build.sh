@@ -34,6 +34,14 @@ COMPOSE_PROFILES_VAL="nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,portai
 log() { printf '==> %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
+# Generate placeholder .env files so docker compose can parse config
+# ---------------------------------------------------------------------------
+if [ ! -f "$SCRIPT_DIR/.env.nats" ]; then
+  log "Generating placeholder .env files for compose config parsing"
+  "$SCRIPT_DIR/generate-secrets.sh"
+fi
+
+# ---------------------------------------------------------------------------
 # Registry login
 # ---------------------------------------------------------------------------
 log "Docker login to ${CI_REGISTRY}"
