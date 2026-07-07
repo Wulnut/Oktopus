@@ -18,7 +18,6 @@ type LockPolicyType string
 
 const (
 	LockPolicyWhitelist LockPolicyType = "WHITELIST"
-	LockPolicyBlacklist LockPolicyType = "BLACKLIST"
 )
 
 type DeviceLockStatus string
@@ -33,7 +32,6 @@ type LockReason string
 
 const (
 	LockReasonMasterDisabled LockReason = "MASTER_DISABLED"
-	LockReasonBlacklisted    LockReason = "BLACKLISTED"
 	LockReasonAuthorized     LockReason = "AUTHORIZED"
 	LockReasonUnauthorized   LockReason = "UNAUTHORIZED"
 	LockReasonInvalidIP      LockReason = "INVALID_IP"
@@ -144,17 +142,11 @@ func (p LockPolicy) Validate() error {
 	if p.SN == "" {
 		return errors.New("sn is required")
 	}
-	switch p.PolicyType {
-	case LockPolicyWhitelist:
-		if p.AllowedIPRange == "" {
-			return errors.New("allowed_ip_range is required for whitelist")
-		}
-		if _, _, err := net.ParseCIDR(p.AllowedIPRange); err != nil {
-			return err
-		}
-	case LockPolicyBlacklist:
-	default:
-		return errors.New("policy_type must be WHITELIST or BLACKLIST")
+	if p.AllowedIPRange == "" {
+		return errors.New("allowed_ip_range is required")
+	}
+	if _, _, err := net.ParseCIDR(p.AllowedIPRange); err != nil {
+		return err
 	}
 	return nil
 }
@@ -217,6 +209,21 @@ func (t *TenantDB) ListLockPolicies(ctx context.Context, policyType LockPolicyTy
 func (t *TenantDB) DeleteLockPolicy(ctx context.Context, sn string) error {
 	_, err := t.LockPolicies().DeleteOne(ctx, bson.M{"sn": NormalizeSN(sn)})
 	return err
+}
+
+func (t *TenantDB) DeleteLockPolicies(ctx context.Context, sns []string) (int64, error) {
+	if len(sns) == 0 {
+		return 0, nil
+	}
+	normalized := make([]string, 0, len(sns))
+	for _, sn := range sns {
+		normalized = append(normalized, NormalizeSN(sn))
+	}
+	res, err := t.LockPolicies().DeleteMany(ctx, bson.M{"sn": bson.M{"$in": normalized}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 func (t *TenantDB) GetLockConfig(ctx context.Context) (LockConfig, error) {
@@ -411,4 +418,13 @@ func (t *TenantDB) ListLockAuditLogs(ctx context.Context, sn string) ([]LockAudi
 	var logs []LockAuditLog
 	err = cursor.All(ctx, &logs)
 	return logs, err
+}
+
+// ClearLockAuditLogs removes all lock audit log entries for this tenant.
+func (t *TenantDB) ClearLockAuditLogs(ctx context.Context) (int64, error) {
+	res, err := t.LockAuditLogs().DeleteMany(ctx, bson.M{})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }

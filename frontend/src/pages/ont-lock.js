@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
+import MagnifyingGlassIcon from '@heroicons/react/24/solid/MagnifyingGlassIcon';
 import {
   Box,
   Button,
@@ -16,8 +17,10 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
-  Grid,
+  InputAdornment,
   Stack,
+  OutlinedInput,
+  SvgIcon,
   Switch,
   Table,
   TableBody,
@@ -34,7 +37,6 @@ import { useBackendContext } from 'src/contexts/backend-context';
 const initialPolicyForm = {
   sn: '',
   allowed_ip_range: '',
-  reason_code: '',
   description: '',
 };
 
@@ -61,14 +63,16 @@ const Page = () => {
   const [commands, setCommands] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [whitelistForm, setWhitelistForm] = useState(initialPolicyForm);
-  const [blacklistForm, setBlacklistForm] = useState(initialPolicyForm);
   const [loading, setLoading] = useState(false);
   const [selectedUnauthorized, setSelectedUnauthorized] = useState({});
   const [batchResult, setBatchResult] = useState(null);
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, type: null, body: null, forcePath: null });
+  const [selectedPolicies, setSelectedPolicies] = useState({});
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+ const [deletingSn, setDeletingSn] = useState(null);
+ const [policySearch, setPolicySearch] = useState('');
+  const [clearAuditOpen, setClearAuditOpen] = useState(false);
 
-  const whitelistFileRef = useRef(null);
-  const blacklistFileRef = useRef(null);
+ const whitelistFileRef = useRef(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -108,53 +112,20 @@ const Page = () => {
     }
   };
 
-  const postPolicy = async (type, form, force = false) => {
-    const path = type === 'whitelist' ? '/lock/whitelist' : '/lock/blacklist';
-    const query = force ? '?force=true' : '';
-    const body = JSON.stringify(form);
-    const { status, result } = await httpRequest(`${apiPrefix}${path}${query}`, 'POST', body);
-    if (status === 409 && result?.existing_policy) {
-      setConfirmDialog({
-        open: true,
-        type,
-        body: form,
-        existing: result.existing_policy,
-      });
-      return false;
-    }
+  const submitPolicy = async () => {
+    const body = JSON.stringify(whitelistForm);
+    const { status } = await httpRequest(`${apiPrefix}/lock/whitelist`, 'POST', body);
     if (status === 200) {
-      setAlert({ severity: 'success', message: `${type === 'whitelist' ? 'Whitelist' : 'Blacklist'} policy saved.` });
-      return true;
-    }
-    return false;
-  };
-
-  const submitPolicy = async (type) => {
-    const form = type === 'whitelist' ? whitelistForm : blacklistForm;
-    const ok = await postPolicy(type, form);
-    if (ok) {
-      if (type === 'whitelist') setWhitelistForm(initialPolicyForm);
-      else setBlacklistForm(initialPolicyForm);
+      setAlert({ severity: 'success', message: 'Whitelist policy saved.' });
+      setWhitelistForm(initialPolicyForm);
       fetchData();
     }
   };
 
-  const confirmOverride = async () => {
-    const { type, body } = confirmDialog;
-    setConfirmDialog({ open: false, type: null, body: null });
-    const ok = await postPolicy(type, body, true);
-    if (ok) {
-      if (type === 'whitelist') setWhitelistForm(initialPolicyForm);
-      else setBlacklistForm(initialPolicyForm);
-      fetchData();
-    }
-  };
-
-  const uploadBatchCSV = async (type, file) => {
+  const uploadBatchCSV = async (file) => {
     if (!file) return;
-    const path = type === 'whitelist' ? '/lock/whitelist/batch' : '/lock/blacklist/batch';
     const token = localStorage.getItem('token');
-    const response = await fetch(`${apiPrefix}${path}`, {
+    const response = await fetch(`${apiPrefix}/lock/whitelist/batch`, {
       method: 'POST',
       headers: {
         Authorization: token,
@@ -163,11 +134,11 @@ const Page = () => {
       body: file,
     });
     const result = await response.json();
-    setBatchResult({ type, status: response.status, result });
+    setBatchResult({ status: response.status, result });
     if (response.ok || response.status === 207) {
       setAlert({
         severity: response.status === 207 ? 'warning' : 'success',
-        message: `Batch ${type}: created ${result.created ?? 0}, errors ${result.errors?.length ?? 0}.`,
+        message: `Batch import: created ${result.created ?? 0}, errors ${result.errors?.length ?? 0}.`,
       });
       fetchData();
     } else {
@@ -202,10 +173,83 @@ const Page = () => {
   };
 
   const deletePolicy = async (sn) => {
-    const { status } = await httpRequest(`${apiPrefix}/lock/policies/${encodeURIComponent(sn)}`, 'DELETE');
-    if (status === 204) {
-      setAlert({ severity: 'success', message: 'Policy deleted.' });
-      fetchData();
+    setDeletingSn(sn);
+    try {
+      const { status } = await httpRequest(`${apiPrefix}/lock/policies/${encodeURIComponent(sn)}`, 'DELETE');
+      if (status >= 200 && status < 300) {
+        setPolicies((prev) => prev.filter((p) => p.sn !== sn));
+        setUnauthorized((prev) => prev.filter((u) => u.sn !== sn));
+        setAlert({ severity: 'success', message: 'Policy deleted.' });
+      }
+   } finally {
+     setDeletingSn(null);
+   }
+ };
+
+  const clearAudit = async () => {
+    setClearAuditOpen(false);
+    const { status, result } = await httpRequest(`${apiPrefix}/lock/audit`, 'DELETE');
+    if (status >= 200 && status < 300) {
+      setAuditLogs([]);
+      setAlert({ severity: 'success', message: `Cleared ${result?.deleted ?? 0} audit record(s).` });
+      fetchData().catch(() => {});
+    } else {
+      setAlert({ severity: 'error', message: result?.error || 'Failed to clear audit history.' });
+    }
+  };
+
+ const filteredPolicies = useMemo(() => {
+    const q = policySearch.trim().toLowerCase();
+    if (!q) return policies;
+    return policies.filter((p) => [
+      p.sn,
+      p.policy_type,
+      p.allowed_ip_range,
+      p.reason_code,
+      p.description,
+    ].some((v) => String(v ?? '').toLowerCase().includes(q)));
+  }, [policies, policySearch]);
+
+  const selectedPolicyCount = Object.values(selectedPolicies).filter(Boolean).length;
+
+  const togglePolicy = (sn) => {
+    setSelectedPolicies((prev) => ({ ...prev, [sn]: !prev[sn] }));
+  };
+
+  const allPoliciesSelected = filteredPolicies.length > 0 && filteredPolicies.every((p) => selectedPolicies[p.sn]);
+
+  const toggleAllPolicies = () => {
+    if (allPoliciesSelected) {
+      setSelectedPolicies((prev) => {
+        const next = { ...prev };
+        filteredPolicies.forEach((p) => { delete next[p.sn]; });
+        return next;
+      });
+    } else {
+      const next = { ...selectedPolicies };
+      filteredPolicies.forEach((p) => { next[p.sn] = true; });
+      setSelectedPolicies(next);
+    }
+  };
+
+  const doBatchDeletePolicies = async () => {
+    const sns = policies.filter((p) => selectedPolicies[p.sn]).map((p) => p.sn);
+    if (sns.length === 0) return;
+    const body = JSON.stringify({ sns });
+    const { status, result } = await httpRequest(`${apiPrefix}/lock/policies/batch-delete`, 'POST', body);
+    setBatchDeleteOpen(false);
+    if (status >= 200 && status < 300) {
+      const deletedSet = new Set(sns);
+      setPolicies((prev) => prev.filter((p) => !deletedSet.has(p.sn)));
+      setUnauthorized((prev) => prev.filter((u) => !deletedSet.has(u.sn)));
+      setAlert({
+        severity: status === 207 ? 'warning' : 'success',
+        message: `Deleted ${result.deleted ?? sns.length} policy/policies${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}.`,
+      });
+      setSelectedPolicies({});
+      fetchData().catch(() => {});
+    } else {
+      setAlert({ severity: 'error', message: result?.error || 'Batch delete failed.' });
     }
   };
 
@@ -214,22 +258,30 @@ const Page = () => {
   };
 
   const renderPolicyRows = () => {
-    if (policies.length === 0) {
+    if (filteredPolicies.length === 0) {
       return (
         <TableRow>
-          <TableCell colSpan={6}>No lock policies found.</TableCell>
+          <TableCell colSpan={7}>
+            {policies.length === 0 ? 'No lock policies found.' : 'No policies match your search.'}
+          </TableCell>
         </TableRow>
       );
     }
-    return policies.map((policy) => (
+    return filteredPolicies.map((policy) => (
       <TableRow key={policy.sn}>
+        <TableCell padding="checkbox">
+          <Checkbox
+            checked={Boolean(selectedPolicies[policy.sn])}
+            onChange={() => togglePolicy(policy.sn)}
+          />
+        </TableCell>
         <TableCell>{policy.sn}</TableCell>
         <TableCell>{policy.policy_type}</TableCell>
         <TableCell>{policy.allowed_ip_range || '-'}</TableCell>
         <TableCell>{policy.reason_code || '-'}</TableCell>
         <TableCell>{policy.description || '-'}</TableCell>
         <TableCell align="right">
-          <Button color="error" size="small" onClick={() => deletePolicy(policy.sn)}>
+          <Button color="error" size="small" disabled={deletingSn === policy.sn} onClick={() => deletePolicy(policy.sn)}>
             Delete
           </Button>
         </TableCell>
@@ -292,16 +344,37 @@ const Page = () => {
               </CardContent>
             </Card>
 
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <PolicyForm
-                  title="Add Whitelist"
-                  form={whitelistForm}
-                  setForm={setWhitelistForm}
-                  onSubmit={() => submitPolicy('whitelist')}
-                  showCIDR
-                />
-                <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+            <Card>
+              <CardHeader title="Add Whitelist" />
+              <Divider />
+              <CardContent>
+                <Stack spacing={2}>
+                  <TextField
+                    label="SN"
+                    value={whitelistForm.sn}
+                    onChange={(event) => setWhitelistForm((prev) => ({ ...prev, sn: event.target.value }))}
+                    required
+                    fullWidth
+                  />
+                  <TextField
+                    label="Allowed IP Range (CIDR)"
+                    value={whitelistForm.allowed_ip_range}
+                    onChange={(event) => setWhitelistForm((prev) => ({ ...prev, allowed_ip_range: event.target.value }))}
+                    placeholder="10.10.0.0/16"
+                    required
+                    fullWidth
+                  />
+                  <TextField
+                    label="Description"
+                    value={whitelistForm.description}
+                    onChange={(event) => setWhitelistForm((prev) => ({ ...prev, description: event.target.value }))}
+                    fullWidth
+                    multiline
+                    minRows={2}
+                  />
+                  <Button variant="contained" onClick={submitPolicy} disabled={!whitelistForm.sn || !whitelistForm.allowed_ip_range}>
+                    Save
+                  </Button>
                   <Button variant="outlined" onClick={() => whitelistFileRef.current?.click()}>
                     Import CSV
                   </Button>
@@ -311,41 +384,17 @@ const Page = () => {
                     accept=".csv,text/csv"
                     hidden
                     onChange={(event) => {
-                      uploadBatchCSV('whitelist', event.target.files?.[0]);
+                      uploadBatchCSV(event.target.files?.[0]);
                       event.target.value = '';
                     }}
                   />
                 </Stack>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <PolicyForm
-                  title="Add Blacklist"
-                  form={blacklistForm}
-                  setForm={setBlacklistForm}
-                  onSubmit={() => submitPolicy('blacklist')}
-                  showReason
-                />
-                <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-                  <Button variant="outlined" onClick={() => blacklistFileRef.current?.click()}>
-                    Import CSV
-                  </Button>
-                  <input
-                    ref={blacklistFileRef}
-                    type="file"
-                    accept=".csv,text/csv"
-                    hidden
-                    onChange={(event) => {
-                      uploadBatchCSV('blacklist', event.target.files?.[0]);
-                      event.target.value = '';
-                    }}
-                  />
-                </Stack>
-              </Grid>
-            </Grid>
+              </CardContent>
+            </Card>
 
             {batchResult && (
               <Card>
-                <CardHeader title={`Batch Import (${batchResult.type})`} />
+                <CardHeader title="Batch Import Result" />
                 <Divider />
                 <CardContent>
                   <Typography variant="body2">
@@ -362,12 +411,47 @@ const Page = () => {
             )}
 
             <Card>
-              <CardHeader title="Policies" />
+              <CardHeader
+                title="Policies"
+                action={
+                 <Stack direction="row" spacing={1} alignItems="center">
+                    <OutlinedInput
+                      size="small"
+                      value={policySearch}
+                      onChange={(event) => setPolicySearch(event.target.value)}
+                      placeholder="Search SN / IP / description"
+                      startAdornment={(
+                        <InputAdornment position="start">
+                          <SvgIcon
+                            color="action"
+                            fontSize="small"
+                          >
+                            <MagnifyingGlassIcon />
+                          </SvgIcon>
+                        </InputAdornment>
+                      )}
+                      sx={{ width: 260 }}
+                    />
+                    {selectedPolicyCount > 0 ? (
+                      <Button color="error" size="small" variant="outlined" onClick={() => setBatchDeleteOpen(true)}>
+                        Delete Selected ({selectedPolicyCount})
+                      </Button>
+                    ) : null}
+                  </Stack>
+                }
+              />
               <Divider />
               <CardContent sx={{ p: 0 }}>
                 <Table>
                   <TableHead>
                     <TableRow>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={allPoliciesSelected}
+                          indeterminate={selectedPolicyCount > 0 && !allPoliciesSelected}
+                          onChange={toggleAllPolicies}
+                        />
+                      </TableCell>
                       <TableCell>SN</TableCell>
                       <TableCell>Type</TableCell>
                       <TableCell>Allowed IP Range</TableCell>
@@ -381,167 +465,135 @@ const Page = () => {
               </CardContent>
             </Card>
 
-            <Grid container spacing={3}>
-              <Grid item xs={12} lg={6}>
-                <Card>
-                  <CardHeader
-                    title="Unauthorized Devices"
-                    action={
-                      <Button size="small" variant="contained" onClick={batchWhitelistFromUnauthorized}>
-                        Whitelist Selected
-                      </Button>
-                    }
-                  />
-                  <Divider />
-                  <CardContent sx={{ p: 0 }}>
-                    <Table>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell padding="checkbox" />
-                          <TableCell>SN</TableCell>
-                          <TableCell>Reported IP</TableCell>
-                          <TableCell>Status</TableCell>
-                          <TableCell>Reason</TableCell>
-                          <TableCell>Last Seen</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {unauthorized.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={6}>No unauthorized devices.</TableCell>
-                          </TableRow>
-                        ) : (
-                          unauthorized.map((item) => (
-                            <TableRow key={item.sn}>
-                              <TableCell padding="checkbox">
-                                <Checkbox
-                                  checked={Boolean(selectedUnauthorized[item.sn])}
-                                  onChange={() => toggleUnauthorized(item.sn)}
-                                />
-                              </TableCell>
-                              <TableCell>{item.sn}</TableCell>
-                              <TableCell>{item.reported_ip || '-'}</TableCell>
-                              <TableCell>
-                                <Chip label={item.status} color={statusColor(item.status)} size="small" />
-                              </TableCell>
-                              <TableCell>{item.reason}</TableCell>
-                              <TableCell>{item.last_seen ? new Date(item.last_seen).toLocaleString() : '-'}</TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} lg={6}>
-                <SimpleTable
-                  title="Recent Commands"
-                  columns={['SN', 'Target', 'Status', 'Command ID', 'Updated']}
-                  rows={commands.map((item) => [
-                    item.device_sn,
-                    item.target_status,
-                    <Chip
-                      key="status"
-                      label={item.status}
-                      color={item.status === 'success' ? 'success' : item.status === 'failed' ? 'error' : 'warning'}
-                      size="small"
-                    />,
-                    item.command_id,
-                    item.updated_at ? new Date(item.updated_at).toLocaleString() : '-',
-                  ])}
-                  empty="No lock commands yet."
+            <Stack direction={{ xs: 'column', lg: 'row' }} spacing={3}>
+              <Card sx={{ flex: 1 }}>
+                <CardHeader
+                  title="Unauthorized Devices"
+                  action={
+                    <Button size="small" variant="contained" onClick={batchWhitelistFromUnauthorized}>
+                      Whitelist Selected
+                    </Button>
+                  }
                 />
-              </Grid>
-            </Grid>
+                <Divider />
+                <CardContent sx={{ p: 0 }}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell padding="checkbox" />
+                        <TableCell>SN</TableCell>
+                        <TableCell>Reported IP</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell>Reason</TableCell>
+                        <TableCell>Last Seen</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {unauthorized.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6}>No unauthorized devices.</TableCell>
+                        </TableRow>
+                      ) : (
+                        unauthorized.map((item) => (
+                          <TableRow key={item.sn}>
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                checked={Boolean(selectedUnauthorized[item.sn])}
+                                onChange={() => toggleUnauthorized(item.sn)}
+                              />
+                            </TableCell>
+                            <TableCell>{item.sn}</TableCell>
+                            <TableCell>{item.reported_ip || '-'}</TableCell>
+                            <TableCell>
+                              <Chip label={item.status} color={statusColor(item.status)} size="small" />
+                            </TableCell>
+                            <TableCell>{item.reason}</TableCell>
+                            <TableCell>{item.last_seen ? new Date(item.last_seen).toLocaleString() : '-'}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+              <SimpleTable
+                sx={{ flex: 1 }}
+                title="Recent Commands"
+                columns={['SN', 'Target', 'Status', 'Command ID', 'Updated']}
+                rows={commands.map((item) => [
+                  item.device_sn,
+                  item.target_status,
+                  <Chip
+                    key="status"
+                    label={item.status}
+                    color={item.status === 'success' ? 'success' : item.status === 'failed' ? 'error' : 'warning'}
+                    size="small"
+                  />,
+                  item.command_id,
+                  item.updated_at ? new Date(item.updated_at).toLocaleString() : '-',
+                ])}
+                empty="No lock commands yet."
+              />
+            </Stack>
 
-            <SimpleTable
-              title="Audit History"
-              columns={['Action', 'SN', 'Status', 'Operator', 'Created']}
-              rows={auditLogs.map((item) => [
-                item.action,
-                item.sn || '-',
-                item.status || '-',
-                item.operator_id || '-',
-                item.created_at ? new Date(item.created_at).toLocaleString() : '-',
-              ])}
-              empty="No audit logs yet."
-            />
+           <SimpleTable
+             title="Audit History"
+             columns={['Action', 'SN', 'Status', 'Operator', 'Created']}
+             rows={auditLogs.map((item) => [
+               item.action,
+               item.sn || '-',
+               item.status || '-',
+               item.operator_id || '-',
+               item.created_at ? new Date(item.created_at).toLocaleString() : '-',
+             ])}
+             empty="No audit logs yet."
+             action={
+               auditLogs.length > 0 ? (
+                 <Button color="error" size="small" variant="outlined" onClick={() => setClearAuditOpen(true)}>
+                   Clear
+                 </Button>
+               ) : null
+             }
+           />
           </Stack>
         </Container>
       </Box>
 
-      <Dialog open={confirmDialog.open} onClose={() => setConfirmDialog({ open: false })}>
-        <DialogTitle>Confirm Policy Override</DialogTitle>
+      <Dialog open={batchDeleteOpen} onClose={() => setBatchDeleteOpen(false)}>
+        <DialogTitle>Delete {selectedPolicyCount} Policy/Policies?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Device {confirmDialog.body?.sn} is currently on the whitelist
-            {confirmDialog.existing?.allowed_ip_range ? ` (${confirmDialog.existing.allowed_ip_range})` : ''}.
-            Adding it to the blacklist will override the whitelist. Continue?
+            This will permanently remove the selected lock policies. Affected devices will be re-evaluated for lock status.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDialog({ open: false })}>Cancel</Button>
-          <Button color="error" variant="contained" onClick={confirmOverride}>
-            Override
+          <Button onClick={() => setBatchDeleteOpen(false)}>Cancel</Button>
+         <Button color="error" variant="contained" onClick={doBatchDeletePolicies}>
+           Delete
+         </Button>
+       </DialogActions>
+     </Dialog>
+      <Dialog open={clearAuditOpen} onClose={() => setClearAuditOpen(false)}>
+        <DialogTitle>Clear Audit History?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will permanently remove all lock audit records for this tenant. The clear action itself will be logged.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClearAuditOpen(false)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={clearAudit}>
+            Clear
           </Button>
         </DialogActions>
       </Dialog>
-    </>
+   </>
   );
 };
 
-const PolicyForm = ({ title, form, setForm, onSubmit, showCIDR, showReason }) => (
-  <Card>
-    <CardHeader title={title} />
-    <Divider />
-    <CardContent>
-      <Stack spacing={2}>
-        <TextField
-          label="SN"
-          value={form.sn}
-          onChange={(event) => setForm((prev) => ({ ...prev, sn: event.target.value }))}
-          required
-          fullWidth
-        />
-        {showCIDR && (
-          <TextField
-            label="Allowed IP Range (CIDR)"
-            value={form.allowed_ip_range}
-            onChange={(event) => setForm((prev) => ({ ...prev, allowed_ip_range: event.target.value }))}
-            placeholder="10.10.0.0/16"
-            required
-            fullWidth
-          />
-        )}
-        {showReason && (
-          <TextField
-            label="Reason"
-            value={form.reason_code}
-            onChange={(event) => setForm((prev) => ({ ...prev, reason_code: event.target.value }))}
-            placeholder="lost, unpaid, churn"
-            fullWidth
-          />
-        )}
-        <TextField
-          label="Description"
-          value={form.description}
-          onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
-          fullWidth
-          multiline
-          minRows={2}
-        />
-        <Button variant="contained" onClick={onSubmit} disabled={!form.sn || (showCIDR && !form.allowed_ip_range)}>
-          Save
-        </Button>
-      </Stack>
-    </CardContent>
-  </Card>
-);
-
-const SimpleTable = ({ title, columns, rows, empty }) => (
-  <Card>
-    <CardHeader title={title} />
+const SimpleTable = ({ title, columns, rows, empty, sx, action }) => (
+  <Card sx={sx}>
+    <CardHeader title={title} action={action} />
     <Divider />
     <CardContent sx={{ p: 0 }}>
       <Table>

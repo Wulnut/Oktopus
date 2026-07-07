@@ -6,27 +6,6 @@ import (
 	"github.com/leandrofars/oktopus/internal/db"
 )
 
-func TestEvaluateLockDecisionBlacklistOverridesWhitelist(t *testing.T) {
-	decision := EvaluateLockDecision(LockEvaluationInput{
-		SN:         "SN-001",
-		ReportedIP: "10.10.1.5",
-		Config:     db.DefaultLockConfig(),
-		Policy: &db.LockPolicy{
-			SN:             "SN-001",
-			PolicyType:     db.LockPolicyBlacklist,
-			AllowedIPRange: "10.10.0.0/16",
-			Status:         true,
-		},
-	})
-
-	if decision.Status != db.LockStatusLocked {
-		t.Fatalf("expected blacklisted device to be locked, got %s", decision.Status)
-	}
-	if !decision.ShouldCommand || decision.CommandValue != "1" {
-		t.Fatalf("expected LOCK command value 1, got command=%v value=%q", decision.ShouldCommand, decision.CommandValue)
-	}
-}
-
 func TestEvaluateLockDecisionWhitelistAndCIDRUnlocks(t *testing.T) {
 	decision := EvaluateLockDecision(LockEvaluationInput{
 		SN:         "SN-001",
@@ -91,7 +70,7 @@ func TestEvaluateLockDecisionMasterSwitchDisabledUnlocks(t *testing.T) {
 		Config:     cfg,
 		Policy: &db.LockPolicy{
 			SN:         "SN-001",
-			PolicyType: db.LockPolicyBlacklist,
+			PolicyType: db.LockPolicyWhitelist,
 			Status:     true,
 		},
 	})

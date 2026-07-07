@@ -1,5 +1,7 @@
 # Telkomsel ONT Lock 锁网系统方案 — 完整设计记录
 
+> **实现说明（一期）**：一期仅保留**白名单准入**，黑名单功能及相关互斥逻辑已移除。不在白名单的设备默认 LOCKED，满足 SN + IP 双白名单条件才 UNLOCKED。下文保留原始设计记录的完整性，第八节「黑名单强控与动态追杀」在一期未启用。
+
 **定位** — 本页是平台侧的完整方案设计记录，配套风险分析页见文末「来源」。核心主张：基于开源 **Oktopus（OktopUSP）** 平台，采用「**标准协议扩展  旁路微服务  存储融合  单表互斥**」的解耦架构。**双白名单校验**：SN 在白名单 **且** 设备上报 IP 落在授权运营商网段 → UNLOCKED；黑名单 → LOCKED；任一不满足 → LOCKED。本文档仅覆盖**平台侧**职责；ONT 侧实现由固件团队负责。
 
 # 一、设计原则
@@ -146,6 +148,8 @@ ONT 上报的注册、心跳、回执先入 Kafka，由消费者异步处理校�
 
 # 七、准入控制与互斥设计（黑白名单合并）
 
+> **一期注**：一期已移除黑名单，`device_lock_policy` 表仅保留 WHITELIST 记录。同一 SN 的 upsert 仍然覆盖更新。状态机简化为：不在白名单（默认 LOCKED）→ 加入白名单（UNLOCKED）→ 移出白名单（回落 LOCKED）。
+
 
 
 ## 单表  主键互斥
@@ -190,7 +194,9 @@ stateDiagram-v2
 
 
 
-# 八、黑名单强控与动态追杀
+# 八、黑名单强控与动态追杀（一期未启用）
+
+> **一期注**：以下黑名单逻辑在一期未实现。当前模型为默认拒绝——设备不在白名单即 LOCKED，等效于「封禁」。如需后续恢复主动黑名单能力，`PolicyType` 字段已保留扩展点。
 
 
 
@@ -378,4 +384,3 @@ func EvaluateDeviceStatus(sn, reportedIp string) string {
 整理自「Telkomsel ONT Lock 锁网系统」周末技术讨论。底层平台：开源 Oktopus（OktopUSP，Go）。需求背景：面向印尼 Telkomsel 的 ONT 锁网与 **SN  IP 网段双白名单**管控，需通过 ATP 54x 系列安全验收。本文档仅覆盖平台侧职责。配套文档：[风险与可行性分析](https://seirobotics.feishu.cn/wiki/MSmcwyAzqidPhTklm2Ecqrkjnvh)（飞书同目录）。
 
 > (注：内容由 AI 生成，请谨慎参考）
-

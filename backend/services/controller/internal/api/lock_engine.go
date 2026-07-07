@@ -72,15 +72,6 @@ func EvaluateLockDecision(input LockEvaluationInput) LockDecision {
 		}
 	}
 
-	if input.Policy != nil && input.Policy.Status && input.Policy.PolicyType == db.LockPolicyBlacklist {
-		return LockDecision{
-			Status:        db.LockStatusLocked,
-			Reason:        db.LockReasonBlacklisted,
-			ShouldCommand: true,
-			CommandValue:  "1",
-		}
-	}
-
 	if input.Policy != nil && input.Policy.Status && input.Policy.PolicyType == db.LockPolicyWhitelist {
 		if ipInCIDR(input.ReportedIP, input.Policy.AllowedIPRange) {
 			return LockDecision{

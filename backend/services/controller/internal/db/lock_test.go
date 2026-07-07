@@ -35,20 +35,6 @@ func TestLockPolicyValidateRequiresWhitelistCIDR(t *testing.T) {
 	}
 }
 
-func TestLockPolicyValidateAcceptsBlacklistReason(t *testing.T) {
-	policy := LockPolicy{
-		SN:          "SN-001",
-		PolicyType:  LockPolicyBlacklist,
-		ReasonCode:  "lost",
-		Description: "reported lost",
-		Status:      true,
-	}
-
-	if err := policy.Validate(); err != nil {
-		t.Fatalf("expected blacklist policy to validate, got %v", err)
-	}
-}
-
 func TestLockConfigDefaultsEnableMasterAndAutoLock(t *testing.T) {
 	cfg := DefaultLockConfig()
 

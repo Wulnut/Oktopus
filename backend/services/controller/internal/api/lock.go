@@ -23,10 +23,6 @@ type lockBatchResult struct {
 	Errors  []string `json:"errors"`
 }
 
-type lockPolicyConflictResponse struct {
-	Error          string        `json:"error"`
-	ExistingPolicy db.LockPolicy `json:"existing_policy"`
-}
 
 type batchUnauthorizedWhitelistRequest struct {
 	Items                  []unauthorizedWhitelistItem `json:"items"`
@@ -51,35 +47,19 @@ func (a *Api) listLockPolicies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Api) upsertWhitelistPolicy(w http.ResponseWriter, r *http.Request) {
-	a.upsertLockPolicy(w, r, db.LockPolicyWhitelist)
+	a.upsertLockPolicy(w, r)
 }
 
-func (a *Api) upsertBlacklistPolicy(w http.ResponseWriter, r *http.Request) {
-	a.upsertLockPolicy(w, r, db.LockPolicyBlacklist)
-}
-
-func (a *Api) upsertLockPolicy(w http.ResponseWriter, r *http.Request, policyType db.LockPolicyType) {
+func (a *Api) upsertLockPolicy(w http.ResponseWriter, r *http.Request) {
 	var policy db.LockPolicy
 	if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	policy.PolicyType = policyType
+	policy.PolicyType = db.LockPolicyWhitelist
 	policy.Status = true
 	policy.OperatorID = middleware.GetEmail(r)
 	tenantSlug := middleware.GetTenantSlug(r)
-	force := r.URL.Query().Get("force") == "true"
-
-	if policyType == db.LockPolicyBlacklist && !force {
-		existing, err := a.tenantDB(r).GetLockPolicy(r.Context(), policy.SN)
-		if err == nil && existing.PolicyType == db.LockPolicyWhitelist {
-			writeJSON(w, http.StatusConflict, lockPolicyConflictResponse{
-				Error:          "whitelist override requires confirmation",
-				ExistingPolicy: existing,
-			})
-			return
-		}
-	}
 
 	created, err := a.tenantDB(r).UpsertLockPolicy(r.Context(), policy)
 	if err != nil {
@@ -98,9 +78,7 @@ func (a *Api) upsertLockPolicy(w http.ResponseWriter, r *http.Request, policyTyp
 			"reason_code":      created.ReasonCode,
 		},
 	})
-	if created.PolicyType == db.LockPolicyWhitelist {
-		_ = a.tenantDB(r).DeleteUnauthorizedDevice(r.Context(), created.SN)
-	}
+	_ = a.tenantDB(r).DeleteUnauthorizedDevice(r.Context(), created.SN)
 	a.chaseLockForSN(tenantSlug, created.SN)
 	writeJSON(w, http.StatusOK, created)
 }
@@ -126,15 +104,52 @@ func (a *Api) deleteLockPolicy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type lockBatchDeleteRequest struct {
+	SNs []string `json:"sns"`
+}
+
+type lockBatchDeleteResult struct {
+	Deleted int64    `json:"deleted"`
+	Errors  []string `json:"errors"`
+}
+
+func (a *Api) batchDeleteLockPolicies(w http.ResponseWriter, r *http.Request) {
+	var req lockBatchDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if len(req.SNs) == 0 {
+		http.Error(w, "sns is required", http.StatusBadRequest)
+		return
+	}
+	tenantSlug := middleware.GetTenantSlug(r)
+	deleted, err := a.tenantDB(r).DeleteLockPolicies(r.Context(), req.SNs)
+	result := lockBatchDeleteResult{Deleted: deleted}
+	if err != nil {
+		result.Errors = append(result.Errors, err.Error())
+	}
+	for _, sn := range req.SNs {
+		_ = lockCache.DeleteLockPolicy(r.Context(), tenantSlug, sn)
+		a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+			SN:         sn,
+			Action:     "policy_batch_delete",
+			OperatorID: middleware.GetEmail(r),
+		})
+	}
+	a.chaseLockForSNs(tenantSlug, req.SNs)
+	status := http.StatusOK
+	if len(result.Errors) > 0 {
+		status = http.StatusMultiStatus
+	}
+	writeJSON(w, status, result)
+}
+
 func (a *Api) batchWhitelistPolicies(w http.ResponseWriter, r *http.Request) {
-	a.batchLockPolicies(w, r, db.LockPolicyWhitelist)
+	a.batchLockPolicies(w, r)
 }
 
-func (a *Api) batchBlacklistPolicies(w http.ResponseWriter, r *http.Request) {
-	a.batchLockPolicies(w, r, db.LockPolicyBlacklist)
-}
-
-func (a *Api) batchLockPolicies(w http.ResponseWriter, r *http.Request, policyType db.LockPolicyType) {
+func (a *Api) batchLockPolicies(w http.ResponseWriter, r *http.Request) {
 	policies, err := decodeLockBatch(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -144,7 +159,7 @@ func (a *Api) batchLockPolicies(w http.ResponseWriter, r *http.Request, policyTy
 	result := lockBatchResult{}
 	chaseSNs := make([]string, 0, len(policies))
 	for idx, policy := range policies {
-		policy.PolicyType = policyType
+		policy.PolicyType = db.LockPolicyWhitelist
 		policy.Status = true
 		policy.OperatorID = middleware.GetEmail(r)
 		created, err := a.tenantDB(r).UpsertLockPolicy(r.Context(), policy)
@@ -337,6 +352,23 @@ func (a *Api) listLockAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, logs)
+}
+
+func (a *Api) clearLockAuditLogs(w http.ResponseWriter, r *http.Request) {
+	tenantSlug := middleware.GetTenantSlug(r)
+	deleted, err := a.tenantDB(r).ClearLockAuditLogs(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// The purge itself is an auditable, privileged action; keep a trace.
+	a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+		Action:      "audit_clear",
+		OperatorID:  middleware.GetEmail(r),
+		Description: "Audit history cleared",
+		Details:     bson.M{"deleted_count": deleted},
+	})
+	writeJSON(w, http.StatusOK, map[string]int64{"deleted": deleted})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

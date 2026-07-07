@@ -24,6 +24,8 @@ variables:
 stages:
   - test-unit
   - test-integration
+  - build
+  - deploy
 
 .test_artifacts:
   artifacts:
@@ -161,5 +163,67 @@ test:integration:handlers:
       alias: nats_test
       command: ["--js"]
   script:
-    - sleep 5
-    - go_test_report test-reports/test-handlers.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/'
+   - sleep 5
+   - go_test_report test-reports/test-handlers.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/'
+
+# ---------------------------------------------------------------------------
+# Build — construct all Docker images and push to GitLab Container Registry
+# (only on telkomsel/ont-lock-dev; uses host Docker daemon via socket bind)
+# ---------------------------------------------------------------------------
+build:images:
+  stage: build
+  image: docker:24-cli
+  variables:
+    # Runner binds the host Docker socket — no DinD needed, host layer cache applies.
+    DOCKER_HOST: unix:///var/run/docker.sock
+  needs:
+    - test:integration:db
+    - test:integration:bridge
+    - test:integration:handlers
+  rules:
+    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
+  before_script:
+    - cd "$CI_PROJECT_DIR"
+    - apk add --no-cache make
+  script:
+    - chmod +x deploy/compose/ci-build.sh
+    - ./deploy/compose/ci-build.sh
+
+# ---------------------------------------------------------------------------
+# Deploy — SSH to 192.168.0.106, pull images, restart compose stack
+# Requires CI/CD variables: SSH_PRIVATE_KEY (File), DEPLOY_HOST, DEPLOY_USER
+# ---------------------------------------------------------------------------
+deploy:staging:
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - build:images
+  rules:
+    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
+  before_script:
+    - apk add --no-cache openssh-client tar
+    - eval $(ssh-agent -s)
+    - |
+      if [ -f "$SSH_PRIVATE_KEY" ]; then
+        chmod 400 "$SSH_PRIVATE_KEY"
+        ssh-add "$SSH_PRIVATE_KEY"
+      else
+        echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+      fi
+    - mkdir -p ~/.ssh
+  script:
+    - |
+      REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
+      DEPLOY_DIR="${DEPLOY_DIR:-/root/oktopus/deploy/compose}"
+      # Sync compose config to .106 via tar (no GitLab credentials needed there)
+      tar czf /tmp/compose.tgz -C deploy/compose \
+        --exclude='.env.*' --exclude='*_data' --exclude='images' --exclude='firmwares' \
+        docker-compose.yaml ci-deploy.sh generate-secrets.sh nginx.conf nats_config container-upload-service registry-certs-generator
+      scp -o StrictHostKeyChecking=accept-new /tmp/compose.tgz "${REMOTE}:/tmp/compose.tgz"
+      ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" \
+        "mkdir -p '${DEPLOY_DIR}' && \
+         tar xzf /tmp/compose.tgz -C '${DEPLOY_DIR}' && \
+         chmod +x '${DEPLOY_DIR}/ci-deploy.sh' && \
+         cd '${DEPLOY_DIR}' && \
+         CI_REGISTRY='${CI_REGISTRY}' CI_REGISTRY_USER='${CI_REGISTRY_USER}' CI_REGISTRY_PASSWORD='${CI_REGISTRY_PASSWORD}' \
+         ./ci-deploy.sh '${CI_REGISTRY_IMAGE}' '${CI_COMMIT_SHORT_SHA}'"

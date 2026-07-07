@@ -289,11 +289,12 @@ services:
         ipv4_address: 172.16.235.18
     restart: unless-stopped
 
-  firmware-upload:
-    build:
-      context: ../../backend/services/utils/firmware-upload
-      dockerfile: build/Dockerfile
-    container_name: firmware-upload
+ firmware-upload:
+    image: "oktopusp/firmware-upload"
+   build:
+     context: ../../backend/services/utils/firmware-upload
+     dockerfile: build/Dockerfile
+   container_name: firmware-upload
     expose:
       - "8006"
     volumes:

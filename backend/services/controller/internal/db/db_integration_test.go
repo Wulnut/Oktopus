@@ -186,21 +186,21 @@ func TestLockPolicyUpsert_MutualExclusionBySN(t *testing.T) {
 
 	_, err = testTDB.UpsertLockPolicy(ctx, LockPolicy{
 		SN:          sn,
-		PolicyType:  LockPolicyBlacklist,
-		ReasonCode:  "lost",
-		Description: "reported lost",
+		PolicyType:  LockPolicyWhitelist,
+		AllowedIPRange: "10.20.0.0/16",
+		Description: "updated policy",
 		Status:      true,
 	})
 	if err != nil {
-		t.Fatalf("replace with blacklist policy: %v", err)
+		t.Fatalf("replace whitelist policy: %v", err)
 	}
 
 	got, err := testTDB.GetLockPolicy(ctx, sn)
 	if err != nil {
 		t.Fatalf("get lock policy: %v", err)
 	}
-	if got.PolicyType != LockPolicyBlacklist {
-		t.Fatalf("expected blacklist to replace whitelist for same SN, got %s", got.PolicyType)
+	if got.AllowedIPRange != "10.20.0.0/16" {
+		t.Fatalf("expected updated CIDR to replace original, got %s", got.AllowedIPRange)
 	}
 
 	policies, err := testTDB.ListLockPolicies(ctx, "")
@@ -241,9 +241,9 @@ func TestLockPolicyTenantIsolation_AllowsSameSNInDifferentTenants(t *testing.T) 
 
 	_, err = otherTDB.UpsertLockPolicy(ctx, LockPolicy{
 		SN:          sn,
-		PolicyType:  LockPolicyBlacklist,
-		ReasonCode:  "lost",
-		Description: "reported lost",
+		PolicyType:     LockPolicyWhitelist,
+		AllowedIPRange: "10.30.0.0/16",
+		Description:    "second tenant policy",
 		Status:      true,
 	})
 	if err != nil {
@@ -262,8 +262,8 @@ func TestLockPolicyTenantIsolation_AllowsSameSNInDifferentTenants(t *testing.T) 
 	if first.PolicyType != LockPolicyWhitelist {
 		t.Fatalf("expected first tenant whitelist, got %s", first.PolicyType)
 	}
-	if second.PolicyType != LockPolicyBlacklist {
-		t.Fatalf("expected second tenant blacklist, got %s", second.PolicyType)
+	if second.AllowedIPRange != "10.30.0.0/16" {
+		t.Fatalf("expected second tenant CIDR 10.30.0.0/16, got %s", second.AllowedIPRange)
 	}
 }
 

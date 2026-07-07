@@ -192,16 +192,15 @@ func (a *Api) StartApi() {
 	lock.HandleFunc("/policies", a.listLockPolicies).Methods("GET")
 	lock.HandleFunc("/whitelist", a.upsertWhitelistPolicy).Methods("POST")
 	lock.HandleFunc("/whitelist/batch", a.batchWhitelistPolicies).Methods("POST")
-	lock.HandleFunc("/blacklist", a.upsertBlacklistPolicy).Methods("POST")
-	lock.HandleFunc("/blacklist/batch", a.batchBlacklistPolicies).Methods("POST")
+	lock.HandleFunc("/policies/batch-delete", a.batchDeleteLockPolicies).Methods("POST")
 	lock.HandleFunc("/policies/{sn}", a.deleteLockPolicy).Methods("DELETE")
-	lock.HandleFunc("/blacklist/{sn}", a.deleteLockPolicy).Methods("DELETE")
 	lock.HandleFunc("/config", a.getLockConfig).Methods("GET")
 	lock.HandleFunc("/config", a.updateLockConfig).Methods("PUT")
 	lock.HandleFunc("/unauthorized", a.listUnauthorizedDevices).Methods("GET")
 	lock.HandleFunc("/unauthorized/batch-whitelist", a.batchWhitelistFromUnauthorized).Methods("POST")
 	lock.HandleFunc("/commands", a.listLockCommands).Methods("GET")
 	lock.HandleFunc("/audit", a.listLockAuditLogs).Methods("GET")
+	lock.HandleFunc("/audit", a.clearLockAuditLogs).Methods("DELETE")
 
 	// Mass actions
 	mass := tenantRouter.PathPrefix("/mass-actions").Subrouter()
