@@ -1,0 +1,91 @@
+# Oktopus CI — runs existing Docker-based test suite via host docker.sock (no DinD).
+# Runner: oktopus-docker (oktopus-docker-runner, see /home/liangyz/gitlab-docker/config/config.toml)
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\[skip ci\]/i
+      when: never
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH =~ /^telkomsel\//
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+default:
+  tags:
+    - oktopus-docker
+  image: docker:24-cli
+
+variables:
+  DOCKER_HOST: "unix:///var/run/docker.sock"
+  COMPOSE_DIR: "deploy/compose"
+  COMPOSE_FILE: "docker-compose.test.yaml"
+  # Override in GitLab CI/CD Variables if the default proxy is unreachable.
+  GOPROXY: "https://goproxy.cn,direct"
+
+stages:
+  - test-unit
+  - test-integration
+
+.docker_compose_test:
+  before_script:
+    - docker info
+    - cd "$COMPOSE_DIR"
+  after_script:
+    - cd "$COMPOSE_DIR"
+    - docker compose -f "$COMPOSE_FILE" --profile unit --profile integration down -v --remove-orphans || true
+
+# ---------------------------------------------------------------------------
+# Unit tests (no MongoDB/NATS)
+# ---------------------------------------------------------------------------
+test:unit:controller:
+  extends: .docker_compose_test
+  stage: test-unit
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-controller-unit
+
+test:unit:acs:
+  extends: .docker_compose_test
+  stage: test-unit
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-acs
+
+test:unit:adapter:
+  extends: .docker_compose_test
+  stage: test-unit
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-adapter
+
+test:unit:infra:
+  extends: .docker_compose_test
+  stage: test-unit
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-infra
+
+test:unit:frontend:
+  extends: .docker_compose_test
+  stage: test-unit
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile unit run --rm test-frontend
+
+# ---------------------------------------------------------------------------
+# Integration tests (MongoDB + NATS via compose profiles)
+# ---------------------------------------------------------------------------
+test:integration:db:
+  extends: .docker_compose_test
+  stage: test-integration
+  needs: []
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile integration run --rm test-db
+
+test:integration:bridge:
+  extends: .docker_compose_test
+  stage: test-integration
+  needs: []
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile integration run --rm test-bridge
+
+test:integration:handlers:
+  extends: .docker_compose_test
+  stage: test-integration
+  needs: []
+  script:
+    - docker compose -f "$COMPOSE_FILE" --profile integration run --rm test-handlers
