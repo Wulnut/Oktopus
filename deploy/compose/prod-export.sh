@@ -102,6 +102,7 @@ cp docker-compose.yaml "$STAGE_DIR/"
 cp docker-compose.prod.yaml "$STAGE_DIR/"
 cp generate-secrets.sh "$STAGE_DIR/"
 cp nginx.conf "$STAGE_DIR/"
+cp prod-init.sh prod-deploy.sh "$STAGE_DIR/"
 cp -r nats_config "$STAGE_DIR/"
 
 # Env templates (reference for generate-secrets.sh, not directly consumed)
