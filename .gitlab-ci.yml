@@ -182,12 +182,12 @@ build:images:
     - test:integration:handlers
   rules:
     - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
- before_script:
-   - cd "$CI_PROJECT_DIR"
+  before_script:
+    - cd "$CI_PROJECT_DIR"
     - apk add --no-cache make bash
- script:
-   - chmod +x deploy/compose/ci-build.sh
-   - ./deploy/compose/ci-build.sh
+  script:
+    - chmod +x deploy/compose/ci-build.sh
+    - ./deploy/compose/ci-build.sh
 
 # ---------------------------------------------------------------------------
 # Deploy — SSH to 192.168.0.106, pull images, restart compose stack
