@@ -75,8 +75,7 @@ test:unit:frontend:
   extends: .node_job
   stage: test-unit
   script:
-    - cd frontend && npm ci
-    - cd frontend && JEST_JUNIT_OUTPUT_FILE="$CI_PROJECT_DIR/test-reports/frontend-junit.xml" npm test -- --verbose --ci --reporters=default --reporters=jest-junit | tee "$CI_PROJECT_DIR/test-reports/test-frontend.log"
+    - cd "$CI_PROJECT_DIR/frontend" && npm ci && JEST_JUNIT_OUTPUT_FILE="$CI_PROJECT_DIR/test-reports/frontend-junit.xml" npm test -- --verbose --ci --reporters=default --reporters=jest-junit | tee "$CI_PROJECT_DIR/test-reports/test-frontend.log"
   artifacts:
     when: always
     paths:
