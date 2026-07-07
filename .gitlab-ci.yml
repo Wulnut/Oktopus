@@ -118,7 +118,7 @@ test:integration:bridge:
       command: ["--js"]
   script:
     - sleep 3
-    - cd backend/services/controller && go test -v -count=1 -timeout=120s -run 'SingleRequest_Success|Timeout' ./internal/bridge/ | tee "$CI_PROJECT_DIR/test-reports/test-bridge.log"
+    - cd backend/services/controller && go test -v -count=1 -timeout=120s -run 'TestNatsUspInteraction_SingleRequest_Success|TestNatsUspInteraction_Timeout' ./internal/bridge/ | tee "$CI_PROJECT_DIR/test-reports/test-bridge.log"
 
 test:integration:handlers:
   extends:
