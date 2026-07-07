@@ -51,43 +51,32 @@ test:unit:controller:
   extends: .go_job
   stage: test-unit
   script:
-    - cd backend/services/controller
-    - go test -v -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/
-      | tee "$CI_PROJECT_DIR/test-reports/test-controller-unit.log"
+    - cd backend/services/controller && go test -v -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/ | tee "$CI_PROJECT_DIR/test-reports/test-controller-unit.log"
 
 test:unit:acs:
   extends: .go_job
   stage: test-unit
   script:
-    - cd backend/services/acs
-    - go test -race -v -count=1 ./internal/server/handler/
-      | tee "$CI_PROJECT_DIR/test-reports/test-acs.log"
+    - cd backend/services/acs && go test -race -v -count=1 ./internal/server/handler/ | tee "$CI_PROJECT_DIR/test-reports/test-acs.log"
 
 test:unit:adapter:
   extends: .go_job
   stage: test-unit
   script:
-    - cd backend/services/mtp/adapter
-    - go test -v -count=1 ./internal/events/usp_handler/
-      | tee "$CI_PROJECT_DIR/test-reports/test-adapter.log"
+    - cd backend/services/mtp/adapter && go test -v -count=1 ./internal/events/usp_handler/ | tee "$CI_PROJECT_DIR/test-reports/test-adapter.log"
 
 test:unit:infra:
   extends: .go_job
   stage: test-unit
   script:
-    - cd deploy/tests
-    - PROJECT_ROOT="$CI_PROJECT_DIR" go test -v -count=1 ./...
-      | tee "$CI_PROJECT_DIR/test-reports/test-infra.log"
+    - cd deploy/tests && PROJECT_ROOT="$CI_PROJECT_DIR" go test -v -count=1 ./... | tee "$CI_PROJECT_DIR/test-reports/test-infra.log"
 
 test:unit:frontend:
   extends: .node_job
   stage: test-unit
   script:
-    - cd frontend
-    - npm ci
-    - JEST_JUNIT_OUTPUT_FILE="$CI_PROJECT_DIR/test-reports/frontend-junit.xml"
-      npm test -- --verbose --ci --reporters=default --reporters=jest-junit
-      | tee "$CI_PROJECT_DIR/test-reports/test-frontend.log"
+    - cd frontend && npm ci
+    - cd frontend && JEST_JUNIT_OUTPUT_FILE="$CI_PROJECT_DIR/test-reports/frontend-junit.xml" npm test -- --verbose --ci --reporters=default --reporters=jest-junit | tee "$CI_PROJECT_DIR/test-reports/test-frontend.log"
   artifacts:
     when: always
     paths:
@@ -117,9 +106,7 @@ test:integration:db:
       alias: mongo_test
   script:
     - sleep 3
-    - cd backend/services/controller
-    - go test -v -count=1 -tags=integration -timeout=60s ./internal/db/
-      | tee "$CI_PROJECT_DIR/test-reports/test-db.log"
+    - cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=60s ./internal/db/ | tee "$CI_PROJECT_DIR/test-reports/test-db.log"
 
 test:integration:bridge:
   extends:
@@ -132,10 +119,7 @@ test:integration:bridge:
       command: ["--js"]
   script:
     - sleep 3
-    - cd backend/services/controller
-    # Skip known-failing regression tests (ConcurrentSameDevice, DoesNotTimeout) until bridge bugs are fixed.
-    - go test -v -count=1 -timeout=120s -run 'SingleRequest_Success|Timeout' ./internal/bridge/
-      | tee "$CI_PROJECT_DIR/test-reports/test-bridge.log"
+    - cd backend/services/controller && go test -v -count=1 -timeout=120s -run 'SingleRequest_Success|Timeout' ./internal/bridge/ | tee "$CI_PROJECT_DIR/test-reports/test-bridge.log"
 
 test:integration:handlers:
   extends:
@@ -150,6 +134,4 @@ test:integration:handlers:
       command: ["--js"]
   script:
     - sleep 5
-    - cd backend/services/controller
-    - go test -v -count=1 -tags=integration -timeout=120s ./internal/api/
-      | tee "$CI_PROJECT_DIR/test-reports/test-handlers.log"
+    - cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/ | tee "$CI_PROJECT_DIR/test-reports/test-handlers.log"
