@@ -25,7 +25,7 @@ func createTestFirmwareAndCampaign(t *testing.T) (db.Firmware, db.Campaign) {
 		BuildVersion: fmt.Sprintf("2.0.%d", time.Now().UnixNano()%1000),
 		Phase:        db.PhaseRelease,
 	}
-	createdFw, err := testApi.db.CreateFirmware(ctx, fw)
+	createdFw, err := testTenantDB.CreateFirmware(ctx, fw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func createTestFirmwareAndCampaign(t *testing.T) (db.Firmware, db.Campaign) {
 		Enabled:     true,
 		Concurrency: 10,
 	}
-	createdCampaign, err := testApi.db.CreateCampaign(ctx, c)
+	createdCampaign, err := testTenantDB.CreateCampaign(ctx, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestHandleDeviceOnline_Concurrent_NoDuplicateUpgrades(t *testing.T) {
 					t.Logf("handleDeviceOnline panicked: %v", r)
 				}
 			}()
-			testApi.handleDeviceOnline(device)
+			testApi.handleDeviceOnline(testTenantDB, device, "test")
 		}()
 	}
 	wg.Wait()
@@ -90,7 +90,7 @@ func TestHandleDeviceOnline_Concurrent_NoDuplicateUpgrades(t *testing.T) {
 
 	// Verify only one upgrade log was created (unique index should prevent duplicates)
 	ctx := context.Background()
-	log, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fw.ID)
+	log, err := testTenantDB.GetLatestUpgradeLog(ctx, sn, fw.ID)
 	if err != nil {
 		// Could be that device was not online (no adapter responding) -- log may be "failed"
 		t.Logf("GetLatestUpgradeLog: %v (expected if no adapter)", err)
@@ -117,16 +117,16 @@ func TestCheckUpgradeCompletion_VersionMatch_MarksSuccess(t *testing.T) {
 		Status:           "pending",
 		TriggeredAt:      time.Now(),
 	}
-	created, err := testApi.db.CreateUpgradeLog(ctx, logEntry)
+	created, err := testTenantDB.CreateUpgradeLog(ctx, logEntry)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Simulate device coming online with matching version
 	device := entity.Device{SN: sn, Version: targetVersion}
-	testApi.checkUpgradeCompletion(ctx, device)
+	testApi.checkUpgradeCompletion(ctx, testTenantDB, device)
 
-	got, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fwID)
+	got, err := testTenantDB.GetLatestUpgradeLog(ctx, sn, fwID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,15 +149,15 @@ func TestCheckUpgradeCompletion_VersionMismatch_MarksFailed(t *testing.T) {
 		Status:           "pending",
 		TriggeredAt:      time.Now(),
 	}
-	if _, err := testApi.db.CreateUpgradeLog(ctx, logEntry); err != nil {
+	if _, err := testTenantDB.CreateUpgradeLog(ctx, logEntry); err != nil {
 		t.Fatal(err)
 	}
 
 	// Device comes online with OLD version
 	device := entity.Device{SN: sn, Version: "1.0.0"}
-	testApi.checkUpgradeCompletion(ctx, device)
+	testApi.checkUpgradeCompletion(ctx, testTenantDB, device)
 
-	got, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fwID)
+	got, err := testTenantDB.GetLatestUpgradeLog(ctx, sn, fwID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestRetryLogic_MaxRetriesExhausted_NoMoreRetries(t *testing.T) {
 		RetryCount:       maxRetries, // Already at max
 		TriggeredAt:      time.Now(),
 	}
-	if _, err := testApi.db.CreateUpgradeLog(ctx, logEntry); err != nil {
+	if _, err := testTenantDB.CreateUpgradeLog(ctx, logEntry); err != nil {
 		t.Fatal(err)
 	}
 
@@ -197,9 +197,9 @@ func TestRetryLogic_MaxRetriesExhausted_NoMoreRetries(t *testing.T) {
 	}
 
 	// This should NOT retry (max retries reached)
-	testApi.checkCampaignUpgrade(ctx, device)
+	testApi.checkCampaignUpgrade(ctx, testTenantDB, device, "test")
 
-	got, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fw.ID)
+	got, err := testTenantDB.GetLatestUpgradeLog(ctx, sn, fw.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,10 +229,10 @@ func TestCheckCampaignUpgrade_AlreadyOnTargetVersion_Skips(t *testing.T) {
 		Version:   fw.BuildVersion, // Already on target
 	}
 
-	testApi.checkCampaignUpgrade(ctx, device)
+	testApi.checkCampaignUpgrade(ctx, testTenantDB, device, "test")
 
 	// No upgrade log should be created
-	_, err := testApi.db.GetLatestUpgradeLog(ctx, sn, fw.ID)
+	_, err := testTenantDB.GetLatestUpgradeLog(ctx, sn, fw.ID)
 	if err == nil {
 		t.Error("Expected no upgrade log for device already on target version, but one was created")
 	}

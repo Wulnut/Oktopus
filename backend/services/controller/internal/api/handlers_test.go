@@ -42,6 +42,11 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 	d := db.NewDatabase(ctx, mongoURI)
 
+	if err := d.ProvisionTenantDBs(ctx, "test"); err != nil {
+		fmt.Printf("Failed to provision tenant DBs: %v\n", err)
+		os.Exit(1)
+	}
+
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		fmt.Printf("Cannot connect to NATS at %s: %v\n", natsURL, err)

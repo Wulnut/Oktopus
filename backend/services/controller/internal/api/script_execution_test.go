@@ -23,7 +23,7 @@ func createTestScript(t *testing.T, steps []db.ScriptStep) db.Script {
 		Steps:       steps,
 		Tags:        []string{"test"},
 	}
-	created, err := testApi.db.CreateScript(context.Background(), s)
+	created, err := testTenantDB.CreateScript(context.Background(), s)
 	if err != nil {
 		t.Fatal(err)
 	}

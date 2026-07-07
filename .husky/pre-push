@@ -1,0 +1,21 @@
+#!/bin/sh
+# Block direct pushes to main; use merge requests instead.
+set -eu
+
+protected_branch="main"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/$protected_branch" ]; then
+    cat >&2 <<EOF
+Refusing push to ${protected_branch}.
+
+Use a feature branch and merge request instead.
+To bypass (maintainers only): ALLOW_MAIN_PUSH=1 git push ...
+EOF
+    if [ "${ALLOW_MAIN_PUSH:-0}" != "1" ]; then
+      exit 1
+    fi
+  fi
+done
+
+exit 0
