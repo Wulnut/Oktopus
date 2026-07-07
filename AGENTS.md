@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -104,12 +104,12 @@ Individual services also have their own `Makefile` in their `build/` subdirector
 
 ### Multi-Tenancy Model
 
-| Term | Role | Level | Description |
-|------|------|-------|-------------|
-| **Provider** | SEI | — | Platform owner, operates Oktopus |
-| **SuperAdmin** | Provider user | 0 | Full platform access, can enter any tenant |
-| **TenantAdmin** | ISP admin | 1 | Manages users and resources within their tenant |
-| **Operator** | ISP user | 2 | Day-to-day device management within tenant |
+| Term            | Role          | Level | Description                                     |
+| --------------- | ------------- | ----- | ----------------------------------------------- |
+| **Provider**    | SEI           | —     | Platform owner, operates Oktopus                |
+| **SuperAdmin**  | Provider user | 0     | Full platform access, can enter any tenant      |
+| **TenantAdmin** | ISP admin     | 1     | Manages users and resources within their tenant |
+| **Operator**    | ISP user      | 2     | Day-to-day device management within tenant      |
 
 Higher level number = lower privilege. Levels are stored in `User.Level` and carried in JWT claims.
 
@@ -269,14 +269,14 @@ Container images are prefixed with the tenant slug: `<tenant_slug>/<name>:<tag>`
 
 All scripts are in `deploy/compose/`:
 
-| Script | Purpose |
-|--------|---------|
-| `build.sh` | Build all images from source. Accepts service names: `./build.sh controller` |
-| `run.sh` | Deploy using locally built images |
-| `run_debug.sh` | Deploy with frontend hot-reload |
-| `stop.sh` | Stop all services |
-| `package.sh` | Create offline deployment archive (`oktopus-deploy.tar.gz`) |
-| `image-deploy.sh` | Build, verify, save, scp, and deploy individual service images |
+| Script            | Purpose                                                                      |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `build.sh`        | Build all images from source. Accepts service names: `./build.sh controller` |
+| `run.sh`          | Deploy using locally built images                                            |
+| `run_debug.sh`    | Deploy with frontend hot-reload                                              |
+| `stop.sh`         | Stop all services                                                            |
+| `package.sh`      | Create offline deployment archive (`oktopus-deploy.tar.gz`)                  |
+| `image-deploy.sh` | Build, verify, save, scp, and deploy individual service images               |
 
 ### Build & Test Rules
 

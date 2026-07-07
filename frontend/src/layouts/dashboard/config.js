@@ -20,6 +20,7 @@ import CubeTransparentIcon from '@heroicons/react/24/outline/CubeTransparentIcon
 import EnvelopeIconOutline from '@heroicons/react/24/outline/EnvelopeIcon';
 import ClockIcon from '@heroicons/react/24/outline/ClockIcon';
 import BuildingOfficeIcon from '@heroicons/react/24/solid/BuildingOfficeIcon';
+import ShieldCheckIcon from '@heroicons/react/24/solid/ShieldCheckIcon';
 
 const uspDeviceSubItems = (protocol, deviceID) => [
   {
@@ -143,6 +144,15 @@ export const items = [
     icon: (
       <SvgIcon fontSize="small">
         <KeyIcon />
+      </SvgIcon>
+    )
+  },
+  {
+    title: 'ONT Lock',
+    path: '/ont-lock',
+    icon: (
+      <SvgIcon fontSize="small">
+        <ShieldCheckIcon />
       </SvgIcon>
     )
   },

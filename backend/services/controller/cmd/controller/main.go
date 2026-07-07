@@ -35,7 +35,10 @@ func main() {
 	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, &database, c.Controller.ControllerId)
 
 	a := api.NewApi(c, js, nc, bridge, database)
+	api.InitLockScaleAdapters(c.LockScale)
 	a.StartApi()
+	a.StartLockEngine()
+	a.StartLockRetryScheduler()
 	a.StartCampaignEngine()
 	a.StartCampaignScheduler()
 

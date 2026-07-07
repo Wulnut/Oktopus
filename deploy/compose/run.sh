@@ -5,4 +5,4 @@ cd "$(dirname "$0")"
 ./generate-secrets.sh
 
 COMPOSE_PROFILES=nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,portainer,registry \
-  docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d
+  docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up -d --remove-orphans

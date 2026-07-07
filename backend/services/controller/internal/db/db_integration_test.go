@@ -156,6 +156,105 @@ func TestDeleteFirmware_CampaignsNotCleaned(t *testing.T) {
 	}
 }
 
+// --- ONT lock policy CRUD ---
+
+func TestLockPolicyUpsert_MutualExclusionBySN(t *testing.T) {
+	ctx := context.Background()
+	sn := fmt.Sprintf("LOCK-%d", time.Now().UnixNano())
+
+	_, err := testTDB.UpsertLockPolicy(ctx, LockPolicy{
+		SN:             sn,
+		PolicyType:     LockPolicyWhitelist,
+		AllowedIPRange: "10.10.0.0/16",
+		Status:         true,
+	})
+	if err != nil {
+		t.Fatalf("create whitelist policy: %v", err)
+	}
+
+	_, err = testTDB.UpsertLockPolicy(ctx, LockPolicy{
+		SN:          sn,
+		PolicyType:  LockPolicyBlacklist,
+		ReasonCode:  "lost",
+		Description: "reported lost",
+		Status:      true,
+	})
+	if err != nil {
+		t.Fatalf("replace with blacklist policy: %v", err)
+	}
+
+	got, err := testTDB.GetLockPolicy(ctx, sn)
+	if err != nil {
+		t.Fatalf("get lock policy: %v", err)
+	}
+	if got.PolicyType != LockPolicyBlacklist {
+		t.Fatalf("expected blacklist to replace whitelist for same SN, got %s", got.PolicyType)
+	}
+
+	policies, err := testTDB.ListLockPolicies(ctx, "")
+	if err != nil {
+		t.Fatalf("list lock policies: %v", err)
+	}
+	count := 0
+	for _, policy := range policies {
+		if policy.SN == NormalizeSN(sn) {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected one active policy for SN %s, got %d", sn, count)
+	}
+}
+
+func TestLockPolicyTenantIsolation_AllowsSameSNInDifferentTenants(t *testing.T) {
+	ctx := context.Background()
+	otherSlug := fmt.Sprintf("lock_other_%d", time.Now().UnixNano())
+	if err := testDB.ProvisionTenantDBs(ctx, otherSlug); err != nil {
+		t.Fatalf("provision other tenant: %v", err)
+	}
+	defer testDB.DropTenantDBs(ctx, otherSlug)
+
+	otherTDB := testDB.ForTenant(otherSlug)
+	sn := fmt.Sprintf("TENANT-%d", time.Now().UnixNano())
+
+	_, err := testTDB.UpsertLockPolicy(ctx, LockPolicy{
+		SN:             sn,
+		PolicyType:     LockPolicyWhitelist,
+		AllowedIPRange: "10.10.0.0/16",
+		Status:         true,
+	})
+	if err != nil {
+		t.Fatalf("create policy in first tenant: %v", err)
+	}
+
+	_, err = otherTDB.UpsertLockPolicy(ctx, LockPolicy{
+		SN:          sn,
+		PolicyType:  LockPolicyBlacklist,
+		ReasonCode:  "lost",
+		Description: "reported lost",
+		Status:      true,
+	})
+	if err != nil {
+		t.Fatalf("create policy in second tenant: %v", err)
+	}
+
+	first, err := testTDB.GetLockPolicy(ctx, sn)
+	if err != nil {
+		t.Fatalf("get first tenant policy: %v", err)
+	}
+	second, err := otherTDB.GetLockPolicy(ctx, sn)
+	if err != nil {
+		t.Fatalf("get second tenant policy: %v", err)
+	}
+
+	if first.PolicyType != LockPolicyWhitelist {
+		t.Fatalf("expected first tenant whitelist, got %s", first.PolicyType)
+	}
+	if second.PolicyType != LockPolicyBlacklist {
+		t.Fatalf("expected second tenant blacklist, got %s", second.PolicyType)
+	}
+}
+
 // --- Campaign CRUD ---
 
 func TestCreateAndGetCampaign(t *testing.T) {

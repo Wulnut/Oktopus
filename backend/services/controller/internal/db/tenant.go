@@ -55,18 +55,18 @@ type TenantDB struct {
 
 // --- Collection accessors ---
 
-func (t *TenantDB) Templates() *mongo.Collection   { return t.General.Collection("templates") }
-func (t *TenantDB) Firmware() *mongo.Collection     { return t.General.Collection("firmware") }
-func (t *TenantDB) Scripts() *mongo.Collection      { return t.General.Collection("scripts") }
-func (t *TenantDB) ScriptExecs() *mongo.Collection  { return t.General.Collection("script_executions") }
-func (t *TenantDB) MassActions() *mongo.Collection  { return t.General.Collection("mass_actions") }
-func (t *TenantDB) DeviceInfo() *mongo.Collection   { return t.General.Collection("device_info") }
-func (t *TenantDB) Campaigns() *mongo.Collection    { return t.General.Collection("campaigns") }
-func (t *TenantDB) FWPolicies() *mongo.Collection   { return t.General.Collection("fw_policies") }
-func (t *TenantDB) UpgradeLogs() *mongo.Collection  { return t.General.Collection("upgrade_logs") }
-func (t *TenantDB) Messages() *mongo.Collection     { return t.Usp.Collection("messages") }
+func (t *TenantDB) Templates() *mongo.Collection      { return t.General.Collection("templates") }
+func (t *TenantDB) Firmware() *mongo.Collection       { return t.General.Collection("firmware") }
+func (t *TenantDB) Scripts() *mongo.Collection        { return t.General.Collection("scripts") }
+func (t *TenantDB) ScriptExecs() *mongo.Collection    { return t.General.Collection("script_executions") }
+func (t *TenantDB) MassActions() *mongo.Collection    { return t.General.Collection("mass_actions") }
+func (t *TenantDB) DeviceInfo() *mongo.Collection     { return t.General.Collection("device_info") }
+func (t *TenantDB) Campaigns() *mongo.Collection      { return t.General.Collection("campaigns") }
+func (t *TenantDB) FWPolicies() *mongo.Collection     { return t.General.Collection("fw_policies") }
+func (t *TenantDB) UpgradeLogs() *mongo.Collection    { return t.General.Collection("upgrade_logs") }
+func (t *TenantDB) Messages() *mongo.Collection       { return t.Usp.Collection("messages") }
 func (t *TenantDB) MessagesErrors() *mongo.Collection { return t.Usp.Collection("messages_errors") }
-func (t *TenantDB) Metrics() *mongo.Collection       { return t.Usp.Collection("device_metrics") }
+func (t *TenantDB) Metrics() *mongo.Collection        { return t.Usp.Collection("device_metrics") }
 
 // --- ForTenant returns a TenantDB scoped to a given tenant slug ---
 
@@ -290,6 +290,66 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("upgrade_logs indexes: %w", err)
+	}
+
+	// ONT lock policies: SN is the primary mutual-exclusion key for blacklist/whitelist.
+	_, err = tdb.LockPolicies().Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "sn", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "policy_type", Value: 1}, {Key: "status", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "updated_at", Value: -1}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("device_lock_policy indexes: %w", err)
+	}
+
+	_, err = tdb.UnauthorizedDevices().Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "sn", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "last_seen", Value: -1}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("lock_unauthorized_devices indexes: %w", err)
+	}
+
+	_, err = tdb.LockCommands().Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "command_id", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "created_at", Value: -1}},
+		},
+		{
+			Keys:    bson.D{{Key: "created_at", Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(7776000), // 90 days
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("lock_command_attempts indexes: %w", err)
+	}
+
+	_, err = tdb.LockAuditLogs().Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "sn", Value: 1}, {Key: "created_at", Value: -1}},
+		},
+		{
+			Keys:    bson.D{{Key: "created_at", Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(7776000), // 90 days
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("lock_audit_logs indexes: %w", err)
 	}
 
 	// --- usp database collections ---

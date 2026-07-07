@@ -26,6 +26,10 @@ type Api struct {
 	ctx                       context.Context
 	campaignSchedulerEnabled  bool
 	campaignSchedulerInterval time.Duration
+	lockRetryEnabled          bool
+	lockRetryInterval         time.Duration
+	lockCommandTimeout        time.Duration
+	lockMaxAttempts           int
 }
 
 const REQUEST_TIMEOUT = time.Second * 30
@@ -40,6 +44,10 @@ func NewApi(c *config.Config, js jetstream.JetStream, nc *nats.Conn, bridge brid
 		db:                        d,
 		campaignSchedulerEnabled:  c.CampaignScheduler.Enabled,
 		campaignSchedulerInterval: c.CampaignScheduler.Interval,
+		lockRetryEnabled:          c.LockRetryScheduler.Enabled,
+		lockRetryInterval:         c.LockRetryScheduler.Interval,
+		lockCommandTimeout:        c.LockRetryScheduler.CommandTimeout,
+		lockMaxAttempts:           c.LockRetryScheduler.MaxAttempts,
 	}
 }
 
@@ -178,6 +186,22 @@ func (a *Api) StartApi() {
 	campaigns.HandleFunc("/{id}", a.updateCampaign).Methods("PUT")
 	campaigns.HandleFunc("/{id}", a.deleteCampaign).Methods("DELETE")
 	campaigns.HandleFunc("/{id}/logs", a.campaignUpgradeLogs).Methods("GET")
+
+	// ONT Lock / Device admission control
+	lock := tenantRouter.PathPrefix("/lock").Subrouter()
+	lock.HandleFunc("/policies", a.listLockPolicies).Methods("GET")
+	lock.HandleFunc("/whitelist", a.upsertWhitelistPolicy).Methods("POST")
+	lock.HandleFunc("/whitelist/batch", a.batchWhitelistPolicies).Methods("POST")
+	lock.HandleFunc("/blacklist", a.upsertBlacklistPolicy).Methods("POST")
+	lock.HandleFunc("/blacklist/batch", a.batchBlacklistPolicies).Methods("POST")
+	lock.HandleFunc("/policies/{sn}", a.deleteLockPolicy).Methods("DELETE")
+	lock.HandleFunc("/blacklist/{sn}", a.deleteLockPolicy).Methods("DELETE")
+	lock.HandleFunc("/config", a.getLockConfig).Methods("GET")
+	lock.HandleFunc("/config", a.updateLockConfig).Methods("PUT")
+	lock.HandleFunc("/unauthorized", a.listUnauthorizedDevices).Methods("GET")
+	lock.HandleFunc("/unauthorized/batch-whitelist", a.batchWhitelistFromUnauthorized).Methods("POST")
+	lock.HandleFunc("/commands", a.listLockCommands).Methods("GET")
+	lock.HandleFunc("/audit", a.listLockAuditLogs).Methods("GET")
 
 	// Mass actions
 	mass := tenantRouter.PathPrefix("/mass-actions").Subrouter()

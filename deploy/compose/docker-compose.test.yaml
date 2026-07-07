@@ -1,3 +1,5 @@
+name: oktopus-test
+
 services:
   mongo_test:
     image: mongo:7.0

@@ -40,12 +40,31 @@ type CampaignScheduler struct {
 	Interval time.Duration
 }
 
+type LockScale struct {
+	RedisURL      string
+	RedisEnabled  bool
+	KafkaBrokers  string
+	KafkaTopic    string
+	KafkaEnabled  bool
+	GreenplumDSN  string
+	GreenplumEnabled bool
+}
+
+type LockRetryScheduler struct {
+	Enabled       bool
+	Interval      time.Duration
+	CommandTimeout time.Duration
+	MaxAttempts   int
+}
+
 type Config struct {
-	RestApi           RestApi
-	Nats              Nats
-	Mongo             Mongo
-	Controller        Controller
-	CampaignScheduler CampaignScheduler
+	RestApi            RestApi
+	Nats               Nats
+	Mongo              Mongo
+	Controller         Controller
+	CampaignScheduler  CampaignScheduler
+	LockScale          LockScale
+	LockRetryScheduler LockRetryScheduler
 }
 
 type Tls struct {
@@ -70,6 +89,17 @@ func NewConfig() *Config {
 	controllerId := flag.String("controller_id", lookupEnvOrString("CONTROLLER_ID", "oktopusController"), "usp controller endpoint id")
 	campaignSchedulerEnabled := flag.Bool("campaign_scheduler_enabled", lookupEnvOrBool("CAMPAIGN_SCHEDULER_ENABLED", true), "enable automatic campaign batch at time window start")
 	campaignSchedulerIntervalSec := flag.Int("campaign_scheduler_interval_sec", lookupEnvOrInt("CAMPAIGN_SCHEDULER_INTERVAL_SEC", 60), "campaign scheduler tick interval in seconds (min 30)")
+	lockRedisURL := flag.String("lock_redis_url", lookupEnvOrString("LOCK_REDIS_URL", ""), "redis URL for optional lock policy cache")
+	lockRedisEnabled := flag.Bool("lock_redis_enabled", lookupEnvOrBool("LOCK_REDIS_ENABLED", false), "enable redis lock policy cache")
+	lockKafkaBrokers := flag.String("lock_kafka_brokers", lookupEnvOrString("LOCK_KAFKA_BROKERS", ""), "comma-separated kafka brokers for lock audit stream")
+	lockKafkaTopic := flag.String("lock_kafka_topic", lookupEnvOrString("LOCK_KAFKA_AUDIT_TOPIC", "ont-lock-audit"), "kafka topic for lock audit events")
+	lockKafkaEnabled := flag.Bool("lock_kafka_enabled", lookupEnvOrBool("LOCK_KAFKA_ENABLED", false), "enable kafka lock audit producer")
+	lockGreenplumDSN := flag.String("lock_greenplum_dsn", lookupEnvOrString("LOCK_GREENPLUM_DSN", ""), "postgres/greenplum DSN for lock audit sink")
+	lockGreenplumEnabled := flag.Bool("lock_greenplum_enabled", lookupEnvOrBool("LOCK_GREENPLUM_ENABLED", false), "enable greenplum lock audit sink")
+	lockRetryEnabled := flag.Bool("lock_retry_scheduler_enabled", lookupEnvOrBool("LOCK_RETRY_SCHEDULER_ENABLED", true), "enable lock command retry scheduler")
+	lockRetryIntervalSec := flag.Int("lock_retry_scheduler_interval_sec", lookupEnvOrInt("LOCK_RETRY_SCHEDULER_INTERVAL_SEC", 30), "lock retry scheduler tick interval in seconds (min 15)")
+	lockCommandTimeoutSec := flag.Int("lock_command_timeout_sec", lookupEnvOrInt("LOCK_COMMAND_TIMEOUT_SEC", 30), "minimum age before retrying a failed lock command")
+	lockMaxAttempts := flag.Int("lock_command_max_attempts", lookupEnvOrInt("LOCK_COMMAND_MAX_ATTEMPTS", 10), "maximum lock command delivery attempts per command record")
 	flHelp := flag.Bool("help", false, "Help")
 
 	/*
@@ -114,6 +144,21 @@ func NewConfig() *Config {
 		CampaignScheduler: CampaignScheduler{
 			Enabled:  *campaignSchedulerEnabled,
 			Interval: time.Duration(*campaignSchedulerIntervalSec) * time.Second,
+		},
+		LockScale: LockScale{
+			RedisURL:         *lockRedisURL,
+			RedisEnabled:     *lockRedisEnabled,
+			KafkaBrokers:     *lockKafkaBrokers,
+			KafkaTopic:       *lockKafkaTopic,
+			KafkaEnabled:     *lockKafkaEnabled,
+			GreenplumDSN:     *lockGreenplumDSN,
+			GreenplumEnabled: *lockGreenplumEnabled,
+		},
+		LockRetryScheduler: LockRetryScheduler{
+			Enabled:        *lockRetryEnabled,
+			Interval:       time.Duration(*lockRetryIntervalSec) * time.Second,
+			CommandTimeout: time.Duration(*lockCommandTimeoutSec) * time.Second,
+			MaxAttempts:    *lockMaxAttempts,
 		},
 	}
 }
