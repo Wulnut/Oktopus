@@ -212,8 +212,8 @@ deploy:staging:
       DEPLOY_DIR="${DEPLOY_DIR:-/root/oktopus/deploy/compose}"
       SSH_OPTS="-i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new"
       tar czf /tmp/compose.tgz -C deploy/compose \
-        --exclude='.env.*' --exclude='*_data' --exclude='images' --exclude='firmwares' \
-        docker-compose.yaml ci-deploy.sh generate-secrets.sh nginx.conf nats_config container-upload-service registry-certs-generator
+        --exclude='.env.*' --exclude='*_data' --exclude='firmwares' \
+        docker-compose.yaml ci-deploy.sh generate-secrets.sh nginx.conf nats_config container-upload-service registry-certs-generator images/logo.png
       scp $SSH_OPTS /tmp/compose.tgz "${REMOTE}:/tmp/compose.tgz"
       ssh $SSH_OPTS "${REMOTE}" \
         "mkdir -p '${DEPLOY_DIR}' && \
