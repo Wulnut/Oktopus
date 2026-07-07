@@ -191,7 +191,7 @@ build:images:
 
 # ---------------------------------------------------------------------------
 # Deploy — SSH to 192.168.0.106, pull images, restart compose stack
-# Requires CI/CD variables: DEPLOY_DEV_SSH_KEY (File), DEPLOY_DEV_HOST, DEPLOY_DEV_USER
+# Requires CI/CD variables: DEPLOY_DEV_SSH_KEY (base64-encoded Variable), DEPLOY_DEV_HOST, DEPLOY_DEV_USER
 # ---------------------------------------------------------------------------
 deploy:staging:
   stage: deploy
@@ -204,11 +204,7 @@ deploy:staging:
     - apt-get update -qq && apt-get install -y -qq openssh-client tar > /dev/null
     - mkdir -p ~/.ssh
     - |
-      if [ -f "$DEPLOY_DEV_SSH_KEY" ]; then
-        cp "$DEPLOY_DEV_SSH_KEY" ~/.ssh/id_deploy
-      else
-        printf '%s\n' "$DEPLOY_DEV_SSH_KEY" > ~/.ssh/id_deploy
-      fi
+      echo "$DEPLOY_DEV_SSH_KEY" | base64 -d > ~/.ssh/id_deploy
     - chmod 400 ~/.ssh/id_deploy
   script:
     - |
