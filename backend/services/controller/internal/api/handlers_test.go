@@ -313,8 +313,12 @@ func TestLogin_ValidCredentials_ReturnsToken(t *testing.T) {
 		t.Errorf("Login expected 200, got %d: %s", w.Code, w.Body.String())
 		return
 	}
-	if !strings.Contains(w.Body.String(), "token") {
-		t.Error("Login response does not contain token")
+	var token string
+	if err := json.Unmarshal(w.Body.Bytes(), &token); err != nil {
+		t.Fatalf("Login response is not a JSON-encoded JWT string: %v", err)
+	}
+	if token == "" || !strings.HasPrefix(token, "eyJ") {
+		t.Errorf("Login response does not contain a valid JWT, got: %q", token)
 	}
 }
 
