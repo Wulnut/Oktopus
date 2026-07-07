@@ -202,25 +202,24 @@ deploy:staging:
     - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
   before_script:
     - apt-get update -qq && apt-get install -y -qq openssh-client tar > /dev/null
-    - eval $(ssh-agent -s)
+    - mkdir -p ~/.ssh
     - |
       if [ -f "$SSH_PRIVATE_KEY" ]; then
-        chmod 400 "$SSH_PRIVATE_KEY"
-        ssh-add "$SSH_PRIVATE_KEY"
+        cp "$SSH_PRIVATE_KEY" ~/.ssh/id_deploy
       else
-        echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+        printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
       fi
-    - mkdir -p ~/.ssh
+    - chmod 400 ~/.ssh/id_deploy
   script:
     - |
       REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
       DEPLOY_DIR="${DEPLOY_DIR:-/root/oktopus/deploy/compose}"
-      # Sync compose config to .106 via tar (no GitLab credentials needed there)
+      SSH_OPTS="-i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new"
       tar czf /tmp/compose.tgz -C deploy/compose \
         --exclude='.env.*' --exclude='*_data' --exclude='images' --exclude='firmwares' \
         docker-compose.yaml ci-deploy.sh generate-secrets.sh nginx.conf nats_config container-upload-service registry-certs-generator
-      scp -o StrictHostKeyChecking=accept-new /tmp/compose.tgz "${REMOTE}:/tmp/compose.tgz"
-      ssh -o StrictHostKeyChecking=accept-new "${REMOTE}" \
+      scp $SSH_OPTS /tmp/compose.tgz "${REMOTE}:/tmp/compose.tgz"
+      ssh $SSH_OPTS "${REMOTE}" \
         "mkdir -p '${DEPLOY_DIR}' && \
          tar xzf /tmp/compose.tgz -C '${DEPLOY_DIR}' && \
          chmod +x '${DEPLOY_DIR}/ci-deploy.sh' && \
