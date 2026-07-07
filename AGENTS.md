@@ -277,6 +277,9 @@ All scripts are in `deploy/compose/`:
 | `stop.sh`         | Stop all services                                                            |
 | `package.sh`      | Create offline deployment archive (`oktopus-deploy.tar.gz`)                  |
 | `image-deploy.sh` | Build, verify, save, scp, and deploy individual service images               |
+| `prod-export.sh`  | Export images + config from registry to `oktopus-prod.tar.gz` for production |
+| `prod-init.sh`    | One-time server init: swap, docker group, deploy dir                         |
+| `prod-deploy.sh`  | Load images and start compose stack on production server                     |
 
 ### Build & Test Rules
 

@@ -1,0 +1,21 @@
+# Production overlay for low-memory VMs (e.g. GCP e2-medium with ~2GB RAM).
+# Usage:
+#   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml --profile <profiles> up -d
+#
+# Optimizations:
+#   - MongoDB WiredTiger cache capped at 0.25GB (default uses 50% of RAM)
+#   - Frontend Node.js heap capped at 256MB
+#   - NATS JetStream memory storage disabled (disk-only)
+
+services:
+  mongo_usp:
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
+
+  frontend:
+    environment:
+      - NODE_ENV=production
+      - NODE_OPTIONS=--max-old-space-size=256
+
+  msg_broker:
+    environment:
+      - JETSTREAM_MAX_MEMORY=0

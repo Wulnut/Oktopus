@@ -25,7 +25,6 @@ stages:
   - test-unit
   - test-integration
   - build
-  - deploy
 
 .test_artifacts:
   artifacts:
@@ -190,35 +189,3 @@ build:images:
     - ./deploy/compose/ci-build.sh
 
 # ---------------------------------------------------------------------------
-# Deploy — SSH to 192.168.0.106, pull images, restart compose stack
-# Requires CI/CD variables: DEPLOY_DEV_SSH_KEY (base64-encoded Variable), DEPLOY_DEV_HOST, DEPLOY_DEV_USER
-# ---------------------------------------------------------------------------
-deploy:staging:
-  stage: deploy
-  image: debian:bookworm-slim
-  needs:
-    - build:images
-  rules:
-    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq openssh-client tar > /dev/null
-    - mkdir -p ~/.ssh
-    - |
-      echo "$DEPLOY_DEV_SSH_KEY" | base64 -d > ~/.ssh/id_deploy
-    - chmod 400 ~/.ssh/id_deploy
-  script:
-    - |
-      REMOTE="${DEPLOY_DEV_USER}@${DEPLOY_DEV_HOST}"
-      DEPLOY_DIR="${DEPLOY_DIR:-/root/oktopus/deploy/compose}"
-      SSH_OPTS="-i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new"
-      tar czf /tmp/compose.tgz -C deploy/compose \
-        --exclude='.env.*' --exclude='*_data' --exclude='firmwares' \
-        docker-compose.yaml ci-deploy.sh generate-secrets.sh nginx.conf nats_config container-upload-service registry-certs-generator images/logo.png
-      scp $SSH_OPTS /tmp/compose.tgz "${REMOTE}:/tmp/compose.tgz"
-      ssh $SSH_OPTS "${REMOTE}" \
-        "mkdir -p '${DEPLOY_DIR}' && \
-         tar xzf /tmp/compose.tgz -C '${DEPLOY_DIR}' && \
-         chmod +x '${DEPLOY_DIR}/ci-deploy.sh' && \
-         cd '${DEPLOY_DIR}' && \
-         CI_REGISTRY='${CI_REGISTRY}' CI_REGISTRY_USER='${CI_REGISTRY_USER}' CI_REGISTRY_PASSWORD='${CI_REGISTRY_PASSWORD}' \
-         ./ci-deploy.sh '${CI_REGISTRY_IMAGE}' '${CI_COMMIT_SHORT_SHA}'"
