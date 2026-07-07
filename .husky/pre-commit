@@ -1,0 +1,9 @@
+#!/bin/sh
+# Lightweight pre-commit checks (full tests run in GitLab CI).
+set -eu
+
+if [ -d frontend/node_modules ]; then
+  (cd frontend && npm run lint)
+else
+  echo "skip frontend lint: run 'cd frontend && npm install' to enable pre-commit lint"
+fi

@@ -1,0 +1,165 @@
+# Oktopus CI — 8 test jobs; unit tests parallel, integration after unit (parallel).
+# Local tests: deploy/compose/docker-compose.test.yaml
+# Runner tag: oktopus-docker
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\[skip ci\]/i
+      when: never
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH =~ /^telkomsel\//
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+default:
+  tags:
+    - oktopus-docker
+
+variables:
+  GOPROXY: "https://goproxy.cn,direct"
+  MONGO_TEST_URI: "mongodb://mongo_test:27017"
+  NATS_TEST_URL: "nats://nats_test:4222"
+  CI_GOLANG_IMAGE: "golang:1.23"
+  CI_NODE_IMAGE: "node:22-alpine"
+
+stages:
+  - test-unit
+  - test-integration
+
+.test_artifacts:
+  artifacts:
+    when: always
+    paths:
+      - test-reports/
+    expire_in: 1 week
+
+.go_job:
+  image: $CI_GOLANG_IMAGE
+  before_script:
+    - mkdir -p test-reports
+    - go install github.com/jstemmer/go-junit-report/v2@latest
+    - |
+      go_test_report() {
+        set -o pipefail
+        local log="$CI_PROJECT_DIR/$1"
+        local junit="$CI_PROJECT_DIR/$2"
+        shift 2
+        "$@" 2>&1 | tee "$log" | go-junit-report -set-exit-code > "$junit"
+      }
+  artifacts:
+    when: always
+    paths:
+      - test-reports/
+    reports:
+      junit: $JUNIT_REPORT
+    expire_in: 1 week
+
+.node_job:
+  image: $CI_NODE_IMAGE
+  before_script:
+    - mkdir -p test-reports
+  extends: .test_artifacts
+
+# ---------------------------------------------------------------------------
+# Unit tests — 5 jobs in parallel (stage: test-unit)
+# ---------------------------------------------------------------------------
+test:unit:controller:
+  extends: .go_job
+  stage: test-unit
+  variables:
+    JUNIT_REPORT: test-reports/test-controller-unit-junit.xml
+  script:
+    - go_test_report test-reports/test-controller-unit.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller && go test -v -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/'
+
+test:unit:acs:
+  extends: .go_job
+  stage: test-unit
+  variables:
+    JUNIT_REPORT: test-reports/test-acs-junit.xml
+  script:
+    - go_test_report test-reports/test-acs.log "$JUNIT_REPORT" bash -c 'cd backend/services/acs && go test -race -v -count=1 ./internal/server/handler/'
+
+test:unit:adapter:
+  extends: .go_job
+  stage: test-unit
+  variables:
+    JUNIT_REPORT: test-reports/test-adapter-junit.xml
+  script:
+    - go_test_report test-reports/test-adapter.log "$JUNIT_REPORT" bash -c 'cd backend/services/mtp/adapter && go test -v -count=1 ./internal/events/usp_handler/'
+
+test:unit:infra:
+  extends: .go_job
+  stage: test-unit
+  variables:
+    JUNIT_REPORT: test-reports/test-infra-junit.xml
+  script:
+    - go_test_report test-reports/test-infra.log "$JUNIT_REPORT" bash -c 'cd deploy/tests && PROJECT_ROOT="$CI_PROJECT_DIR" go test -v -count=1 ./...'
+
+test:unit:frontend:
+  extends: .node_job
+  stage: test-unit
+  script:
+    - cd "$CI_PROJECT_DIR/frontend" && npm ci && JEST_JUNIT_OUTPUT_FILE="$CI_PROJECT_DIR/test-reports/frontend-junit.xml" npm test -- --verbose --ci --reporters=default --reporters=jest-junit | tee "$CI_PROJECT_DIR/test-reports/test-frontend.log"
+  artifacts:
+    when: always
+    paths:
+      - test-reports/
+    reports:
+      junit: test-reports/frontend-junit.xml
+    expire_in: 1 week
+
+# ---------------------------------------------------------------------------
+# Integration tests — 3 jobs in parallel after all unit tests pass
+# ---------------------------------------------------------------------------
+.test_integration_needs:
+  needs:
+    - test:unit:controller
+    - test:unit:acs
+    - test:unit:adapter
+    - test:unit:infra
+    - test:unit:frontend
+
+test:integration:db:
+  extends:
+    - .go_job
+    - .test_integration_needs
+  stage: test-integration
+  variables:
+    JUNIT_REPORT: test-reports/test-db-junit.xml
+  services:
+    - name: mongo:7.0
+      alias: mongo_test
+  script:
+    - sleep 3
+    - go_test_report test-reports/test-db.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=60s ./internal/db/'
+
+test:integration:bridge:
+  extends:
+    - .go_job
+    - .test_integration_needs
+  stage: test-integration
+  variables:
+    JUNIT_REPORT: test-reports/test-bridge-junit.xml
+  services:
+    - name: nats:2.10
+      alias: nats_test
+      command: ["--js"]
+  script:
+    - sleep 3
+    - go_test_report test-reports/test-bridge.log "$JUNIT_REPORT" bash -c "cd backend/services/controller && go test -v -count=1 -timeout=120s -run 'TestNatsUspInteraction_SingleRequest_Success|TestNatsUspInteraction_Timeout' ./internal/bridge/"
+
+test:integration:handlers:
+  extends:
+    - .go_job
+    - .test_integration_needs
+  stage: test-integration
+  variables:
+    JUNIT_REPORT: test-reports/test-handlers-junit.xml
+  services:
+    - name: mongo:7.0
+      alias: mongo_test
+    - name: nats:2.10
+      alias: nats_test
+      command: ["--js"]
+  script:
+    - sleep 5
+    - go_test_report test-reports/test-handlers.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/'

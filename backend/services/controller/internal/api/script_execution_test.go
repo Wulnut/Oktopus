@@ -23,7 +23,7 @@ func createTestScript(t *testing.T, steps []db.ScriptStep) db.Script {
 		Steps:       steps,
 		Tags:        []string{"test"},
 	}
-	created, err := testApi.db.CreateScript(context.Background(), s)
+	created, err := testTenantDB.CreateScript(context.Background(), s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestCreateScript_WithDelayStep_Accepted(t *testing.T) {
 		"tags": ["test"],
 		"steps": [
 			{"id": "s1", "name": "Wait", "type": "DELAY", "duration_ms": 100},
-			{"id": "s2", "name": "Get", "type": "GET", "param_paths": ["Device."]}
+			{"id": "s2", "name": "Get", "type": "GET", "param_paths": ["Device.DeviceInfo."]}
 		]
 	}`
 	req := httptest.NewRequest("POST", "/api/scripts", strings.NewReader(body))

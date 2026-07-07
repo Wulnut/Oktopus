@@ -26,6 +26,8 @@ services:
     working_dir: /app
     volumes:
       - ../../backend/services/controller:/app
+    environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
     command: go test -v -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/
     networks:
       - test_network
@@ -37,6 +39,7 @@ services:
     volumes:
       - ../../backend/services/controller:/app
     environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
       - NATS_TEST_URL=nats://nats_test:4222
     command: sh -c "sleep 3 && go test -v -count=1 -timeout=120s -run 'ConcurrentSameDevice|DoesNotTimeout|SingleRequest_Success' ./internal/bridge/"
     depends_on:
@@ -51,6 +54,7 @@ services:
     volumes:
       - ../../backend/services/controller:/app
     environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
       - MONGO_TEST_URI=mongodb://mongo_test:27017
     command: sh -c "sleep 3 && go test -v -count=1 -tags=integration -timeout=60s ./internal/db/"
     depends_on:
@@ -64,6 +68,8 @@ services:
     working_dir: /app
     volumes:
       - ../../backend/services/mtp/adapter:/app
+    environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
     command: go test -v -count=1 ./internal/events/usp_handler/
     networks:
       - test_network
@@ -74,6 +80,8 @@ services:
     working_dir: /app
     volumes:
       - ../../backend/services/acs:/app
+    environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
     command: go test -race -v -count=1 ./internal/server/handler/
     networks:
       - test_network
@@ -85,6 +93,7 @@ services:
     volumes:
       - ../../backend/services/controller:/app
     environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
       - MONGO_TEST_URI=mongodb://mongo_test:27017
       - NATS_TEST_URL=nats://nats_test:4222
     command: sh -c "sleep 3 && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/"
@@ -100,7 +109,7 @@ services:
     working_dir: /app
     volumes:
       - ../../frontend:/app
-    command: npx jest --verbose
+    command: sh -c "npm ci && npm test -- --verbose"
     networks:
       - test_network
     profiles: [unit]
@@ -112,6 +121,7 @@ services:
       - ../../deploy/tests:/app
       - ../../:/project:ro
     environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
       - PROJECT_ROOT=/project
     command: go test -v -count=1 ./...
     networks:
