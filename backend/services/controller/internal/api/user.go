@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/mail"
@@ -12,6 +13,15 @@ import (
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/utils"
 )
+
+const minPasswordLength = 8
+
+func validatePassword(password string) error {
+	if len(password) < minPasswordLength {
+		return fmt.Errorf("password must be at least %d characters", minPasswordLength)
+	}
+	return nil
+}
 
 func (a *Api) retrieveUsers(w http.ResponseWriter, r *http.Request) {
 	slug := middleware.GetTenantSlug(r)
@@ -97,13 +107,17 @@ func (a *Api) registerUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user.TenantID = tenant.ID
 
-	if err := user.HashPassword(user.Password); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+	if user.Email == "" || !valid(user.Email) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if err := validatePassword(user.Password); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	if user.Email == "" || user.Password == "" || !valid(user.Email) {
-		w.WriteHeader(http.StatusBadRequest)
+	if err := user.HashPassword(user.Password); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
@@ -224,6 +238,15 @@ func (a *Api) registerAdminUser(w http.ResponseWriter, r *http.Request) {
 			// First admin is SuperAdmin (no tenant)
 			user.Level = db.SuperAdmin
 
+			if user.Email == "" || !valid(user.Email) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if err := validatePassword(user.Password); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
 			if err := user.HashPassword(user.Password); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -260,6 +283,15 @@ func (a *Api) registerAdminUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user.Level = db.SuperAdmin
+
+	if user.Email == "" || !valid(user.Email) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if err := validatePassword(user.Password); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	if err := user.HashPassword(user.Password); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
