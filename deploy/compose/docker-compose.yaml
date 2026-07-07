@@ -252,10 +252,10 @@ services:
     profiles: [cwmp]
     restart: unless-stopped
 
- nginx:
-   image: nginx:1.27-alpine
-   container_name: nginx
-   ports:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    ports:
       - 80:80
     # Mount complete nginx.conf (includes http context + server config)
     volumes:
