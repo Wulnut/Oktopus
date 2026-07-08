@@ -9,13 +9,15 @@
 #   - compose files, nats_config, env templates, helper scripts
 #
 # Usage:
-#   ./prod-export.sh                                   # use defaults (latest tag)
-#   ./prod-export.sh <registry_image> <tag>            # specific registry + tag
-#   ./prod-export.sh <registry_image> <tag> --upload-gcs <bucket>
+#   ./prod-export.sh --local                            # export local oktopusp/*:latest
+#   ./prod-export.sh <registry_image> [tag]             # pull from registry, then export
+#   ./prod-export.sh <registry_image> [tag] --upload-gcs <bucket>
 #
 # Examples:
+#   ./prod-export.sh --local
 #   ./prod-export.sh gitlab.rrioo.com:5050/.../oktopus abc1234
 #   ./prod-export.sh gitlab.rrioo.com:5050/.../oktopus latest --upload-gcs oktopus-deploy
+#   ./prod-build-export.sh                            # build from source + --local export
 
 set -euo pipefail
 
@@ -40,34 +42,60 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 REGISTRY_IMAGE=""
 TAG="latest"
 UPLOAD_GCS=""
+LOCAL_ONLY=0
+POSITIONAL=()
 
-# Parse arguments
-if [ $# -ge 1 ]; then
-    REGISTRY_IMAGE="$1"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --local)
+            LOCAL_ONLY=1
+            shift
+            ;;
+        --upload-gcs)
+            shift
+            [ $# -ge 1 ] || die "--upload-gcs requires bucket name"
+            UPLOAD_GCS="$1"
+            shift
+            ;;
+        -*)
+            die "Unknown option: $1"
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ "${#POSITIONAL[@]}" -ge 1 ]; then
+    REGISTRY_IMAGE="${POSITIONAL[0]}"
 fi
-if [ $# -ge 2 ]; then
-    TAG="$2"
+if [ "${#POSITIONAL[@]}" -ge 2 ]; then
+    TAG="${POSITIONAL[1]}"
 fi
-if [ $# -ge 3 ] && [ "$3" = "--upload-gcs" ] && [ $# -ge 4 ]; then
-    UPLOAD_GCS="$4"
+if [ "${#POSITIONAL[@]}" -gt 2 ]; then
+    die "Unexpected arguments: ${POSITIONAL[*]}"
 fi
 
-# Fall back to CI environment variables
-if [ -z "$REGISTRY_IMAGE" ]; then
-    REGISTRY_IMAGE="${CI_REGISTRY_IMAGE:-}"
+if [ "$LOCAL_ONLY" -eq 0 ]; then
+    if [ -z "$REGISTRY_IMAGE" ]; then
+        REGISTRY_IMAGE="${CI_REGISTRY_IMAGE:-}"
+    fi
+    [ -z "$REGISTRY_IMAGE" ] && die "Usage: $0 --local
+       $0 <registry_image> [tag] [--upload-gcs <bucket>]
+Set CI_REGISTRY_IMAGE or pass --local to export oktopusp/*:latest from this machine."
+
+    REGISTRY_HOST="${REGISTRY_IMAGE%%/*}"
+    log "Registry: ${REGISTRY_IMAGE}"
+    log "Tag:      ${TAG}"
+else
+    log "Mode:     local (oktopusp/*:latest on this machine)"
 fi
-[ -z "$REGISTRY_IMAGE" ] && die "Usage: $0 <registry_image> [tag] [--upload-gcs <bucket>]
-Set CI_REGISTRY_IMAGE env var or pass registry path as first argument."
-
-REGISTRY_HOST="${REGISTRY_IMAGE%%/*}"
-
-log "Registry: ${REGISTRY_IMAGE}"
-log "Tag:      ${TAG}"
 
 # ---------------------------------------------------------------------------
 # Registry login (if credentials are available)
 # ---------------------------------------------------------------------------
-if [ -n "${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN:-}}" ]; then
+if [ "$LOCAL_ONLY" -eq 0 ] && [ -n "${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN:-}}" ]; then
     log "Docker login to ${REGISTRY_HOST}"
     echo "${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN}}" | \
       docker login "$REGISTRY_HOST" \
@@ -76,18 +104,25 @@ if [ -n "${CI_REGISTRY_PASSWORD:-${CI_JOB_TOKEN:-}}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Pull, retag, and stage images
+# Pull/retag or use local images, then stage
 # ---------------------------------------------------------------------------
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
 
 IMAGE_REFS=()
 for svc in "${SERVICES[@]}"; do
-    src="${REGISTRY_IMAGE}/${svc}:${TAG}"
     dst="oktopusp/${svc}:latest"
-    log "Pulling ${svc}"
-    docker pull "$src"
-    docker tag "$src" "$dst"
+    if [ "$LOCAL_ONLY" -eq 1 ]; then
+        if ! docker image inspect "$dst" &>/dev/null; then
+            die "Missing local image ${dst}. Run ./prod-build-export.sh or ./build.sh first."
+        fi
+        log "Using local ${svc}"
+    else
+        src="${REGISTRY_IMAGE}/${svc}:${TAG}"
+        log "Pulling ${svc}"
+        docker pull "$src"
+        docker tag "$src" "$dst"
+    fi
     IMAGE_REFS+=("$dst")
 done
 
