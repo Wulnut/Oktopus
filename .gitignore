@@ -35,3 +35,4 @@ skills-lock.json
 .serena/
 .playwright-mcp
 .codegraph
+.DS_Store
