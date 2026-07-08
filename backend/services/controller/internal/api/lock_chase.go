@@ -13,6 +13,9 @@ import (
 
 func (a *Api) chaseLockForSN(tenantSlug, sn string) {
 	go func() {
+		a.acquireLockSem()
+		defer a.releaseLockSem()
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -59,6 +62,10 @@ func (a *Api) chaseLockAfterPolicyDelete(tenantSlug, sn string) {
 	a.chaseLockForSN(tenantSlug, sn)
 }
 
+// chaseLockAfterConfigUpdate re-evaluates all currently online devices for a
+// tenant. Used after whitelist batch import (scenario 1) and config changes.
+// Each device evaluation runs concurrently with semaphore control so that a
+// large online fleet does not starve the DB connection pool.
 func (a *Api) chaseLockAfterConfigUpdate(tenantSlug string) {
 	list, err := getDevicesNoHTTP(map[string]interface{}{"status": entity.Online}, a.nc, tenantSlug)
 	if err != nil {
@@ -67,6 +74,10 @@ func (a *Api) chaseLockAfterConfigUpdate(tenantSlug string) {
 	}
 	tdb := a.db.ForTenant(tenantSlug)
 	for _, device := range list.Devices {
-		a.handleLockDeviceOnline(tdb, device, tenantSlug)
+		go func(dev entity.Device) {
+			a.acquireLockSem()
+			defer a.releaseLockSem()
+			a.handleLockDeviceOnline(tdb, dev, tenantSlug)
+		}(device)
 	}
 }

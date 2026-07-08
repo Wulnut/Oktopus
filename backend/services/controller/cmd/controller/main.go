@@ -37,6 +37,7 @@ func main() {
 	a := api.NewApi(c, js, nc, bridge, database)
 	api.InitLockScaleAdapters(c.LockScale)
 	a.StartApi()
+	a.InitLockEngine(c.LockCircuitBreaker)
 	a.StartLockEngine()
 	a.StartLockRetryScheduler()
 	a.StartCampaignEngine()

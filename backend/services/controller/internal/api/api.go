@@ -30,6 +30,8 @@ type Api struct {
 	lockRetryInterval         time.Duration
 	lockCommandTimeout        time.Duration
 	lockMaxAttempts           int
+	lockCircuitBreaker        *lockCircuitBreaker
+	lockEngineSem             chan struct{}
 }
 
 const REQUEST_TIMEOUT = time.Second * 30

@@ -1,0 +1,95 @@
+package api
+
+import (
+	"testing"
+
+	"github.com/leandrofars/oktopus/internal/entity"
+)
+
+func TestLockDeviceMTP_CwmpOnly(t *testing.T) {
+	device := entity.Device{
+		SN:   "SN-CWMP",
+		Cwmp: entity.Online,
+	}
+	if mtp := lockDeviceMTP(device); mtp != "cwmp" {
+		t.Fatalf("expected cwmp, got %s", mtp)
+	}
+}
+
+func TestLockDeviceMTP_MqttOnly(t *testing.T) {
+	device := entity.Device{
+		SN:   "SN-MQTT",
+		Mqtt: entity.Online,
+	}
+	if mtp := lockDeviceMTP(device); mtp != entity.Mqtt {
+		t.Fatalf("expected mqtt, got %s", mtp)
+	}
+}
+
+func TestLockDeviceMTP_MultiProtocol_PrefersCwmp(t *testing.T) {
+	device := entity.Device{
+		SN:   "SN-MULTI",
+		Cwmp: entity.Online,
+		Mqtt: entity.Online,
+	}
+	if mtp := lockDeviceMTP(device); mtp != "cwmp" {
+		t.Fatalf("expected cwmp preferred over mqtt, got %s", mtp)
+	}
+}
+
+func TestLockDeviceMTP_AllOffline(t *testing.T) {
+	device := entity.Device{SN: "SN-OFFLINE"}
+	if mtp := lockDeviceMTP(device); mtp != "" {
+		t.Fatalf("expected empty string for offline device, got %s", mtp)
+	}
+}
+
+func TestLockDeviceMTP_WsAndStomp(t *testing.T) {
+	device := entity.Device{
+		SN:         "SN-WS",
+		Websockets: entity.Online,
+	}
+	if mtp := lockDeviceMTP(device); mtp != entity.Websockets {
+		t.Fatalf("expected ws, got %s", mtp)
+	}
+
+	device2 := entity.Device{
+		SN:    "SN-STOMP",
+		Stomp: entity.Online,
+	}
+	if mtp := lockDeviceMTP(device2); mtp != entity.Stomp {
+		t.Fatalf("expected stomp, got %s", mtp)
+	}
+}
+
+func TestLockDeviceMTP_PriorityOrder(t *testing.T) {
+	// All transports online: CWMP should win
+	device := entity.Device{
+		SN:         "SN-ALL",
+		Cwmp:       entity.Online,
+		Mqtt:       entity.Online,
+		Websockets: entity.Online,
+		Stomp:      entity.Online,
+	}
+	if mtp := lockDeviceMTP(device); mtp != "cwmp" {
+		t.Fatalf("expected cwmp as highest priority, got %s", mtp)
+	}
+
+	// No CWMP, but MQTT + WS + STOMP: MQTT should win
+	device.Cwmp = entity.Offline
+	if mtp := lockDeviceMTP(device); mtp != entity.Mqtt {
+		t.Fatalf("expected mqtt as second priority, got %s", mtp)
+	}
+
+	// No CWMP or MQTT: WS should win
+	device.Mqtt = entity.Offline
+	if mtp := lockDeviceMTP(device); mtp != entity.Websockets {
+		t.Fatalf("expected ws as third priority, got %s", mtp)
+	}
+
+	// Only STOMP left
+	device.Websockets = entity.Offline
+	if mtp := lockDeviceMTP(device); mtp != entity.Stomp {
+		t.Fatalf("expected stomp as last priority, got %s", mtp)
+	}
+}

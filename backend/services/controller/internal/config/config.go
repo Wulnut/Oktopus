@@ -57,6 +57,12 @@ type LockRetryScheduler struct {
 	MaxAttempts   int
 }
 
+type LockCircuitBreaker struct {
+	Enabled   bool
+	Threshold int
+	WindowSec int
+}
+
 type Config struct {
 	RestApi            RestApi
 	Nats               Nats
@@ -65,6 +71,7 @@ type Config struct {
 	CampaignScheduler  CampaignScheduler
 	LockScale          LockScale
 	LockRetryScheduler LockRetryScheduler
+	LockCircuitBreaker LockCircuitBreaker
 }
 
 type Tls struct {
@@ -100,6 +107,9 @@ func NewConfig() *Config {
 	lockRetryIntervalSec := flag.Int("lock_retry_scheduler_interval_sec", lookupEnvOrInt("LOCK_RETRY_SCHEDULER_INTERVAL_SEC", 30), "lock retry scheduler tick interval in seconds (min 15)")
 	lockCommandTimeoutSec := flag.Int("lock_command_timeout_sec", lookupEnvOrInt("LOCK_COMMAND_TIMEOUT_SEC", 30), "minimum age before retrying a failed lock command")
 	lockMaxAttempts := flag.Int("lock_command_max_attempts", lookupEnvOrInt("LOCK_COMMAND_MAX_ATTEMPTS", 10), "maximum lock command delivery attempts per command record")
+	lockCircuitBreakerEnabled := flag.Bool("lock_circuit_breaker_enabled", lookupEnvOrBool("LOCK_CIRCUIT_BREAKER_ENABLED", true), "enable per-tenant lock-rate circuit breaker")
+	lockCircuitBreakerThreshold := flag.Int("lock_circuit_breaker_threshold", lookupEnvOrInt("LOCK_CIRCUIT_BREAKER_THRESHOLD", 500), "lock count that trips the circuit breaker within the window")
+	lockCircuitBreakerWindowSec := flag.Int("lock_circuit_breaker_window_sec", lookupEnvOrInt("LOCK_CIRCUIT_BREAKER_WINDOW_SEC", 60), "circuit breaker sliding window size in seconds")
 	flHelp := flag.Bool("help", false, "Help")
 
 	/*
@@ -159,6 +169,11 @@ func NewConfig() *Config {
 			Interval:       time.Duration(*lockRetryIntervalSec) * time.Second,
 			CommandTimeout: time.Duration(*lockCommandTimeoutSec) * time.Second,
 			MaxAttempts:    *lockMaxAttempts,
+		},
+		LockCircuitBreaker: LockCircuitBreaker{
+			Enabled:   *lockCircuitBreakerEnabled,
+			Threshold: *lockCircuitBreakerThreshold,
+			WindowSec: *lockCircuitBreakerWindowSec,
 		},
 	}
 }

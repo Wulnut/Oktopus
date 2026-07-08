@@ -74,6 +74,9 @@ func (a *Api) runLockRetrySchedulerForTenant(ctx context.Context, tenantSlug str
 }
 
 func (a *Api) retryLockCommand(tenantSlug string, command db.LockCommandAttempt) {
+	a.acquireLockSem()
+	defer a.releaseLockSem()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -83,17 +86,23 @@ func (a *Api) retryLockCommand(tenantSlug string, command db.LockCommandAttempt)
 		return
 	}
 
+	decision := LockDecision{
+		Status:        command.TargetStatus,
+		ShouldCommand: true,
+		CommandValue:  command.CommandValue,
+	}
+	if a.suppressLockIfBreakerTripped(ctx, tdb, tenantSlug, command.DeviceSN, decision.Status) {
+		return
+	}
+
 	attempt, err := tdb.PrepareLockCommandResend(ctx, command.ID)
 	if err != nil {
 		log.Printf("lock_retry_scheduler: tenant %s prepare retry %s: %v", tenantSlug, command.ID.Hex(), err)
 		return
 	}
+	decision.Status = attempt.TargetStatus
+	decision.CommandValue = attempt.CommandValue
 
-	decision := LockDecision{
-		Status:        attempt.TargetStatus,
-		ShouldCommand: true,
-		CommandValue:  attempt.CommandValue,
-	}
 	if err := a.deliverLockCommand(ctx, tdb, attempt, decision, tenantSlug); err != nil {
 		log.Printf("lock_retry_scheduler: tenant %s retry %s: %v", tenantSlug, attempt.DeviceSN, err)
 	}

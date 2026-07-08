@@ -157,7 +157,6 @@ func (a *Api) batchLockPolicies(w http.ResponseWriter, r *http.Request) {
 	}
 	tenantSlug := middleware.GetTenantSlug(r)
 	result := lockBatchResult{}
-	chaseSNs := make([]string, 0, len(policies))
 	for idx, policy := range policies {
 		policy.PolicyType = db.LockPolicyWhitelist
 		policy.Status = true
@@ -169,7 +168,6 @@ func (a *Api) batchLockPolicies(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = lockCache.PutLockPolicy(r.Context(), tenantSlug, created)
 		result.Created++
-		chaseSNs = append(chaseSNs, created.SN)
 		if created.PolicyType == db.LockPolicyWhitelist {
 			_ = a.tenantDB(r).DeleteUnauthorizedDevice(r.Context(), created.SN)
 		}
@@ -181,7 +179,10 @@ func (a *Api) batchLockPolicies(w http.ResponseWriter, r *http.Request) {
 			Description: created.Description,
 		})
 	}
-	a.chaseLockForSNs(tenantSlug, chaseSNs)
+	if a.lockCircuitBreaker != nil {
+		a.lockCircuitBreaker.reset(tenantSlug)
+	}
+	go a.chaseLockAfterConfigUpdate(tenantSlug)
 	status := http.StatusAccepted
 	if len(result.Errors) > 0 {
 		status = http.StatusMultiStatus
@@ -268,6 +269,9 @@ func (a *Api) updateLockConfig(w http.ResponseWriter, r *http.Request) {
 			"auto_lock_enabled": saved.AutoLockEnabled,
 		},
 	})
+	if a.lockCircuitBreaker != nil {
+		a.lockCircuitBreaker.reset(tenantSlug)
+	}
 	a.chaseLockAfterConfigUpdate(tenantSlug)
 	writeJSON(w, http.StatusOK, saved)
 }
@@ -285,7 +289,6 @@ func (a *Api) batchWhitelistFromUnauthorized(w http.ResponseWriter, r *http.Requ
 
 	tenantSlug := middleware.GetTenantSlug(r)
 	result := lockBatchResult{}
-	chaseSNs := make([]string, 0, len(req.Items))
 	removedSNs := make([]string, 0, len(req.Items))
 	for idx, item := range req.Items {
 		policy := db.LockPolicy{
@@ -306,7 +309,6 @@ func (a *Api) batchWhitelistFromUnauthorized(w http.ResponseWriter, r *http.Requ
 		}
 		_ = lockCache.PutLockPolicy(r.Context(), tenantSlug, created)
 		result.Created++
-		chaseSNs = append(chaseSNs, created.SN)
 		removedSNs = append(removedSNs, created.SN)
 		a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
 			SN:          created.SN,
@@ -319,7 +321,10 @@ func (a *Api) batchWhitelistFromUnauthorized(w http.ResponseWriter, r *http.Requ
 	if req.RemoveFromUnauthorized {
 		_ = a.tenantDB(r).DeleteUnauthorizedDevices(r.Context(), removedSNs)
 	}
-	a.chaseLockForSNs(tenantSlug, chaseSNs)
+	if a.lockCircuitBreaker != nil {
+		a.lockCircuitBreaker.reset(tenantSlug)
+	}
+	go a.chaseLockAfterConfigUpdate(tenantSlug)
 	status := http.StatusAccepted
 	if len(result.Errors) > 0 {
 		status = http.StatusMultiStatus

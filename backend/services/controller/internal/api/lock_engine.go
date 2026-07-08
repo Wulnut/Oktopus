@@ -3,14 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"strings"
 	"time"
 
-	"github.com/leandrofars/oktopus/internal/cwmp"
+	"github.com/leandrofars/oktopus/internal/config"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/entity"
 	"github.com/nats-io/nats.go"
@@ -22,6 +20,10 @@ const (
 	lockParameterPath = "Device.X_TELKOMSEL_OntLock.Lock"
 	lockWanIPPath     = "Device.X_TELKOMSEL_OntLock.InternetWanIP"
 )
+
+// lockEngineConcurrency limits simultaneous device evaluations to protect
+// the database connection pool during burst events (e.g. 10k devices online).
+const lockEngineConcurrency = 50
 
 type LockEvaluationInput struct {
 	SN         string
@@ -110,6 +112,19 @@ func ipInCIDR(ipValue, cidrValue string) bool {
 	return network.Contains(ip)
 }
 
+// InitLockEngine initializes the circuit breaker and concurrency semaphore
+// from config values. Called once during startup.
+func (a *Api) InitLockEngine(cbConfig config.LockCircuitBreaker) {
+	breaker := newLockCircuitBreaker()
+	breaker.setEnabled(cbConfig.Enabled)
+	breaker.setThreshold(cbConfig.Threshold, cbConfig.WindowSec)
+	a.lockCircuitBreaker = breaker
+
+	if a.lockEngineSem == nil {
+		a.lockEngineSem = make(chan struct{}, lockEngineConcurrency)
+	}
+}
+
 func (a *Api) StartLockEngine() {
 	sub, err := a.nc.Subscribe("device.v1.*.online", func(msg *nats.Msg) {
 		parts := strings.Split(msg.Subject, ".")
@@ -125,12 +140,33 @@ func (a *Api) StartLockEngine() {
 			log.Printf("lock_engine: failed to unmarshal device event: %v", err)
 			return
 		}
-		go a.handleLockDeviceOnline(tdb, device, tenantSlug)
+		go a.tryHandleLockDeviceOnline(tdb, device, tenantSlug)
 	})
 	if err != nil {
 		log.Printf("lock_engine: failed to subscribe to device.v1.*.online: %v", err)
 	} else {
 		log.Printf("lock_engine: subscribed to device.v1.*.online (sub=%s)", sub.Subject)
+	}
+}
+
+// tryHandleLockDeviceOnline acquires the concurrency semaphore before
+// evaluating a device. This prevents DB connection pool exhaustion during
+// mass-online events.
+func (a *Api) tryHandleLockDeviceOnline(tdb *db.TenantDB, device entity.Device, tenantSlug string) {
+	a.acquireLockSem()
+	defer a.releaseLockSem()
+	a.handleLockDeviceOnline(tdb, device, tenantSlug)
+}
+
+func (a *Api) acquireLockSem() {
+	if a.lockEngineSem != nil {
+		a.lockEngineSem <- struct{}{}
+	}
+}
+
+func (a *Api) releaseLockSem() {
+	if a.lockEngineSem != nil {
+		<-a.lockEngineSem
 	}
 }
 
@@ -189,25 +225,47 @@ func (a *Api) handleLockDeviceOnline(tdb *db.TenantDB, device entity.Device, ten
 		return
 	}
 
+	// Circuit breaker: suppress LOCK commands when tripped to prevent
+	// mass-lock accidents (e.g. misconfigured whitelist). UNLOCK is never
+	// suppressed. Successful deliveries are counted in deliverLockCommand.
+	if a.suppressLockIfBreakerTripped(ctx, tdb, tenantSlug, device.SN, decision.Status) {
+		return
+	}
+
 	if _, err := a.sendLockCommand(ctx, tdb, device.SN, reportedIP, decision, tenantSlug); err != nil {
 		log.Printf("lock_engine: send lock command %s: %v", device.SN, err)
 	}
 }
 
+// lockReportedIP fetches the WAN IP via the device's active transport protocol.
+// CWMP devices use GetParameterValues; USP devices (MQTT/WS/STOMP) use a USP
+// Get message. Returns empty string if the IP cannot be retrieved.
 func (a *Api) lockReportedIP(ctx context.Context, device entity.Device, tenantSlug string) string {
-	if device.Cwmp != entity.Online {
-		return ""
-	}
-	resp, err := cwmpGetValues(device.SN, []string{lockWanIPPath}, a.nc, tenantSlug)
-	if err != nil {
-		log.Printf("lock_engine: get reported IP for %s: %v", device.SN, err)
-		return ""
-	}
-	for _, param := range resp.ParameterList {
-		if param.Name == lockWanIPPath {
-			return strings.TrimSpace(param.Value)
+	mtp := lockDeviceMTP(device)
+
+	if mtp == "cwmp" {
+		resp, err := cwmpGetValues(device.SN, []string{lockWanIPPath}, a.nc, tenantSlug)
+		if err != nil {
+			log.Printf("lock_engine: get reported IP (cwmp) for %s: %v", device.SN, err)
+			return ""
 		}
+		for _, param := range resp.ParameterList {
+			if param.Name == lockWanIPPath {
+				return strings.TrimSpace(param.Value)
+			}
+		}
+		return ""
 	}
+
+	if mtp != "" {
+		ip, err := uspGetValue(device.SN, lockWanIPPath, mtp, a.nc, tenantSlug)
+		if err != nil {
+			log.Printf("lock_engine: get reported IP (usp/%s) for %s: %v", mtp, device.SN, err)
+			return ""
+		}
+		return strings.TrimSpace(ip)
+	}
+
 	return ""
 }
 
@@ -227,22 +285,40 @@ func (a *Api) sendLockCommand(ctx context.Context, tdb *db.TenantDB, sn, reporte
 	return attempt, nil
 }
 
+// deliverLockCommand dispatches the lock/unlock command via the device's
+// active MTP protocol. It delegates to deliverLockCommandByMTP which
+// auto-detects CWMP vs USP. On failure, the command is marked for retry
+// or failure based on attempt count.
 func (a *Api) deliverLockCommand(ctx context.Context, tdb *db.TenantDB, attempt db.LockCommandAttempt, decision LockDecision, tenantSlug string) error {
-	payload := cwmp.SetParameterValues(lockParameterPath, decision.CommandValue)
-	qw := &quietResponseWriter{status: http.StatusOK}
-	_, _, err := cwmpInteraction[cwmp.SetParameterValuesResponse](attempt.DeviceSN, []byte(payload), qw, a.nc, tenantSlug)
-	if err != nil {
-		a.markLockCommandOutcome(ctx, tdb, attempt, err)
-		return err
-	}
-	if qw.status != http.StatusOK {
-		err = fmt.Errorf("cwmp request failed with status %d: %s", qw.status, strings.TrimSpace(string(qw.body)))
+	if err := a.deliverLockCommandByMTP(attempt, decision, tenantSlug); err != nil {
 		a.markLockCommandOutcome(ctx, tdb, attempt, err)
 		return err
 	}
 
 	_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandSuccess, "")
+	if decision.Status == db.LockStatusLocked && a.lockCircuitBreaker != nil {
+		a.lockCircuitBreaker.recordLock(tenantSlug)
+	}
 	return nil
+}
+
+// suppressLockIfBreakerTripped returns true when a LOCK command should be
+// suppressed because the per-tenant circuit breaker is open.
+func (a *Api) suppressLockIfBreakerTripped(ctx context.Context, tdb *db.TenantDB, tenantSlug, sn string, status db.DeviceLockStatus) bool {
+	if status != db.LockStatusLocked || a.lockCircuitBreaker == nil {
+		return false
+	}
+	if !a.lockCircuitBreaker.isTripped(tenantSlug) {
+		return false
+	}
+	log.Printf("lock_engine: circuit breaker tripped for tenant %s, suppressing LOCK for %s",
+		tenantSlug, sn)
+	a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+		SN:     sn,
+		Action: "circuit_breaker_suppressed",
+		Status: status,
+	})
+	return true
 }
 
 func (a *Api) markLockCommandOutcome(ctx context.Context, tdb *db.TenantDB, attempt db.LockCommandAttempt, err error) {
