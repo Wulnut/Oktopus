@@ -36,7 +36,29 @@ export const BackendProvider = (props) => {
             requestOptions.headers = h;
         }
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${path}`, requestOptions);
+        // Abort the request after a timeout so loading states always resolve.
+        // Without this, a hung backend (controller/adapter down) leaves the
+        // UI spinner spinning forever because fetch() never settles.
+        const timeoutMs = 30000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        requestOptions.signal = controller.signal;
+
+        let response;
+        try {
+            response = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}${path}`, requestOptions);
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                setAlert({
+                    severity: "error",
+                    message: "Request timed out. The backend may be unreachable.",
+                });
+                return { status: 0, result: null };
+            }
+            throw err;
+        }
+        clearTimeout(timeoutId);
         if (response.status === 401) {
             router.push("/auth/login");
             return {status: response.status, result: null};

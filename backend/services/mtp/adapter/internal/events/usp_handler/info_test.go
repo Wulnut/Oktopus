@@ -89,7 +89,10 @@ func TestParseDeviceInfoMsg_FullResponse(t *testing.T) {
 
 	data := buildGetRespRecord(t, results)
 
-	device := parseDeviceInfoMsg("SN12345", "test.subject", data, db.MQTT)
+	device, err := parseDeviceInfoMsg("SN12345", "test.subject", data, db.MQTT)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if device.SN != "SN12345" {
 		t.Errorf("SN: got %q, want %q", device.SN, "SN12345")
@@ -135,7 +138,10 @@ func TestParseDeviceInfoMsg_MTPWebsockets(t *testing.T) {
 
 	data := buildGetRespRecord(t, results)
 
-	device := parseDeviceInfoMsg("WS001", "test.subject", data, db.WEBSOCKETS)
+	device, err := parseDeviceInfoMsg("WS001", "test.subject", data, db.WEBSOCKETS)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if device.Websockets != db.Online {
 		t.Errorf("Websockets: got %d, want %d (Online)", device.Websockets, db.Online)
@@ -157,7 +163,10 @@ func TestParseDeviceInfoMsg_MTPSTOMP(t *testing.T) {
 
 	data := buildGetRespRecord(t, results)
 
-	device := parseDeviceInfoMsg("STOMP001", "test.subject", data, db.STOMP)
+	device, err := parseDeviceInfoMsg("STOMP001", "test.subject", data, db.STOMP)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if device.Stomp != db.Online {
 		t.Errorf("Stomp: got %d, want %d (Online)", device.Stomp, db.Online)
@@ -167,38 +176,24 @@ func TestParseDeviceInfoMsg_MTPSTOMP(t *testing.T) {
 	}
 }
 
-func TestParseDeviceInfoMsg_PartialResponse_Panics(t *testing.T) {
-	// BUG: parseDeviceInfoMsg hard-indexes into ReqPathResults[0] through [5]
-	// without bounds checking. A partial response with fewer than 6 entries
-	// causes an index-out-of-range panic.
+func TestParseDeviceInfoMsg_PartialResponseRejected(t *testing.T) {
 	results := []*usp_msg.GetResp_RequestedPathResult{
 		makePathResult("Manufacturer", "PartialVendor"),
 		makePathResult("ModelName", "PartialModel"),
 		makePathResult("SoftwareVersion", "0.9.0"),
-		// Missing entries [3] through [5]
 	}
 
 	data := buildGetRespRecord(t, results)
 
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Error("Expected panic due to out-of-bounds access on partial ReqPathResults, but no panic occurred")
-		} else {
-			t.Logf("Got expected panic (documents bug -- no bounds checking): %v", r)
-		}
-	}()
-
-	parseDeviceInfoMsg("PARTIAL001", "test.subject", data, db.MQTT)
+	_, err := parseDeviceInfoMsg("PARTIAL001", "test.subject", data, db.MQTT)
+	if err == nil {
+		t.Fatal("expected error for partial ReqPathResults")
+	}
 }
 
-func TestParseDeviceInfoMsg_EmptyResolvedPathResults_Panics(t *testing.T) {
-	// BUG: parseDeviceInfoMsg hard-indexes into ResolvedPathResults[0]
-	// without checking if the slice is empty. If a device returns a
-	// RequestedPathResult with no ResolvedPathResults (e.g., an error path),
-	// the code panics.
+func TestParseDeviceInfoMsg_EmptyResolvedPathResultsRejected(t *testing.T) {
 	results := []*usp_msg.GetResp_RequestedPathResult{
-		{ // [0] has empty ResolvedPathResults
+		{
 			RequestedPath:       "Device.DeviceInfo.Manufacturer",
 			ResolvedPathResults: []*usp_msg.GetResp_ResolvedPathResult{},
 		},
@@ -211,32 +206,16 @@ func TestParseDeviceInfoMsg_EmptyResolvedPathResults_Panics(t *testing.T) {
 
 	data := buildGetRespRecord(t, results)
 
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Error("Expected panic due to empty ResolvedPathResults, but no panic occurred")
-		} else {
-			t.Logf("Got expected panic (documents bug -- no nil/empty check on ResolvedPathResults): %v", r)
-		}
-	}()
-
-	parseDeviceInfoMsg("SN999", "test.subject", data, db.MQTT)
+	_, err := parseDeviceInfoMsg("SN999", "test.subject", data, db.MQTT)
+	if err == nil {
+		t.Fatal("expected error for empty ResolvedPathResults")
+	}
 }
 
 func TestParseDeviceInfoMsg_InvalidProtobuf(t *testing.T) {
-	// The current code calls log.Fatal(err) when proto.Unmarshal fails on
-	// the record. log.Fatal calls os.Exit(1), which terminates the entire
-	// test process and cannot be caught with recover().
-	//
-	// This test documents the problematic behavior. To actually test it,
-	// the code would need to be refactored to return an error instead of
-	// calling log.Fatal.
-	t.Skip("log.Fatal calls os.Exit -- cannot test without refactoring parseDeviceInfoMsg to return errors instead")
-
-	// If the code were refactored, we would test:
-	//   data := []byte{0xFF, 0xFE, 0xAB, 0x00, 0x42}
-	//   _, err := parseDeviceInfoMsg("BAD001", "test.subject", data, db.MQTT)
-	//   if err == nil {
-	//       t.Error("Expected error for invalid protobuf data")
-	//   }
+	data := []byte{0xFF, 0xFE, 0xAB, 0x00, 0x42}
+	_, err := parseDeviceInfoMsg("BAD001", "test.subject", data, db.MQTT)
+	if err == nil {
+		t.Error("expected error for invalid protobuf data")
+	}
 }

@@ -3,6 +3,7 @@ package cwmp_handler
 import (
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"log"
 
 	"github.com/OktopUSP/oktopus/backend/services/mtp/adapter/internal/cwmp"
@@ -16,32 +17,41 @@ func (h *Handler) HandleDeviceInfo(device, tenantSlug string, data []byte, ack f
 		return
 	}
 	log.Printf("Device %s info, tenant: %s", device, tenantSlug)
-	deviceInfo := parseDeviceInfoMsg(data)
+
+	deviceInfo, err := parseDeviceInfoMsg(data)
+	if err != nil {
+		log.Printf("REJECTED: CWMP device %s: %v", device, err)
+		return
+	}
 	if deviceInfo.SN == "" {
 		log.Printf("WARNING: empty SN for CWMP device %s, skipping info message", device)
 		return
 	}
+
 	deviceInfo.TenantID = tenantSlug
 	if deviceExists, _ := h.db.DeviceExists(deviceInfo.SN); !deviceExists {
 		fmtDeviceInfo, _ := json.Marshal(deviceInfo)
 		h.nc.Publish("device.v1."+tenantSlug+".new", fmtDeviceInfo)
 	}
-	err := h.db.CreateDevice(deviceInfo)
+	err = h.db.CreateDevice(deviceInfo)
 	if err != nil {
 		log.Printf("Failed to create device: %v", err)
+		return
 	}
+	onlineData, _ := json.Marshal(deviceInfo)
+	h.nc.Publish("device.v1."+tenantSlug+".online", onlineData)
 }
 
-func parseDeviceInfoMsg(data []byte) db.Device {
-
+func parseDeviceInfoMsg(data []byte) (db.Device, error) {
 	var inform cwmp.CWMPInform
-	err := xml.Unmarshal(data, &inform)
-	if err != nil {
-		log.Println("Error unmarshalling xml:", err)
+	if err := xml.Unmarshal(data, &inform); err != nil {
+		return db.Device{}, fmt.Errorf("invalid CWMP Inform XML: %w", err)
+	}
+	if inform.DeviceId.SerialNumber == "" {
+		return db.Device{}, fmt.Errorf("missing serial number in Inform")
 	}
 
 	var device db.Device
-
 	device.Vendor = inform.DeviceId.Manufacturer
 	device.Model = ""
 	device.Version = inform.GetSoftwareVersion()
@@ -51,5 +61,5 @@ func parseDeviceInfoMsg(data []byte) db.Device {
 	device.Status = db.Online
 	device.DataModel = inform.GetDataModelType()
 
-	return device
+	return device, nil
 }
