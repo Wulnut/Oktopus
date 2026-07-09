@@ -29,6 +29,17 @@ PROD_PROFILES="nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,registry"
 log() { printf '==> %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
+# Non-root deploy users (GCP sei) often have root-owned ~/.docker/buildx after sudo docker.
+# Use an isolated config under /tmp to avoid "buildx/.lock: permission denied".
+setup_docker_cli() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+  export DOCKER_CONFIG="/tmp/oktopus-docker-$(id -un)-$(id -u)"
+  mkdir -p "$DOCKER_CONFIG/buildx"
+  log "Non-root deploy: DOCKER_CONFIG=${DOCKER_CONFIG}"
+}
+
 build_makefile_service() {
   local svc="$1"
   local rel_build_dir="$2"
@@ -51,6 +62,7 @@ case "$ENV" in
 esac
 
 cd "$SCRIPT_DIR"
+setup_docker_cli
 
 # ---------------------------------------------------------------------------
 # Bootstrap secrets and data dirs (idempotent; does not overwrite real secrets)

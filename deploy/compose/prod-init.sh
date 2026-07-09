@@ -38,6 +38,7 @@ if ! id -nG "$REAL_USER" | grep -qw docker; then
 else
     log "${REAL_USER} already in docker group"
 fi
+echo "    NOTE: Run 'docker compose' as ${REAL_USER}, not sudo — sudo creates root-owned ~/.docker and breaks CI deploy builds."
 
 # ---------------------------------------------------------------------------
 # 2. Create swap file
