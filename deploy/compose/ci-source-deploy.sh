@@ -40,9 +40,14 @@ build_makefile_service() {
   docker build -t "oktopusp/${svc}:latest" -f "${build_dir}/Dockerfile" "${context_dir}"
 }
 
+# Accept common aliases (GitLab environment name is "production", not "prod").
+case "$ENV" in
+  production) ENV=prod ;;
+esac
+
 case "$ENV" in
   staging|prod) ;;
-  *) die "Usage: ci-source-deploy.sh [staging|prod]" ;;
+  *) die "Usage: ci-source-deploy.sh [staging|prod] (received: '${1:-<empty>}')" ;;
 esac
 
 cd "$SCRIPT_DIR"

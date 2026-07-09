@@ -203,7 +203,7 @@ test:integration:handlers:
          mkdir -p '${DEPLOY_REPO_ROOT}'
          tar xzf /tmp/oktopus-src.tgz -C '${DEPLOY_REPO_ROOT}'
          chmod +x '${DEPLOY_COMPOSE_DIR}/ci-source-deploy.sh'
-         cd '${DEPLOY_COMPOSE_DIR}' && ./ci-source-deploy.sh '${DEPLOY_ENV}'
+         cd '${DEPLOY_COMPOSE_DIR}' && ./ci-source-deploy.sh '${OKTOPUS_DEPLOY_ENV}'
          rm -f /tmp/oktopus-src.tgz"
 
 deploy:staging:
@@ -215,7 +215,7 @@ deploy:staging:
     SSH_PORT: $DEPLOY_DEV_SSH_PORT
     DEPLOY_REPO_ROOT: /root/oktopus
     DEPLOY_COMPOSE_DIR: /root/oktopus/deploy/compose
-    DEPLOY_ENV: staging
+    OKTOPUS_DEPLOY_ENV: staging
   rules:
     - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
 
@@ -232,6 +232,6 @@ deploy:production:
     SSH_PORT: $SSH_PORT
     DEPLOY_REPO_ROOT: /home/sei/oktopus
     DEPLOY_COMPOSE_DIR: /home/sei/oktopus/deploy/compose
-    DEPLOY_ENV: prod
+    OKTOPUS_DEPLOY_ENV: prod
   rules:
     - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock"
