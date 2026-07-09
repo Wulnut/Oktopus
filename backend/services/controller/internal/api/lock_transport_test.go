@@ -6,6 +6,91 @@ import (
 	"github.com/leandrofars/oktopus/internal/entity"
 )
 
+func TestParseUspGetParamValue_ShortNameLikeDataModelUI(t *testing.T) {
+	// DataModel UI stores result_params under the short parameter name
+	// (e.g. "InternetWanIP"), not the full TR-181 path.
+	raw := []byte(`{
+		"req_path_results": [{
+			"requested_path": "Device.X_TELKOMSEL_OntLock.InternetWanIP",
+			"resolved_path_results": [{
+				"resolved_path": "Device.X_TELKOMSEL_OntLock.",
+				"result_params": {
+					"InternetWanIP": "10.172.16.165"
+				}
+			}]
+		}]
+	}`)
+
+	got, err := parseUspGetParamValue(raw, "Device.X_TELKOMSEL_OntLock.InternetWanIP")
+	if err != nil {
+		t.Fatalf("parseUspGetParamValue: %v", err)
+	}
+	if got != "10.172.16.165" {
+		t.Fatalf("expected 10.172.16.165, got %q", got)
+	}
+}
+
+func TestParseUspGetParamValue_FullPathKey(t *testing.T) {
+	raw := []byte(`{
+		"req_path_results": [{
+			"resolved_path_results": [{
+				"resolved_path": "Device.X_TELKOMSEL_OntLock.InternetWanIP",
+				"result_params": {
+					"Device.X_TELKOMSEL_OntLock.InternetWanIP": "10.0.0.1"
+				}
+			}]
+		}]
+	}`)
+
+	got, err := parseUspGetParamValue(raw, "Device.X_TELKOMSEL_OntLock.InternetWanIP")
+	if err != nil {
+		t.Fatalf("parseUspGetParamValue: %v", err)
+	}
+	if got != "10.0.0.1" {
+		t.Fatalf("expected 10.0.0.1, got %q", got)
+	}
+}
+
+func TestParseUspGetParamValue_ResolvedPathPlusShortName(t *testing.T) {
+	raw := []byte(`{
+		"req_path_results": [{
+			"resolved_path_results": [{
+				"resolved_path": "Device.X_TELKOMSEL_OntLock.",
+				"result_params": {
+					"Lock": "0"
+				}
+			}]
+		}]
+	}`)
+
+	got, err := parseUspGetParamValue(raw, "Device.X_TELKOMSEL_OntLock.Lock")
+	if err != nil {
+		t.Fatalf("parseUspGetParamValue: %v", err)
+	}
+	if got != "0" {
+		t.Fatalf("expected 0, got %q", got)
+	}
+}
+
+func TestParseUspGetParamValue_NotFound(t *testing.T) {
+	raw := []byte(`{
+		"req_path_results": [{
+			"resolved_path_results": [{
+				"resolved_path": "Device.X_TELKOMSEL_OntLock.",
+				"result_params": {
+					"Lock": "0"
+				}
+			}]
+		}]
+	}`)
+
+	_, err := parseUspGetParamValue(raw, "Device.X_TELKOMSEL_OntLock.InternetWanIP")
+	if err == nil {
+		t.Fatal("expected error when parameter is missing")
+	}
+}
+
+
 func TestLockDeviceMTP_CwmpOnly(t *testing.T) {
 	device := entity.Device{
 		SN:   "SN-CWMP",
