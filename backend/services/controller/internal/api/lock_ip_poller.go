@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/leandrofars/oktopus/internal/config"
@@ -35,6 +36,9 @@ func shouldSkipIPPollForUnsupported(hasRow, _ bool) bool {
 
 // StartLockIPPoller periodically re-evaluates online devices when WAN IP changes.
 // Disabled unless LOCK_IP_POLL_ENABLED is true. Interval is floored at 30s.
+//
+// Same-IP skip requires Redis LastIP. With noopLockDeviceStateStore (Redis off),
+// Get always returns empty LastIP so same-IP never skips — every poll may evaluate.
 func (a *Api) StartLockIPPoller(cfg config.LockScale) {
 	if !cfg.IPPollEnabled {
 		log.Printf("lock_ip_poller: disabled")
@@ -75,15 +79,17 @@ func (a *Api) runLockIPPollRound(notifyHealth time.Duration) {
 		return
 	}
 
+	var wg sync.WaitGroup
 	for _, tenant := range tenants {
 		if tenant.Slug == "" || tenant.Status != db.TenantStatusActive {
 			continue
 		}
-		a.pollLockIPForTenant(tenant.Slug, notifyHealth)
+		a.pollLockIPForTenant(tenant.Slug, notifyHealth, &wg)
 	}
+	wg.Wait()
 }
 
-func (a *Api) pollLockIPForTenant(tenantSlug string, notifyHealth time.Duration) {
+func (a *Api) pollLockIPForTenant(tenantSlug string, notifyHealth time.Duration, wg *sync.WaitGroup) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -104,17 +110,20 @@ func (a *Api) pollLockIPForTenant(tenantSlug string, notifyHealth time.Duration)
 	}
 
 	for _, device := range list.Devices {
-		go a.pollLockIPForDevice(tdb, device, tenantSlug, notifyHealth)
+		wg.Add(1)
+		go func(d entity.Device) {
+			defer wg.Done()
+			a.pollLockIPForDevice(tdb, d, tenantSlug, notifyHealth)
+		}(device)
 	}
 }
 
 func (a *Api) pollLockIPForDevice(tdb *db.TenantDB, device entity.Device, tenantSlug string, notifyHealth time.Duration) {
-	a.acquireLockSem()
-	defer a.releaseLockSem()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Cheap skips before acquireLockSem so unsupported / healthy-notify devices
+	// do not consume evaluate concurrency slots.
 	hasRow, optOut := a.unsupportedLockRowState(ctx, tdb, device.SN)
 	if shouldSkipIPPollForUnsupported(hasRow, optOut) {
 		return
@@ -129,6 +138,9 @@ func (a *Api) pollLockIPForDevice(tdb *db.TenantDB, device entity.Device, tenant
 	if shouldSkipIPPollForNotifyHealth(state.NotifyOKAt, time.Now(), notifyHealth) {
 		return
 	}
+
+	a.acquireLockSem()
+	defer a.releaseLockSem()
 
 	ip := a.lockReportedIP(ctx, device, tenantSlug)
 	if ip == "" {
