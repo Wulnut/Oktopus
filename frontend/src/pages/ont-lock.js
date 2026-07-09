@@ -60,6 +60,7 @@ const Page = () => {
   const [config, setConfig] = useState({ master_enabled: true, auto_lock_enabled: true });
   const [policies, setPolicies] = useState([]);
   const [unauthorized, setUnauthorized] = useState([]);
+  const [unsupported, setUnsupported] = useState([]);
   const [commands, setCommands] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [whitelistForm, setWhitelistForm] = useState(initialPolicyForm);
@@ -68,19 +69,21 @@ const Page = () => {
   const [batchResult, setBatchResult] = useState(null);
   const [selectedPolicies, setSelectedPolicies] = useState({});
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
- const [deletingSn, setDeletingSn] = useState(null);
- const [policySearch, setPolicySearch] = useState('');
+  const [deletingSn, setDeletingSn] = useState(null);
+  const [policySearch, setPolicySearch] = useState('');
   const [clearAuditOpen, setClearAuditOpen] = useState(false);
+  const [unsupportedActionSn, setUnsupportedActionSn] = useState(null);
 
  const whitelistFileRef = useRef(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cfg, policyResp, unauthorizedResp, commandsResp, auditResp] = await Promise.all([
+      const [cfg, policyResp, unauthorizedResp, unsupportedResp, commandsResp, auditResp] = await Promise.all([
         httpRequest(`${apiPrefix}/lock/config`, 'GET'),
         httpRequest(`${apiPrefix}/lock/policies`, 'GET'),
         httpRequest(`${apiPrefix}/lock/unauthorized`, 'GET'),
+        httpRequest(`${apiPrefix}/lock/unsupported`, 'GET'),
         httpRequest(`${apiPrefix}/lock/commands`, 'GET'),
         httpRequest(`${apiPrefix}/lock/audit`, 'GET'),
       ]);
@@ -88,6 +91,7 @@ const Page = () => {
       if (cfg.status === 200 && cfg.result) setConfig(cfg.result);
       if (policyResp.status === 200 && Array.isArray(policyResp.result)) setPolicies(policyResp.result);
       if (unauthorizedResp.status === 200 && Array.isArray(unauthorizedResp.result)) setUnauthorized(unauthorizedResp.result);
+      if (unsupportedResp.status === 200 && Array.isArray(unsupportedResp.result)) setUnsupported(unsupportedResp.result);
       if (commandsResp.status === 200 && Array.isArray(commandsResp.result)) setCommands(commandsResp.result);
       if (auditResp.status === 200 && Array.isArray(auditResp.result)) setAuditLogs(auditResp.result);
     } finally {
@@ -255,6 +259,38 @@ const Page = () => {
 
   const toggleUnauthorized = (sn) => {
     setSelectedUnauthorized((prev) => ({ ...prev, [sn]: !prev[sn] }));
+  };
+
+  const optOutUnsupported = async (sn) => {
+    setUnsupportedActionSn(sn);
+    try {
+      const { status } = await httpRequest(
+        `${apiPrefix}/lock/unsupported/${encodeURIComponent(sn)}/opt-out`,
+        'POST'
+      );
+      if (status >= 200 && status < 300) {
+        setAlert({ severity: 'success', message: 'Stopped detecting this device.' });
+        fetchData();
+      }
+    } finally {
+      setUnsupportedActionSn(null);
+    }
+  };
+
+  const resumeUnsupported = async (sn) => {
+    setUnsupportedActionSn(sn);
+    try {
+      const { status } = await httpRequest(
+        `${apiPrefix}/lock/unsupported/${encodeURIComponent(sn)}/opt-out`,
+        'DELETE'
+      );
+      if (status >= 200 && status < 300) {
+        setAlert({ severity: 'success', message: 'Resumed detecting this device.' });
+        fetchData();
+      }
+    } finally {
+      setUnsupportedActionSn(null);
+    }
   };
 
   const renderPolicyRows = () => {
@@ -535,6 +571,71 @@ const Page = () => {
                 empty="No lock commands yet."
               />
             </Stack>
+
+            <Card>
+              <CardHeader title="Unsupported Devices" />
+              <Divider />
+              <CardContent sx={{ p: 0 }}>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>SN</TableCell>
+                      <TableCell>Reason</TableCell>
+                      <TableCell>Detail</TableCell>
+                      <TableCell>Last Checked</TableCell>
+                      <TableCell>Opt-out</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {unsupported.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6}>No unsupported devices.</TableCell>
+                      </TableRow>
+                    ) : (
+                      unsupported.map((item) => (
+                        <TableRow key={item.sn}>
+                          <TableCell>{item.sn}</TableCell>
+                          <TableCell>{item.reason || '-'}</TableCell>
+                          <TableCell>{item.detail || '-'}</TableCell>
+                          <TableCell>
+                            {item.last_checked_at ? new Date(item.last_checked_at).toLocaleString() : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={item.opt_out ? 'Yes' : 'No'}
+                              color={item.opt_out ? 'default' : 'warning'}
+                              size="small"
+                            />
+                          </TableCell>
+                          <TableCell align="right">
+                            {item.opt_out ? (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                disabled={unsupportedActionSn === item.sn}
+                                onClick={() => resumeUnsupported(item.sn)}
+                              >
+                                Resume
+                              </Button>
+                            ) : (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                disabled={unsupportedActionSn === item.sn}
+                                onClick={() => optOutUnsupported(item.sn)}
+                              >
+                                Stop detecting
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
 
            <SimpleTable
              title="Audit History"
