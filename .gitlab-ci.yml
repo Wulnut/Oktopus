@@ -1,5 +1,5 @@
 # Oktopus CI — 8 test jobs; unit tests parallel, integration after unit (parallel).
-# Deploy: source pack + SSH + remote build (telkomsel/ont-lock-dev auto, telkomsel/ont-lock manual).
+# Deploy: source pack + SSH + remote build (auto on telkomsel/ont-lock-dev and telkomsel/ont-lock).
 # Local tests: deploy/compose/docker-compose.test.yaml
 # Runner tag: oktopus-docker
 
@@ -169,7 +169,7 @@ test:integration:handlers:
 # ---------------------------------------------------------------------------
 # Deploy — upload source, build on target server, restart compose stack
 # telkomsel/ont-lock-dev -> staging (192.168.0.106)
-# telkomsel/ont-lock     -> production GCP (manual)
+# telkomsel/ont-lock     -> production GCP (auto after integration tests)
 # ---------------------------------------------------------------------------
 .test_integration_deploy_needs:
   needs:
@@ -224,7 +224,6 @@ deploy:staging:
 deploy:production:
   extends: .deploy_ssh
   resource_group: deploy-production
-  when: manual
   environment:
     name: production
     url: http://$GCP_HOST

@@ -295,7 +295,7 @@ Runner tag: `oktopus-docker`. Stages: `test-unit` → `test-integration` → `de
 | Branch | Deploy job | Target |
 |--------|------------|--------|
 | `telkomsel/ont-lock-dev` | `deploy:staging` (auto) | Test server `/root/oktopus` |
-| `telkomsel/ont-lock` | `deploy:production` (manual) | GCP `/home/sei/oktopus` |
+| `telkomsel/ont-lock` | `deploy:production` (auto) | GCP `/home/sei/oktopus` |
 
 **Flow:** integration tests pass → `ci-pack-source.sh` creates tarball → SCP to server → extract → `ci-source-deploy.sh staging|prod` builds images on the server, restarts compose, then deletes `backend/`, `frontend/`, and other source (keeps only `deploy/compose/`). Set `SKIP_SOURCE_CLEANUP=1` on the server to skip cleanup for debugging.
 
