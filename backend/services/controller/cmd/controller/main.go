@@ -40,6 +40,7 @@ func main() {
 	a.InitLockEngine(c.LockCircuitBreaker)
 	a.StartLockEngine()
 	a.StartLockIPPoller(c.LockScale)
+	a.StartLockNotifyHandler(c.LockScale)
 	a.StartLockRetryScheduler()
 	a.StartCampaignEngine()
 	a.StartCampaignScheduler()

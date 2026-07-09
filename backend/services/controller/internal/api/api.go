@@ -32,6 +32,7 @@ type Api struct {
 	lockMaxAttempts           int
 	lockCircuitBreaker        *lockCircuitBreaker
 	lockEngineSem             chan struct{}
+	lockNotifyEnabled         bool
 }
 
 const REQUEST_TIMEOUT = time.Second * 30

@@ -221,6 +221,17 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		return
 	}
 
+	// After probe OK, schedule USP ValueChange subscribe once evaluate releases
+	// the per-SN lock (defer LIFO: this runs before unlock). Avoids NotifyOKAt
+	// being overwritten by this evaluate's state Put.
+	if a.lockNotifyEnabled {
+		if mtp := lockDeviceMTP(device); mtp != "" && mtp != "cwmp" {
+			defer func() {
+				go a.ensureLockIPValueChangeSubscription(context.Background(), device, tenantSlug, mtp)
+			}()
+		}
+	}
+
 	if reportedIP == "" {
 		reportedIP = a.lockReportedIP(ctx, device, tenantSlug)
 	}
