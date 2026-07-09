@@ -41,20 +41,28 @@ type (
 )
 
 type Bridge struct {
-	Pub  Publisher
-	Sub  Subscriber
-	Mqtt config.Mqtt
-	kv   jetstream.KeyValue
-	Ctx  context.Context
+	Pub   Publisher
+	Sub   Subscriber
+	Mqtt  config.Mqtt
+	kv    jetstream.KeyValue
+	Ctx   context.Context
+	Debug bool
 }
 
-func NewBridge(p Publisher, s Subscriber, ctx context.Context, m config.Mqtt, kv jetstream.KeyValue) *Bridge {
+func NewBridge(p Publisher, s Subscriber, ctx context.Context, m config.Mqtt, kv jetstream.KeyValue, debug bool) *Bridge {
 	return &Bridge{
-		Pub:  p,
-		Sub:  s,
-		Mqtt: m,
-		Ctx:  ctx,
-		kv:   kv,
+		Pub:   p,
+		Sub:   s,
+		Mqtt:  m,
+		Ctx:   ctx,
+		kv:    kv,
+		Debug: debug,
+	}
+}
+
+func (b *Bridge) debugf(format string, args ...any) {
+	if b.Debug {
+		log.Printf(format, args...)
 	}
 }
 
@@ -113,13 +121,16 @@ func (b *Bridge) natsMessageHandler(cm *autopaho.ConnectionManager) {
 
 		device := getDeviceFromSubject(m.Subject)
 		tenant := extractTenantFromSubject(m.Subject)
-		log.Printf("Received message on info subject for device %s tenant %s", device, tenant)
+		agentTopic := MQTT_TOPIC_PREFIX + tenant + "/agent/" + device
+		responseTopic := MQTT_TOPIC_PREFIX + tenant + "/controller/" + device
+		b.debugf("mqtt-out info: device=%s tenant=%s agentTopic=%s responseTopic=%s size=%d",
+			device, tenant, agentTopic, responseTopic, len(m.Data))
 		cm.Publish(b.Ctx, &paho.Publish{
 			QoS:     byte(b.Mqtt.Qos),
-			Topic:   MQTT_TOPIC_PREFIX + tenant + "/agent/" + device,
+			Topic:   agentTopic,
 			Payload: m.Data,
 			Properties: &paho.PublishProperties{
-				ResponseTopic: MQTT_TOPIC_PREFIX + tenant + "/controller/" + device,
+				ResponseTopic: responseTopic,
 			},
 		})
 
@@ -129,13 +140,16 @@ func (b *Bridge) natsMessageHandler(cm *autopaho.ConnectionManager) {
 
 		device := getDeviceFromSubject(m.Subject)
 		tenant := extractTenantFromSubject(m.Subject)
-		log.Printf("Received message on api subject for device %s tenant %s", device, tenant)
+		responseTopic := MQTT_TOPIC_PREFIX + tenant + "/api/" + device
+		agentTopic := MQTT_TOPIC_PREFIX + tenant + "/agent/" + device
+		b.debugf("mqtt-out api: device=%s tenant=%s agentTopic=%s responseTopic=%s size=%d",
+			device, tenant, agentTopic, responseTopic, len(m.Data))
 		cm.Publish(b.Ctx, &paho.Publish{
 			QoS:     byte(b.Mqtt.Qos),
-			Topic:   MQTT_TOPIC_PREFIX + tenant + "/agent/" + device,
+			Topic:   agentTopic,
 			Payload: m.Data,
 			Properties: &paho.PublishProperties{
-				ResponseTopic: MQTT_TOPIC_PREFIX + tenant + "/api/" + device,
+				ResponseTopic: responseTopic,
 			},
 		})
 
@@ -183,18 +197,26 @@ func (b *Bridge) mqttMessageHandler(status, controller, apiMsg, asyncMsg chan *p
 		case d := <-status:
 			device := getDeviceFromTopic(d.Topic)
 			tenant := getTenantFromTopic(d.Topic)
+			b.debugf("mqtt-in status: topic=%s device=%s tenant=%s size=%d", d.Topic, device, tenant, len(d.Payload))
 			b.Pub(NATS_MQTT_SUBJECT_PREFIX+tenant+"."+device+".status", d.Payload)
 		case c := <-controller:
 			device := getDeviceFromTopic(c.Topic)
 			tenant := getTenantFromTopic(c.Topic)
-			b.Pub(NATS_MQTT_SUBJECT_PREFIX+tenant+"."+device+".info", c.Payload)
+			natsSubj := NATS_MQTT_SUBJECT_PREFIX + tenant + "." + device + ".info"
+			b.debugf("mqtt-in controller: topic=%s device=%s tenant=%s nats=%s size=%d",
+				c.Topic, device, tenant, natsSubj, len(c.Payload))
+			b.Pub(natsSubj, c.Payload)
 		case a := <-apiMsg:
 			device := getDeviceFromTopic(a.Topic)
 			tenant := getTenantFromTopic(a.Topic)
-			b.Pub(DEVICE_SUBJECT_PREFIX+tenant+"."+device+".api", a.Payload)
+			natsSubj := DEVICE_SUBJECT_PREFIX + tenant + "." + device + ".api"
+			b.debugf("mqtt-in api: topic=%s device=%s tenant=%s nats=%s size=%d",
+				a.Topic, device, tenant, natsSubj, len(a.Payload))
+			b.Pub(natsSubj, a.Payload)
 		case async := <-asyncMsg:
 			device := getDeviceFromTopic(async.Topic)
 			tenant := getTenantFromTopic(async.Topic)
+			b.debugf("mqtt-in async: topic=%s device=%s tenant=%s size=%d", async.Topic, device, tenant, len(async.Payload))
 			b.Pub(NATS_MQTT_SUBJECT_PREFIX+tenant+"."+device+".async", async.Payload)
 		}
 	}

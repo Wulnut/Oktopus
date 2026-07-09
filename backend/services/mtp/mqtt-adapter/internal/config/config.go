@@ -38,8 +38,9 @@ type Mqtt struct {
 }
 
 type Config struct {
-	Nats Nats
-	Mqtt Mqtt
+	Nats  Nats
+	Mqtt  Mqtt
+	Debug bool
 }
 
 func NewConfig() *Config {
@@ -59,6 +60,7 @@ func NewConfig() *Config {
 	mqttClientId := flag.String("mqtt_client_id", lookupEnvOrString("MQTT_CLIENT_ID", "mqtt-adapter"), "client id for mqtt")
 	mqttUsername := flag.String("mqtt_username", lookupEnvOrString("MQTT_USERNAME", "oktopusController"), "username for mqtt")
 	mqttQos := flag.Int("mqtt_qos", lookupEnvOrInt("MQTT_QOS", 1), "quality of service for mqtt")
+	debug := flag.Bool("debug", lookupEnvOrBool("DEBUG", false), "enable debug logging for MQTT topic routing")
 	flHelp := flag.Bool("help", false, "Help")
 
 	/*
@@ -98,6 +100,7 @@ func NewConfig() *Config {
 			Ctx:        ctx,
 			Qos:        *mqttQos,
 		},
+		Debug: *debug,
 	}
 }
 

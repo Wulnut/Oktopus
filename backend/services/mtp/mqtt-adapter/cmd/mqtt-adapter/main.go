@@ -20,7 +20,10 @@ func main() {
 
 	kv, publisher, subscriber := nats.StartNatsClient(c.Nats)
 
-	bridge := bridge.NewBridge(publisher, subscriber, c.Mqtt.Ctx, c.Mqtt, kv)
+	bridge := bridge.NewBridge(publisher, subscriber, c.Mqtt.Ctx, c.Mqtt, kv, c.Debug)
+	if c.Debug {
+		log.Println("debug logging enabled")
+	}
 
 	if c.Mqtt.Url != "" {
 		bridge.StartBridge(c.Mqtt.Url, c.Mqtt.ClientId)
