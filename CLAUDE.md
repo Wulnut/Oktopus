@@ -236,14 +236,28 @@ fetch(`${apiPrefix}/devices`, { headers: { Authorization: token } });
 - **Nginx** (port 80) — reverse proxy/API gateway; config in `deploy/compose/nginx.conf`
 - **MongoDB** (port 27017) — primary database for controller and adapter
 - **NATS** (ports 4222, 8222) — message broker with JetStream enabled; config in `deploy/compose/nats_config/`
-- **Redis** (compose service `redis`, profile `controller`) — ONT Lock policy cache and device state; AOF + `redis_data` volume; default-on via `LOCK_REDIS_ENABLED` in `.env.controller`
-- **Kafka** (compose service `kafka:9092`, profile `controller`, apache/kafka KRaft single-node) — ONT Lock audit stream; default-on via `LOCK_KAFKA_ENABLED`; Greenplum audit sink remains optional/off
+- **Redis** (compose service `redis`, profile `controller`) — ONT Lock policy cache and device state; AOF + `redis_data` volume; default-on via `LOCK_REDIS_ENABLED` in `.env.controller`. Soft-degrades if Redis is down.
+- **Kafka** (compose service `kafka:9092`, profile `controller`, apache/kafka KRaft single-node) — ONT Lock audit stream on the compose network only (not published to host); default-on via `LOCK_KAFKA_ENABLED`. Soft-degrades if Kafka is down. Greenplum audit sink remains optional/off.
 - **Production overlay** (`docker-compose.prod.yaml`) — GCP prod VM (8GB RAM): Mongo cache 1GB, frontend heap 512MB, JetStream memory 256MB, Redis 128MB / Kafka 512MB mem limits
 - **Docker Registry** (port 443) — private registry with auto-generated TLS certs via `registry-certs-generator`
 - **Portainer** (port 9443) — container management UI
 - **container-upload** (port 8005) — custom Node.js service for uploading containers to the local registry; prefixes images with tenant slug from JWT
 
-Environment variables: `.env.<service>.example` templates are tracked in git; `generate-secrets.sh` creates actual `.env.<service>` files with generated secrets on first run. See README for details.
+Environment variables: `.env.<service>.example` templates are tracked in git; `generate-secrets.sh` creates actual `.env.<service>` files with generated secrets on first run. See README for details. Existing `.env.controller` is **not** auto-migrated — operators must add new `LOCK_*` keys (or regenerate from the example) when new vars appear.
+
+#### ONT Lock controller env
+
+Compose `.env.controller.example` defaults these to `true`; code defaults to `false` when the env is unset:
+
+| Env | Notes |
+| --- | --- |
+| `LOCK_REDIS_ENABLED` / `LOCK_REDIS_URL` | Policy cache + device state (`last_status`, `last_ip`, notify health) |
+| `LOCK_KAFKA_ENABLED` / `LOCK_KAFKA_BROKERS` / `LOCK_KAFKA_AUDIT_TOPIC` | Audit stream (default topic `ont-lock-audit`) |
+| `LOCK_IP_POLL_ENABLED` / `LOCK_IP_POLL_INTERVAL_SEC` | WAN IP re-eval poller; interval min 30s, default 60s |
+| `LOCK_NOTIFY_ENABLED` / `LOCK_NOTIFY_HEALTH_SEC` | USP ValueChange notify path; health window default 120s |
+| `LOCK_GREENPLUM_*` | Optional audit sink; remains off by default |
+
+**Behavior:** Online/chase force-converge Set when `ShouldCommand`. Poll/notify skip Set when Redis `last_status` is unchanged; poll early-exits on same `last_ip`. Unsupported OntLock devices are listed in the UI; opt-out stops probing; re-probe on device online.
 
 ### MongoDB Databases
 

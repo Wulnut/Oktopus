@@ -74,3 +74,4 @@ After lock cases, the runner unlocks (whitelist hit) before TC-1/4/5. On exit (`
 - Mutates live `device_lock_config` / `device_lock_policy` for the tenant
 - `Lock=1` may drop MQTT on some CPEs; later Get/Set then fail until reconnect
 - Use a dedicated test SN; do not run on customer devices without approval
+- The IP poller may re-evaluate during long E2E runs and interfere with case assertions. For stable tests, set `LOCK_IP_POLL_INTERVAL_SEC` high or `LOCK_IP_POLL_ENABLED=false` in the test environment if needed.
