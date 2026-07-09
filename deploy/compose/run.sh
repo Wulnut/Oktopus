@@ -1,6 +1,10 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
+# Pin project name so the network is oktopus_usp_network, not compose_usp_network
+# (Compose defaults to the directory name "compose", which collides on 172.16.235.0/24).
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-oktopus}"
+
 # Generate secrets if not present
 ./generate-secrets.sh
 

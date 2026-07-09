@@ -133,15 +133,36 @@ func uspGetValue(sn, paramPath, mtp string, nc *nats.Conn, tenantSlug string) (s
 	if err != nil {
 		return "", err
 	}
+	return parseUspGetParamValue(data, paramPath)
+}
 
+// parseUspGetParamValue extracts a parameter from a USP GetResp JSON body.
+// Matching follows the DataModel UI convention in devices-discovery.js:
+// result_params keys are typically short names (e.g. "InternetWanIP"), while
+// resolved_path holds the object path (e.g. "Device.X_TELKOMSEL_OntLock.").
+// Full-path keys are also accepted for compatibility.
+func parseUspGetParamValue(data []byte, paramPath string) (string, error) {
 	var getResp uspGetResponseJSON
 	if err := json.Unmarshal(data, &getResp); err != nil {
 		return "", fmt.Errorf("parse USP GetResp: %w", err)
 	}
+
+	shortName := paramPath
+	if i := strings.LastIndex(paramPath, "."); i >= 0 && i+1 < len(paramPath) {
+		shortName = paramPath[i+1:]
+	}
+
 	for _, rp := range getResp.ReqPathResults {
 		for _, rpr := range rp.ResolvedPathResults {
 			for k, v := range rpr.ResultParams {
-				if k == paramPath || strings.HasSuffix(k, paramPath) {
+				if k == paramPath || k == shortName {
+					return v, nil
+				}
+				if strings.HasSuffix(k, "."+shortName) || strings.HasSuffix(k, paramPath) {
+					return v, nil
+				}
+				// resolved_path (object) + short key == requested full path
+				if rpr.ResolvedPath != "" && rpr.ResolvedPath+k == paramPath {
 					return v, nil
 				}
 			}

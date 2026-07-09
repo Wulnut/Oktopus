@@ -41,23 +41,43 @@ setup_docker_cli() {
 }
 
 # Compose defaults to the working directory name ("compose" under deploy/compose/).
-# That creates compose_usp_network on 172.16.235.0/24 and fails if oktopus_usp_network
-# already exists from the flat ~/oktopus prod layout.
+# That creates compose_usp_network on 172.16.235.0/24, which collides with
+# oktopus_usp_network (same subnet). Always pin the project name.
 setup_compose_project() {
   export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-oktopus}"
   log "Docker Compose project: ${COMPOSE_PROJECT_NAME}"
 }
 
-prune_orphan_compose_network() {
-  local orphan="compose_usp_network"
-  if ! docker network inspect "$orphan" &>/dev/null; then
+# Tear down a prior stack that used the default project name "compose".
+# An empty-network prune is not enough: staging often still has a full
+# compose_* stack running, which blocks creating oktopus_usp_network.
+migrate_legacy_compose_project() {
+  local legacy="compose"
+  local legacy_net="${legacy}_usp_network"
+  local profiles="$1"
+
+  if [ "${COMPOSE_PROJECT_NAME}" = "$legacy" ]; then
     return 0
   fi
-  local count
-  count="$(docker network inspect "$orphan" --format '{{len .Containers}}' 2>/dev/null || echo 0)"
-  if [ "$count" = "0" ]; then
-    log "Removing unused ${orphan} (subnet overlaps ${COMPOSE_PROJECT_NAME}_usp_network)"
-    docker network rm "$orphan" || true
+  if ! docker network inspect "$legacy_net" &>/dev/null \
+    && ! docker ps -aq --filter "label=com.docker.compose.project=${legacy}" | grep -q .; then
+    return 0
+  fi
+
+  log "Migrating legacy Compose project '${legacy}' -> '${COMPOSE_PROJECT_NAME}' (frees ${legacy_net})"
+  COMPOSE_PROJECT_NAME="$legacy" COMPOSE_PROFILES="$profiles" \
+    docker compose -f docker-compose.yaml -f docker-compose.dev.yaml \
+    down --remove-orphans || true
+
+  if docker network inspect "$legacy_net" &>/dev/null; then
+    local count
+    count="$(docker network inspect "$legacy_net" --format '{{len .Containers}}' 2>/dev/null || echo 0)"
+    if [ "$count" = "0" ]; then
+      log "Removing leftover ${legacy_net}"
+      docker network rm "$legacy_net" || true
+    else
+      die "${legacy_net} still has ${count} container(s); cannot create ${COMPOSE_PROJECT_NAME}_usp_network"
+    fi
   fi
 }
 
@@ -180,9 +200,8 @@ COMPOSE_PROFILES="$STAGING_PROFILES" \
 # ---------------------------------------------------------------------------
 # Restart stack (--no-build: use images built above)
 # ---------------------------------------------------------------------------
-prune_orphan_compose_network
-
 if [ "$ENV" = "prod" ]; then
+  migrate_legacy_compose_project "$PROD_PROFILES"
   log "Starting production stack (profiles: ${PROD_PROFILES})"
   COMPOSE_PROFILES="$PROD_PROFILES" \
     docker compose -f docker-compose.yaml -f docker-compose.prod.yaml \
@@ -190,6 +209,7 @@ if [ "$ENV" = "prod" ]; then
   PS_FILES="-f docker-compose.yaml -f docker-compose.prod.yaml"
   PS_PROFILES="$PROD_PROFILES"
 else
+  migrate_legacy_compose_project "$STAGING_PROFILES"
   log "Starting staging stack (profiles: ${STAGING_PROFILES})"
   COMPOSE_PROFILES="$STAGING_PROFILES" \
     docker compose -f docker-compose.yaml -f docker-compose.dev.yaml \
