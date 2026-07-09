@@ -236,7 +236,9 @@ fetch(`${apiPrefix}/devices`, { headers: { Authorization: token } });
 - **Nginx** (port 80) — reverse proxy/API gateway; config in `deploy/compose/nginx.conf`
 - **MongoDB** (port 27017) — primary database for controller and adapter
 - **NATS** (ports 4222, 8222) — message broker with JetStream enabled; config in `deploy/compose/nats_config/`
-- **Production overlay** (`docker-compose.prod.yaml`) — GCP prod VM (8GB RAM): Mongo cache 1GB, frontend heap 512MB, JetStream memory 256MB
+- **Redis** (compose service `redis`, profile `controller`) — ONT Lock policy cache and device state; AOF + `redis_data` volume; default-on via `LOCK_REDIS_ENABLED` in `.env.controller`
+- **Kafka** (compose service `kafka:9092`, profile `controller`, apache/kafka KRaft single-node) — ONT Lock audit stream; default-on via `LOCK_KAFKA_ENABLED`; Greenplum audit sink remains optional/off
+- **Production overlay** (`docker-compose.prod.yaml`) — GCP prod VM (8GB RAM): Mongo cache 1GB, frontend heap 512MB, JetStream memory 256MB, Redis 128MB / Kafka 512MB mem limits
 - **Docker Registry** (port 443) — private registry with auto-generated TLS certs via `registry-certs-generator`
 - **Portainer** (port 9443) — container management UI
 - **container-upload** (port 8005) — custom Node.js service for uploading containers to the local registry; prefixes images with tenant slug from JWT
