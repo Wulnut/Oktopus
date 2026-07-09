@@ -79,6 +79,22 @@ type UnauthorizedDevice struct {
 	LastSeen   time.Time          `bson:"last_seen"            json:"last_seen"`
 }
 
+// UnsupportedLockDevice tracks devices whose OntLock vendor paths are missing
+// from the device schema (USP 7026 / path-not-in-schema). Operators can opt out
+// of further probing via OptOut.
+type UnsupportedLockDevice struct {
+	SN            string    `bson:"sn" json:"sn"`
+	Reason        string    `bson:"reason" json:"reason"` // unsupported_path
+	Detail        string    `bson:"detail,omitempty" json:"detail,omitempty"`
+	OptOut        bool      `bson:"opt_out" json:"opt_out"`
+	LastCheckedAt time.Time `bson:"last_checked_at" json:"last_checked_at"`
+	CreatedAt     time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt     time.Time `bson:"updated_at" json:"updated_at"`
+	OperatorID    string    `bson:"operator_id,omitempty" json:"operator_id,omitempty"`
+}
+
+const LockUnsupportedReasonPath = "unsupported_path"
+
 type LockCommandAttempt struct {
 	ID           primitive.ObjectID `bson:"_id,omitempty"        json:"id"`
 	CommandID    string             `bson:"command_id"           json:"command_id"`
@@ -111,6 +127,9 @@ func (t *TenantDB) LockPolicies() *mongo.Collection {
 func (t *TenantDB) LockConfig() *mongo.Collection { return t.General.Collection("device_lock_config") }
 func (t *TenantDB) UnauthorizedDevices() *mongo.Collection {
 	return t.General.Collection("lock_unauthorized_devices")
+}
+func (t *TenantDB) UnsupportedLockDevices() *mongo.Collection {
+	return t.General.Collection("lock_unsupported_devices")
 }
 func (t *TenantDB) LockCommands() *mongo.Collection {
 	return t.General.Collection("lock_command_attempts")
@@ -369,6 +388,83 @@ func (t *TenantDB) ListRetryableLockCommands(ctx context.Context, retryAfter tim
 
 func (t *TenantDB) DeleteUnauthorizedDevice(ctx context.Context, sn string) error {
 	_, err := t.UnauthorizedDevices().DeleteOne(ctx, bson.M{"sn": NormalizeSN(sn)})
+	return err
+}
+
+// UpsertUnsupportedLockDevice records or refreshes an OntLock-unsupported device.
+// OptOut / OperatorID are preserved on update unless explicitly set on insert.
+func (t *TenantDB) UpsertUnsupportedLockDevice(ctx context.Context, d UnsupportedLockDevice) error {
+	d.SN = NormalizeSN(d.SN)
+	if d.SN == "" {
+		return errors.New("sn is required")
+	}
+	if d.Reason == "" {
+		d.Reason = LockUnsupportedReasonPath
+	}
+	now := time.Now()
+	if d.LastCheckedAt.IsZero() {
+		d.LastCheckedAt = now
+	}
+	if d.CreatedAt.IsZero() {
+		d.CreatedAt = now
+	}
+	d.UpdatedAt = now
+	_, err := t.UnsupportedLockDevices().UpdateOne(ctx,
+		bson.M{"sn": d.SN},
+		bson.M{
+			"$set": bson.M{
+				"reason":          d.Reason,
+				"detail":          d.Detail,
+				"last_checked_at": d.LastCheckedAt,
+				"updated_at":      d.UpdatedAt,
+			},
+			"$setOnInsert": bson.M{
+				"sn":          d.SN,
+				"opt_out":     false,
+				"created_at":  d.CreatedAt,
+				"operator_id": "",
+			},
+		},
+		options.Update().SetUpsert(true),
+	)
+	return err
+}
+
+func (t *TenantDB) GetUnsupportedLockDevice(ctx context.Context, sn string) (UnsupportedLockDevice, error) {
+	var d UnsupportedLockDevice
+	err := t.UnsupportedLockDevices().FindOne(ctx, bson.M{"sn": NormalizeSN(sn)}).Decode(&d)
+	return d, err
+}
+
+func (t *TenantDB) ListUnsupportedLockDevices(ctx context.Context) ([]UnsupportedLockDevice, error) {
+	cursor, err := t.UnsupportedLockDevices().Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	var devices []UnsupportedLockDevice
+	err = cursor.All(ctx, &devices)
+	return devices, err
+}
+
+// SetUnsupportedLockOptOut sets or clears the opt-out flag. The row must already exist.
+func (t *TenantDB) SetUnsupportedLockOptOut(ctx context.Context, sn string, optOut bool, operatorID string) (UnsupportedLockDevice, error) {
+	sn = NormalizeSN(sn)
+	now := time.Now()
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	update := bson.M{
+		"$set": bson.M{
+			"opt_out":     optOut,
+			"operator_id": strings.TrimSpace(operatorID),
+			"updated_at":  now,
+		},
+	}
+	var out UnsupportedLockDevice
+	err := t.UnsupportedLockDevices().FindOneAndUpdate(ctx, bson.M{"sn": sn}, update, opts).Decode(&out)
+	return out, err
+}
+
+func (t *TenantDB) DeleteUnsupportedLockDevice(ctx context.Context, sn string) error {
+	_, err := t.UnsupportedLockDevices().DeleteOne(ctx, bson.M{"sn": NormalizeSN(sn)})
 	return err
 }
 

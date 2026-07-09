@@ -199,7 +199,14 @@ func shouldSkipLockCommand(trigger string, found bool, prevStatus, decisionStatu
 // evaluateAndMaybeCommand is the shared ONT Lock evaluate pipeline.
 // online/chase force-send when ShouldCommand; poll/notify skip when Redis
 // last_status matches the new decision. reportedIP empty → fetch via USP/CWMP.
+//
+// Capability gate: opt_out before TryLock; probe after TryLock so concurrent
+// online events do not stampede USP Gets. Unsupported/transient skip evaluate.
 func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, trigger, reportedIP string) {
+	if a.unsupportedLockOptedOut(ctx, tdb, device.SN) {
+		return
+	}
+
 	unlock, ok, err := lockStateStore.TryLock(ctx, tenantSlug, device.SN, 0)
 	if err != nil {
 		log.Printf("lock_engine: try lock %s: %v", device.SN, err)
@@ -208,6 +215,10 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		return
 	}
 	defer unlock()
+
+	if !a.gateLockCapability(ctx, tdb, device, tenantSlug) {
+		return
+	}
 
 	if reportedIP == "" {
 		reportedIP = a.lockReportedIP(ctx, device, tenantSlug)
