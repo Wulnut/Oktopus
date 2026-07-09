@@ -283,6 +283,7 @@ All scripts are in `deploy/compose/`:
 | `prod-migrate-layout.sh` | One-time GCP migration from flat prod-deploy layout to repo layout |
 | `ci-build.sh` / `ci-deploy.sh` | Legacy registry build/pull (not used by CI; kept for manual use) |
 | `prod-build-export.sh` / `prod-deploy.sh` | Offline tarball export/load for air-gapped production |
+| `scripts/ont-lock-e2e/run.sh` | ONT Lock E2E: set `SN=…` then run decision-matrix cases + USP Lock readback (local/GCP). See `scripts/ont-lock-e2e/README.md`. |
 
 ### GitLab CI/CD (`.gitlab-ci.yml`)
 

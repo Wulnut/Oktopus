@@ -285,6 +285,7 @@ All scripts are in `deploy/compose/`:
 | `prod-export.sh`  | Export images + config from registry to `oktopus-prod.tar.gz` for production |
 | `prod-init.sh`    | One-time server init: swap, docker group, deploy dir                         |
 | `prod-deploy.sh`  | Load images and start compose stack on production server                     |
+| `scripts/ont-lock-e2e/run.sh` | ONT Lock E2E: set `SN=…` then run decision-matrix cases + USP Lock readback (local/GCP). See `scripts/ont-lock-e2e/README.md`. |
 
 ### GitLab CI/CD (`.gitlab-ci.yml`)
 
