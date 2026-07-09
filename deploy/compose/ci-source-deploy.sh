@@ -29,6 +29,17 @@ PROD_PROFILES="nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,registry"
 log() { printf '==> %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
+build_makefile_service() {
+  local svc="$1"
+  local rel_build_dir="$2"
+  local build_dir="$REPO_ROOT/$rel_build_dir"
+  local context_dir
+  context_dir="$(dirname "$build_dir")"
+  [ -f "${build_dir}/Dockerfile" ] || die "Missing Dockerfile: ${build_dir}/Dockerfile"
+  log "Building ${svc} via docker (${context_dir})"
+  docker build -t "oktopusp/${svc}:latest" -f "${build_dir}/Dockerfile" "${context_dir}"
+}
+
 case "$ENV" in
   staging|prod) ;;
   *) die "Usage: ci-source-deploy.sh [staging|prod]" ;;
@@ -59,13 +70,12 @@ COMPOSE_PROFILES="$STAGING_PROFILES" \
   build "${COMPOSE_SERVICES[@]}"
 
 # ---------------------------------------------------------------------------
-# Build Makefile services
+# Build Makefile-backed services (acs, socketio, file-server, firmware-upload)
 # ---------------------------------------------------------------------------
 for entry in "${MAKEFILE_SERVICES[@]}"; do
   svc="${entry%%:*}"
   dir="${entry#*:}"
-  log "Building ${svc} via Makefile"
-  make build -C "$REPO_ROOT/$dir" DOCKER_TAG=latest
+  build_makefile_service "$svc" "$dir"
 done
 
 # ---------------------------------------------------------------------------
