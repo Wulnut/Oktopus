@@ -14,6 +14,24 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+const uspErrCodePathNotInSchema = 7026
+
+type uspErrorBody struct {
+	ErrCode uint32 `json:"err_code"`
+	ErrMsg  string `json:"err_msg"`
+}
+
+func parseUSPErrorBody(body []byte) error {
+	if len(body) == 0 {
+		return nil
+	}
+	var uspErr uspErrorBody
+	if err := json.Unmarshal(body, &uspErr); err != nil || uspErr.ErrCode == 0 {
+		return nil
+	}
+	return fmt.Errorf("usp error %d: %s", uspErr.ErrCode, uspErr.ErrMsg)
+}
+
 // lockDeviceMTP returns the preferred MTP protocol name for a device.
 // CWMP is checked first (primary control plane for ONT Lock), then MQTT,
 // WebSocket, and STOMP.
@@ -94,8 +112,14 @@ func sendUspMsgNoHTTP(msg usp_msg.Msg, sn string, nc *nats.Conn, mtp, tenantSlug
 	if err := sendUspMsg(msg, sn, qw, nc, mtp, tenantSlug); err != nil {
 		return nil, err
 	}
+	if qw.status == http.StatusGatewayTimeout {
+		return nil, fmt.Errorf("usp request timeout")
+	}
 	if qw.status != http.StatusOK {
 		return nil, fmt.Errorf("usp request failed with status %d: %s", qw.status, strings.TrimSpace(string(qw.body)))
+	}
+	if uspErr := parseUSPErrorBody(qw.body); uspErr != nil {
+		return nil, uspErr
 	}
 	return qw.body, nil
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -322,6 +323,10 @@ func (a *Api) suppressLockIfBreakerTripped(ctx context.Context, tdb *db.TenantDB
 }
 
 func (a *Api) markLockCommandOutcome(ctx context.Context, tdb *db.TenantDB, attempt db.LockCommandAttempt, err error) {
+	if isPermanentLockCommandError(err) {
+		_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed, err.Error())
+		return
+	}
 	maxAttempts := a.lockMaxAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = db.DefaultLockCommandMaxAttempts
@@ -331,6 +336,15 @@ func (a *Api) markLockCommandOutcome(ctx context.Context, tdb *db.TenantDB, atte
 		return
 	}
 	_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed, err.Error())
+}
+
+func isPermanentLockCommandError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "does not exist in the schema") ||
+		strings.Contains(msg, fmt.Sprintf("usp error %d:", uspErrCodePathNotInSchema))
 }
 
 func (a *Api) recordLockAudit(ctx context.Context, tdb *db.TenantDB, tenantSlug string, logEntry db.LockAuditLog) {

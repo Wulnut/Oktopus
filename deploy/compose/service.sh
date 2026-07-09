@@ -8,7 +8,7 @@
 # Usage:
 #   ./service.sh start          # full stack, locally built images
 #   ./service.sh dev            # full stack + frontend hot-reload
-#   ./service.sh prod           # production overlay (low-memory VMs)
+#   ./service.sh prod           # production overlay (GCP prod, 8GB RAM tuning)
 #   ./service.sh stop           # stop and remove all containers
 #   ./service.sh restart [svc]  # restart everything or a single service
 #   ./service.sh status         # container status + health
@@ -29,7 +29,7 @@ DEV_FILES="-f docker-compose.yaml -f docker-compose.dev.yaml"
 DEBUG_FILES="-f docker-compose.yaml -f docker-compose.dev.yaml -f docker-compose.debug.yaml"
 PROD_FILES="-f docker-compose.yaml -f docker-compose.prod.yaml"
 
-# Use production overlay when present (GCP / low-memory VMs).
+# Use production overlay when present (GCP production).
 if [ -f docker-compose.prod.yaml ]; then
     COMPOSE_FILES="$PROD_FILES"
 else
@@ -213,7 +213,7 @@ Usage: ./service.sh <command> [args]
 Commands:
   start              Start full stack (locally built images)
   dev                Start full stack + frontend hot-reload
-  prod               Start with production overlay (low-memory VMs)
+  prod               Start with production overlay (GCP prod, 8GB RAM tuning)
   stop               Stop and remove all containers
   restart [service]  Restart all services, or a single one
   status             Show container status and health

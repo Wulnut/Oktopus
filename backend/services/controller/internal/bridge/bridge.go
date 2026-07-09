@@ -42,10 +42,14 @@ func NatsUspInteraction(
 	log.Println("subSubj: ", subSubj)
 	log.Println("pubSubj: ", pubSubj)
 
+	expectedMsgID, msgIDErr := extractUSPMsgIDFromRecord(body)
+	if msgIDErr != nil {
+		log.Printf("NatsUspInteraction: could not extract request msg_id, accepting first response: %v", msgIDErr)
+	}
+
 	ch := make(chan *nats.Msg, 64)
 	done := make(chan error)
-	
-	// Subscribe only for this specific request
+
 	sub, err := nc.ChanSubscribe(subSubj, ch)
 	if err != nil {
 		log.Println(err)
@@ -53,25 +57,38 @@ func NatsUspInteraction(
 		w.Write(utils.Marshall("Error to communicate with nats: " + err.Error()))
 		return []byte{}, err
 	}
-	
-	// Ensure subscription is cleaned up after request completes
+
 	defer func() {
 		if err := sub.Unsubscribe(); err != nil {
 			log.Printf("Error unsubscribing from %s: %v", subSubj, err)
 		}
 	}()
 
+	deadline := time.After(local.NATS_REQUEST_TIMEOUT)
+
 	go func() {
-		select {
-		case msg := <-ch:
-			log.Println("Received an usp message response")
-			answer = msg.Data
-			done <- nil
-		case <-time.After(local.NATS_REQUEST_TIMEOUT):
-			log.Println("usp message response timeout")
-			w.WriteHeader(http.StatusGatewayTimeout)
-			w.Write(utils.Marshall("usp message response timeout"))
-			done <- errNatsRequestTimeout
+		for {
+			select {
+			case msg := <-ch:
+				if expectedMsgID != "" {
+					respMsgID, err := extractUSPMsgIDFromRecord(msg.Data)
+					if err != nil || respMsgID != expectedMsgID {
+						log.Printf("NatsUspInteraction: discarding response (want msg_id=%s, got=%s, err=%v)",
+							expectedMsgID, respMsgID, err)
+						continue
+					}
+				}
+				log.Println("Received an usp message response")
+				answer = msg.Data
+				done <- nil
+				return
+			case <-deadline:
+				log.Println("usp message response timeout")
+				w.WriteHeader(http.StatusGatewayTimeout)
+				w.Write(utils.Marshall("usp message response timeout"))
+				done <- errNatsRequestTimeout
+				return
+			}
 		}
 	}()
 
@@ -116,6 +133,14 @@ func NatsCustomReq[T entity.DataType](
 		}
 	}()
 
+	err = nc.Publish(pubSubj, body)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(utils.Marshall("Error to communicate with nats: " + err.Error()))
+		return nil, err
+	}
+
 	select {
 	case msg := <-ch:
 		log.Println("Received an api message response")
@@ -129,15 +154,9 @@ func NatsCustomReq[T entity.DataType](
 		done <- "done"
 	case <-time.After(local.NATS_REQUEST_TIMEOUT):
 		log.Println("Api message response timeout")
+		w.WriteHeader(http.StatusGatewayTimeout)
+		w.Write(utils.Marshall("api message response timeout"))
 		done <- "timeout"
-	}
-
-	err = nc.Publish(pubSubj, body)
-	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write(utils.Marshall("Error to communicate with nats: " + err.Error()))
-		return nil, err
 	}
 
 	<-done

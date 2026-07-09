@@ -1,4 +1,5 @@
 # Oktopus CI — 8 test jobs; unit tests parallel, integration after unit (parallel).
+# Deploy: source pack + SSH + remote build (telkomsel/ont-lock-dev auto, telkomsel/ont-lock manual).
 # Local tests: deploy/compose/docker-compose.test.yaml
 # Runner tag: oktopus-docker
 
@@ -24,7 +25,6 @@ variables:
 stages:
   - test-unit
   - test-integration
-  - build
   - deploy
 
 .test_artifacts:
@@ -167,61 +167,71 @@ test:integration:handlers:
    - go_test_report test-reports/test-handlers.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/'
 
 # ---------------------------------------------------------------------------
-# Build — construct all Docker images and push to GitLab Container Registry
-# (only on telkomsel/ont-lock-dev; uses host Docker daemon via socket bind)
+# Deploy — upload source, build on target server, restart compose stack
+# telkomsel/ont-lock-dev -> staging (192.168.0.106)
+# telkomsel/ont-lock     -> production GCP (manual)
 # ---------------------------------------------------------------------------
-build:images:
-  stage: build
-  image: docker:24-cli
-  variables:
-    # Runner binds the host Docker socket — no DinD needed, host layer cache applies.
-    DOCKER_HOST: unix:///var/run/docker.sock
+.test_integration_deploy_needs:
   needs:
     - test:integration:db
     - test:integration:bridge
     - test:integration:handlers
-  rules:
-    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
-  before_script:
-    - cd "$CI_PROJECT_DIR"
-    - apk add --no-cache make bash
-  script:
-    - chmod +x deploy/compose/ci-build.sh
-    - ./deploy/compose/ci-build.sh
 
-# ---------------------------------------------------------------------------
-# Deploy — SSH to 192.168.0.106, pull images, restart compose stack
-# Only telkomsel/ont-lock-dev auto-deploys; telkomsel/ont-lock runs CI only.
-# Requires CI/CD variables: DEPLOY_DEV_SSH_KEY (base64-encoded), DEPLOY_DEV_HOST, DEPLOY_DEV_USER
-# ---------------------------------------------------------------------------
-deploy:staging:
+.deploy_ssh:
   stage: deploy
   image: debian:bookworm-slim
-  needs:
-    - build:images
-  rules:
-    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
+  timeout: 2h
+  extends: .test_integration_deploy_needs
   before_script:
-    - apt-get update -qq && apt-get install -y -qq openssh-client tar > /dev/null
-    - mkdir -p ~/.ssh
+    - apt-get update -qq && apt-get install -y -qq openssh-client tar rsync > /dev/null
+    - export SSH_PORT="${SSH_PORT:-22}"
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
     - |
-      echo "$DEPLOY_DEV_SSH_KEY" | base64 -d > ~/.ssh/id_deploy
+      if echo "$SSH_KEY" | grep -qE 'BEGIN.*PRIVATE KEY'; then
+        printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+      else
+        echo "$SSH_KEY" | base64 -d > ~/.ssh/id_deploy
+      fi
     - chmod 400 ~/.ssh/id_deploy
   script:
+    - chmod +x deploy/compose/ci-pack-source.sh deploy/compose/ci-source-deploy.sh
+    - ./deploy/compose/ci-pack-source.sh
+    - scp -P "${SSH_PORT}" -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new /tmp/oktopus-src.tgz "${REMOTE}:/tmp/oktopus-src.tgz"
     - |
-      REMOTE="${DEPLOY_DEV_USER}@${DEPLOY_DEV_HOST}"
-      DEPLOY_DIR="${DEPLOY_DIR:-/root/oktopus/deploy/compose}"
-      SSH_OPTS="-i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new"
-      tar czf /tmp/compose.tgz -C deploy/compose \
-        --exclude='.env.*' --exclude='*_data' --exclude='firmwares' \
-        docker-compose.yaml ci-deploy.sh generate-secrets.sh nginx.conf nats_config container-upload-service registry-certs-generator images/logo.png
-      scp $SSH_OPTS /tmp/compose.tgz "${REMOTE}:/tmp/compose.tgz"
-      ssh $SSH_OPTS "${REMOTE}" \
-        "mkdir -p '${DEPLOY_DIR}' && \
-         tar xzf /tmp/compose.tgz -C '${DEPLOY_DIR}' && \
-         chmod +x '${DEPLOY_DIR}/ci-deploy.sh' && \
-         cd '${DEPLOY_DIR}' && \
-         CI_REGISTRY='${CI_REGISTRY}' CI_REGISTRY_USER='${CI_REGISTRY_USER}' CI_REGISTRY_PASSWORD='${CI_REGISTRY_PASSWORD}' \
-         ./ci-deploy.sh '${CI_REGISTRY_IMAGE}' '${CI_COMMIT_SHORT_SHA}'"
+      ssh -p "${SSH_PORT}" -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new "${REMOTE}" \
+        "set -euo pipefail
+         mkdir -p '${DEPLOY_REPO_ROOT}'
+         tar xzf /tmp/oktopus-src.tgz -C '${DEPLOY_REPO_ROOT}'
+         chmod +x '${DEPLOY_COMPOSE_DIR}/ci-source-deploy.sh'
+         cd '${DEPLOY_COMPOSE_DIR}' && ./ci-source-deploy.sh '${DEPLOY_ENV}'
+         rm -f /tmp/oktopus-src.tgz"
 
-# ---------------------------------------------------------------------------
+deploy:staging:
+  extends: .deploy_ssh
+  resource_group: deploy-staging
+  variables:
+    SSH_KEY: $DEPLOY_DEV_SSH_KEY
+    REMOTE: $DEPLOY_DEV_USER@$DEPLOY_DEV_HOST
+    SSH_PORT: $DEPLOY_DEV_SSH_PORT
+    DEPLOY_REPO_ROOT: /root/oktopus
+    DEPLOY_COMPOSE_DIR: /root/oktopus/deploy/compose
+    DEPLOY_ENV: staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
+
+deploy:production:
+  extends: .deploy_ssh
+  resource_group: deploy-production
+  when: manual
+  environment:
+    name: production
+    url: http://$GCP_HOST
+  variables:
+    SSH_KEY: $SSH_PRIVATE_KEY
+    REMOTE: $GCP_USER@$GCP_HOST
+    SSH_PORT: $SSH_PORT
+    DEPLOY_REPO_ROOT: /home/sei/oktopus
+    DEPLOY_COMPOSE_DIR: /home/sei/oktopus/deploy/compose
+    DEPLOY_ENV: prod
+  rules:
+    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock"

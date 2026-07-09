@@ -11,7 +11,7 @@ x-clear-docker-proxy: &clear-docker-proxy
 services:
   #/* ----------------------------- Message Broker ----------------------------- */
   msg_broker:
-    image: "nats:2.10"
+    image: "nats:2.10-alpine"
     container_name: nats
     ports:
       - 127.0.0.1:4222:4222

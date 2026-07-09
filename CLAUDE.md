@@ -236,6 +236,7 @@ fetch(`${apiPrefix}/devices`, { headers: { Authorization: token } });
 - **Nginx** (port 80) — reverse proxy/API gateway; config in `deploy/compose/nginx.conf`
 - **MongoDB** (port 27017) — primary database for controller and adapter
 - **NATS** (ports 4222, 8222) — message broker with JetStream enabled; config in `deploy/compose/nats_config/`
+- **Production overlay** (`docker-compose.prod.yaml`) — GCP prod VM (8GB RAM): Mongo cache 1GB, frontend heap 512MB, JetStream memory 256MB
 - **Docker Registry** (port 443) — private registry with auto-generated TLS certs via `registry-certs-generator`
 - **Portainer** (port 9443) — container management UI
 - **container-upload** (port 8005) — custom Node.js service for uploading containers to the local registry; prefixes images with tenant slug from JWT
@@ -277,8 +278,33 @@ All scripts are in `deploy/compose/`:
 | `stop.sh` | Stop all services |
 | `package.sh` | Create offline deployment archive (`oktopus-deploy.tar.gz`) |
 | `image-deploy.sh` | Build, verify, save, scp, and deploy individual service images |
+| `ci-pack-source.sh` | Pack repo source for CI deploy (excludes data dirs and secrets) |
+| `ci-source-deploy.sh` | Remote build from source + restart stack (`staging` or `prod`) |
+| `prod-migrate-layout.sh` | One-time GCP migration from flat prod-deploy layout to repo layout |
+| `ci-build.sh` / `ci-deploy.sh` | Legacy registry build/pull (not used by CI; kept for manual use) |
+| `prod-build-export.sh` / `prod-deploy.sh` | Offline tarball export/load for air-gapped production |
 
-### Build & Test Rules
+### GitLab CI/CD (`.gitlab-ci.yml`)
+
+Runner tag: `oktopus-docker`. Stages: `test-unit` → `test-integration` → `deploy`.
+
+**Branches:**
+
+| Branch | Deploy job | Target |
+|--------|------------|--------|
+| `telkomsel/ont-lock-dev` | `deploy:staging` (auto) | Test server `/root/oktopus` |
+| `telkomsel/ont-lock` | `deploy:production` (manual) | GCP `/home/sei/oktopus` |
+
+**Flow:** integration tests pass → `ci-pack-source.sh` creates tarball → SCP to server → extract → `ci-source-deploy.sh staging|prod` builds images on the server, restarts compose, then deletes `backend/`, `frontend/`, and other source (keeps only `deploy/compose/`). Set `SKIP_SOURCE_CLEANUP=1` on the server to skip cleanup for debugging.
+
+**CI/CD variables:**
+
+- Staging: `DEPLOY_DEV_SSH_KEY` (base64), `DEPLOY_DEV_HOST`, `DEPLOY_DEV_USER`, optional `DEPLOY_DEV_SSH_PORT`
+- Production: `SSH_PRIVATE_KEY` (raw PEM or base64), `GCP_HOST`, `GCP_USER`, `SSH_PORT` (default 22)
+
+**GCP first-time setup:** run `prod-migrate-layout.sh` on the VM if the directory is still flat from `prod-deploy.sh` (compose files in `~/oktopus` root instead of `~/oktopus/deploy/compose/`).
+
+Deploy jobs use `timeout: 2h` and `resource_group` to prevent concurrent deploys.
 
 - **Always use Docker** for building and testing — never use host tools (`npx`, `npm`, `node`, `go`) directly. Use `sg docker -c "..."` if the docker group requires it.
 - **Build all**: `sg docker -c "cd deploy/compose && ./build.sh"`

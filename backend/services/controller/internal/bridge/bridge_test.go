@@ -12,8 +12,7 @@ import (
 
 // TestNatsUspInteraction_ConcurrentSameDevice verifies that two concurrent
 // requests to the same device serial number do not cross-contaminate responses.
-// Current code uses a deterministic subject (device.usp.v1.<sn>.api), so both
-// goroutines subscribe to the same subject. This test will FAIL.
+// Each request is correlated by USP msg_id on the shared NATS subject.
 func TestNatsUspInteraction_ConcurrentSameDevice(t *testing.T) {
 	// This test requires a live NATS connection.
 	// Use NATS_URL env var or skip.
@@ -75,9 +74,8 @@ func TestNatsUspInteraction_ConcurrentSameDevice(t *testing.T) {
 	}
 }
 
-// TestNatsCustomReq_DoesNotTimeout verifies that NatsCustomReq actually
-// receives a response. Current code subscribes and waits BEFORE publishing,
-// so it always times out.
+// TestNatsCustomReq_DoesNotTimeout verifies that NatsCustomReq publishes before
+// waiting for the response.
 func TestNatsCustomReq_DoesNotTimeout(t *testing.T) {
 	natsURL := natsTestURL()
 	if natsURL == "" {

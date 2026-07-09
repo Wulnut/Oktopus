@@ -3,7 +3,7 @@
 #
 # Run this once before the first prod-deploy.sh. It:
 #   1. Adds the current user to the docker group (avoids needing sudo for docker)
-#   2. Creates a swap file (essential for low-memory VMs)
+#   2. Creates a swap file (recommended for Docker builds; optional on 8GB+ RAM)
 #   3. Creates the deployment directory
 #
 # Usage:

@@ -80,6 +80,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
 
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [cachedAt, setCachedAt] = useState(null);
@@ -123,6 +124,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
         setInfo(result.info);
         setIsCached(true);
         setCachedAt(result.updated_at);
+        setFetchError(null);
       }
     } catch {
       // ignore
@@ -135,24 +137,36 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
     if (!sn) return;
     setLoading(true);
     setIsCached(false);
+    setFetchError(null);
     fetchUpgradeLogs();
     try {
       const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/info`, 'GET', null, null);
       if (status === 200 && result) {
-        setInfo(result);
-        setIsCached(false);
-        setCachedAt(null);
+        const rows = parseUspFlat(result);
+        if (rows.length > 0) {
+          setInfo(result);
+          setIsCached(false);
+          setCachedAt(null);
+          setLoading(false);
+          if (onOnlineChange) onOnlineChange(true);
+          return;
+        }
+        setFetchError('Device returned an empty response. Click Refresh to try again.');
+        setInfo(null);
         setLoading(false);
-        if (onOnlineChange) onOnlineChange(true);
         return;
       }
+      if (status === 504) {
+        setFetchError('Device response timed out. The device may be busy or reconnecting — click Refresh to try again.');
+      } else {
+        setFetchError(`Failed to fetch device information (HTTP ${status}).`);
+      }
     } catch {
-      // ignore
+      setFetchError('Failed to reach the platform API.');
     }
-    // Fallback to cached if live fetch failed
-    await fetchCachedInfo();
-    if (onOnlineChange) onOnlineChange(false);
-  }, [sn, mtp, fetchCachedInfo, fetchUpgradeLogs]);
+    setInfo(null);
+    setLoading(false);
+  }, [sn, mtp, fetchUpgradeLogs, onOnlineChange, onStatusRefresh, apiPrefix, httpRequest]);
 
   useEffect(() => {
     if (deviceOnline === false) {
@@ -403,10 +417,16 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
               <CircularProgress />
             </Box>
           ) : rows.length === 0 ? (
-            <Box display="flex" justifyContent="center" py={4}>
-              <Typography color="text.secondary" variant="body2">
-                No device information available. Click Refresh to fetch.
-              </Typography>
+            <Box display="flex" flexDirection="column" alignItems="center" py={4} px={2} gap={1}>
+              {fetchError ? (
+                <Alert severity="warning" sx={{ width: '100%', maxWidth: 560 }}>
+                  {fetchError}
+                </Alert>
+              ) : (
+                <Typography color="text.secondary" variant="body2">
+                  No device information available. Click Refresh to fetch.
+                </Typography>
+              )}
             </Box>
           ) : (
             <TableContainer component={Paper} elevation={0}>
