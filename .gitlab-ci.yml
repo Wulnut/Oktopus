@@ -209,6 +209,8 @@ test:integration:handlers:
 deploy:staging:
   extends: .deploy_ssh
   resource_group: deploy-staging
+  # GitLab CI/CD variables (staging / telkomsel/ont-lock-dev only):
+  #   DEPLOY_DEV_SSH_KEY, DEPLOY_DEV_HOST, DEPLOY_DEV_USER, DEPLOY_DEV_SSH_PORT
   variables:
     SSH_KEY: $DEPLOY_DEV_SSH_KEY
     REMOTE: $DEPLOY_DEV_USER@$DEPLOY_DEV_HOST
@@ -226,6 +228,11 @@ deploy:production:
   environment:
     name: production
     url: http://$GCP_HOST
+  # GitLab CI/CD variables (production / telkomsel/ont-lock only):
+  #   SSH_PRIVATE_KEY — GCP SSH private key (PEM or base64)
+  #   GCP_HOST        — GCP server IP
+  #   GCP_USER        — SSH username
+  #   SSH_PORT        — SSH port (default 22 in .deploy_ssh before_script)
   variables:
     SSH_KEY: $SSH_PRIVATE_KEY
     REMOTE: $GCP_USER@$GCP_HOST
