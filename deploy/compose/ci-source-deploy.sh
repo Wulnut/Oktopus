@@ -40,6 +40,27 @@ setup_docker_cli() {
   log "Non-root deploy: DOCKER_CONFIG=${DOCKER_CONFIG}"
 }
 
+# Compose defaults to the working directory name ("compose" under deploy/compose/).
+# That creates compose_usp_network on 172.16.235.0/24 and fails if oktopus_usp_network
+# already exists from the flat ~/oktopus prod layout.
+setup_compose_project() {
+  export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-oktopus}"
+  log "Docker Compose project: ${COMPOSE_PROJECT_NAME}"
+}
+
+prune_orphan_compose_network() {
+  local orphan="compose_usp_network"
+  if ! docker network inspect "$orphan" &>/dev/null; then
+    return 0
+  fi
+  local count
+  count="$(docker network inspect "$orphan" --format '{{len .Containers}}' 2>/dev/null || echo 0)"
+  if [ "$count" = "0" ]; then
+    log "Removing unused ${orphan} (subnet overlaps ${COMPOSE_PROJECT_NAME}_usp_network)"
+    docker network rm "$orphan" || true
+  fi
+}
+
 build_makefile_service() {
   local svc="$1"
   local rel_build_dir="$2"
@@ -63,6 +84,7 @@ esac
 
 cd "$SCRIPT_DIR"
 setup_docker_cli
+setup_compose_project
 
 # ---------------------------------------------------------------------------
 # Bootstrap secrets and data dirs (idempotent; does not overwrite real secrets)
@@ -106,6 +128,8 @@ COMPOSE_PROFILES="$STAGING_PROFILES" \
 # ---------------------------------------------------------------------------
 # Restart stack (--no-build: use images built above)
 # ---------------------------------------------------------------------------
+prune_orphan_compose_network
+
 if [ "$ENV" = "prod" ]; then
   log "Starting production stack (profiles: ${PROD_PROFILES})"
   COMPOSE_PROFILES="$PROD_PROFILES" \
