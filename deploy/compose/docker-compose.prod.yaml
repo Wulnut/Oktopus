@@ -19,3 +19,12 @@ services:
   msg_broker:
     environment:
       - JETSTREAM_MAX_MEMORY=268435456
+
+  # ONT Lock scale adapters — keep modest on 8GB prod VM
+  redis:
+    mem_limit: 128m
+
+  kafka:
+    mem_limit: 512m
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m -Xms128m"

@@ -97,6 +97,9 @@ func TestNoopLockAdaptersDoNotPanic(t *testing.T) {
 	if _, found, err := lockCache.GetLockPolicy(ctx, "tenant", "SN"); err != nil || found {
 		t.Fatalf("noop cache should miss without error, found=%v err=%v", found, err)
 	}
+	if _, found, err := lockStateStore.Get(ctx, "tenant", "SN"); err != nil || found {
+		t.Fatalf("noop state store should miss without error, found=%v err=%v", found, err)
+	}
 	if err := lockAuditSink.PublishLockAudit(ctx, "tenant", db.LockAuditLog{Action: "noop"}); err != nil {
 		t.Fatalf("noop sink: %v", err)
 	}

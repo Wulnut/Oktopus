@@ -32,6 +32,7 @@ type Api struct {
 	lockMaxAttempts           int
 	lockCircuitBreaker        *lockCircuitBreaker
 	lockEngineSem             chan struct{}
+	lockNotifyEnabled         bool
 }
 
 const REQUEST_TIMEOUT = time.Second * 30
@@ -200,6 +201,9 @@ func (a *Api) StartApi() {
 	lock.HandleFunc("/config", a.updateLockConfig).Methods("PUT")
 	lock.HandleFunc("/unauthorized", a.listUnauthorizedDevices).Methods("GET")
 	lock.HandleFunc("/unauthorized/batch-whitelist", a.batchWhitelistFromUnauthorized).Methods("POST")
+	lock.HandleFunc("/unsupported", a.listUnsupportedLockDevices).Methods("GET")
+	lock.HandleFunc("/unsupported/{sn}/opt-out", a.optOutUnsupportedLockDevice).Methods("POST")
+	lock.HandleFunc("/unsupported/{sn}/opt-out", a.clearOptOutUnsupportedLockDevice).Methods("DELETE")
 	lock.HandleFunc("/commands", a.listLockCommands).Methods("GET")
 	lock.HandleFunc("/audit", a.listLockAuditLogs).Methods("GET")
 	lock.HandleFunc("/audit", a.clearLockAuditLogs).Methods("DELETE")

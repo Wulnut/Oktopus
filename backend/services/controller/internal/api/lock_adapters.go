@@ -35,7 +35,8 @@ type redisLockPolicyCache struct {
 	client *redis.Client
 }
 
-func newRedisLockPolicyCache(url string) (*redisLockPolicyCache, error) {
+// connectRedis parses url, creates a client, and pings to verify connectivity.
+func connectRedis(url string) (*redis.Client, error) {
 	opts, err := redis.ParseURL(url)
 	if err != nil {
 		return nil, err
@@ -44,6 +45,15 @@ func newRedisLockPolicyCache(url string) (*redisLockPolicyCache, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	return client, nil
+}
+
+func newRedisLockPolicyCache(url string) (*redisLockPolicyCache, error) {
+	client, err := connectRedis(url)
+	if err != nil {
 		return nil, err
 	}
 	return &redisLockPolicyCache{client: client}, nil
@@ -210,11 +220,12 @@ func InitLockScaleAdapters(cfg config.LockScale) {
 	if cfg.RedisEnabled {
 		if cfg.RedisURL == "" {
 			log.Printf("lock_adapters: LOCK_REDIS_ENABLED=true but LOCK_REDIS_URL is empty, using noop cache")
-		} else if cache, err := newRedisLockPolicyCache(cfg.RedisURL); err != nil {
-			log.Printf("lock_adapters: redis cache init failed: %v (using noop cache)", err)
+		} else if client, err := connectRedis(cfg.RedisURL); err != nil {
+			log.Printf("lock_adapters: redis init failed: %v (using noop cache/state)", err)
 		} else {
-			lockCache = cache
-			log.Printf("lock_adapters: redis policy cache enabled")
+			lockCache = &redisLockPolicyCache{client: client}
+			lockStateStore = &redisLockDeviceStateStore{client: client}
+			log.Printf("lock_adapters: redis policy cache and device state store enabled")
 		}
 	}
 
@@ -250,7 +261,13 @@ func setLockAdaptersForTest(cache lockPolicyCache, sink lockEventSink) {
 	lockAuditSink = sink
 }
 
+// setLockStateStoreForTest replaces the global device state store in unit tests.
+func setLockStateStoreForTest(store lockDeviceStateStore) {
+	lockStateStore = store
+}
+
 func resetLockAdaptersForTest() {
 	lockCache = noopLockPolicyCache{}
 	lockAuditSink = noopLockEventSink{}
+	lockStateStore = noopLockDeviceStateStore{}
 }

@@ -41,13 +41,18 @@ type CampaignScheduler struct {
 }
 
 type LockScale struct {
-	RedisURL      string
-	RedisEnabled  bool
-	KafkaBrokers  string
-	KafkaTopic    string
-	KafkaEnabled  bool
-	GreenplumDSN  string
+	RedisURL         string
+	RedisEnabled     bool
+	KafkaBrokers     string
+	KafkaTopic       string
+	KafkaEnabled     bool
+	GreenplumDSN     string
 	GreenplumEnabled bool
+	// IPPollEnabled / NotifyEnabled default false in code; compose sets true via env.
+	IPPollEnabled  bool
+	IPPollInterval time.Duration
+	NotifyEnabled  bool
+	NotifyHealth   time.Duration
 }
 
 type LockRetryScheduler struct {
@@ -103,6 +108,10 @@ func NewConfig() *Config {
 	lockKafkaEnabled := flag.Bool("lock_kafka_enabled", lookupEnvOrBool("LOCK_KAFKA_ENABLED", false), "enable kafka lock audit producer")
 	lockGreenplumDSN := flag.String("lock_greenplum_dsn", lookupEnvOrString("LOCK_GREENPLUM_DSN", ""), "postgres/greenplum DSN for lock audit sink")
 	lockGreenplumEnabled := flag.Bool("lock_greenplum_enabled", lookupEnvOrBool("LOCK_GREENPLUM_ENABLED", false), "enable greenplum lock audit sink")
+	lockIPPollEnabled := flag.Bool("lock_ip_poll_enabled", lookupEnvOrBool("LOCK_IP_POLL_ENABLED", false), "enable ONT Lock WAN IP poll re-evaluation")
+	lockIPPollIntervalSec := flag.Int("lock_ip_poll_interval_sec", lookupEnvOrInt("LOCK_IP_POLL_INTERVAL_SEC", 60), "ONT Lock IP poll interval in seconds")
+	lockNotifyEnabled := flag.Bool("lock_notify_enabled", lookupEnvOrBool("LOCK_NOTIFY_ENABLED", false), "enable ONT Lock USP ValueChange Notify re-evaluation")
+	lockNotifyHealthSec := flag.Int("lock_notify_health_sec", lookupEnvOrInt("LOCK_NOTIFY_HEALTH_SEC", 120), "seconds without Notify before treating notify path unhealthy")
 	lockRetryEnabled := flag.Bool("lock_retry_scheduler_enabled", lookupEnvOrBool("LOCK_RETRY_SCHEDULER_ENABLED", true), "enable lock command retry scheduler")
 	lockRetryIntervalSec := flag.Int("lock_retry_scheduler_interval_sec", lookupEnvOrInt("LOCK_RETRY_SCHEDULER_INTERVAL_SEC", 30), "lock retry scheduler tick interval in seconds (min 15)")
 	lockCommandTimeoutSec := flag.Int("lock_command_timeout_sec", lookupEnvOrInt("LOCK_COMMAND_TIMEOUT_SEC", 30), "minimum age before retrying a failed lock command")
@@ -163,6 +172,10 @@ func NewConfig() *Config {
 			KafkaEnabled:     *lockKafkaEnabled,
 			GreenplumDSN:     *lockGreenplumDSN,
 			GreenplumEnabled: *lockGreenplumEnabled,
+			IPPollEnabled:    *lockIPPollEnabled,
+			IPPollInterval:   time.Duration(*lockIPPollIntervalSec) * time.Second,
+			NotifyEnabled:    *lockNotifyEnabled,
+			NotifyHealth:     time.Duration(*lockNotifyHealthSec) * time.Second,
 		},
 		LockRetryScheduler: LockRetryScheduler{
 			Enabled:        *lockRetryEnabled,

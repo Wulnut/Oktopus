@@ -20,6 +20,11 @@ import (
 const (
 	lockParameterPath = "Device.X_TELKOMSEL_OntLock.Lock"
 	lockWanIPPath     = "Device.X_TELKOMSEL_OntLock.InternetWanIP"
+
+	lockTriggerOnline         = "online"
+	lockTriggerChase          = "chase"
+	lockTriggerIPChangePoll   = "ip_change_poll"
+	lockTriggerIPChangeNotify = "ip_change_notify"
 )
 
 // lockEngineConcurrency limits simultaneous device evaluations to protect
@@ -174,11 +179,66 @@ func (a *Api) releaseLockSem() {
 func (a *Api) handleLockDeviceOnline(tdb *db.TenantDB, device entity.Device, tenantSlug string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	a.evaluateAndMaybeCommand(ctx, tdb, device, tenantSlug, lockTriggerOnline, "")
+}
 
-	reportedIP := a.lockReportedIP(ctx, device, tenantSlug)
-	policy, found, err := lockCache.GetLockPolicy(ctx, tenantSlug, device.SN)
+// shouldSkipLockCommand is true when ShouldCommand but the trigger is a
+// status-diff path (poll/notify) and Redis already recorded the same status.
+// online/chase always force-converge (never skip).
+func shouldSkipLockCommand(trigger string, found bool, prevStatus, decisionStatus db.DeviceLockStatus, shouldCommand bool) bool {
+	if !shouldCommand {
+		return false
+	}
+	forceConverge := trigger == lockTriggerOnline || trigger == lockTriggerChase
+	if forceConverge {
+		return false
+	}
+	return found && prevStatus == decisionStatus
+}
+
+// evaluateAndMaybeCommand is the shared ONT Lock evaluate pipeline.
+// online/chase force-send when ShouldCommand; poll/notify skip when Redis
+// last_status matches the new decision. reportedIP empty → fetch via USP/CWMP.
+//
+// Capability gate: opt_out before TryLock; after TryLock, probe only when
+// shouldProbeOntLockCapability allows (online always re-probes; poll/chase/notify
+// skip without probe when an unsupported row already exists). Unsupported/transient skip evaluate.
+func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, trigger, reportedIP string) {
+	if a.unsupportedLockOptedOut(ctx, tdb, device.SN) {
+		return
+	}
+
+	unlock, ok, err := lockStateStore.TryLock(ctx, tenantSlug, device.SN, 0)
+	if err != nil {
+		log.Printf("lock_engine: try lock %s: %v", device.SN, err)
+	}
+	if !ok {
+		return
+	}
+	defer unlock()
+
+	if !a.gateLockCapability(ctx, tdb, device, tenantSlug, trigger) {
+		return
+	}
+
+	// Subscribe only on online (re-probe path). Poll/notify/chase must not re-Add.
+	// Defer runs before unlock (LIFO) so subscribe's NotifyOKAt touch takes the
+	// per-SN lock after this evaluate's state Put.
+	if a.lockNotifyEnabled && trigger == lockTriggerOnline {
+		if mtp := lockDeviceMTP(device); mtp != "" && mtp != "cwmp" {
+			defer func() {
+				go a.ensureLockIPValueChangeSubscription(context.Background(), device, tenantSlug, mtp)
+			}()
+		}
+	}
+
+	if reportedIP == "" {
+		reportedIP = a.lockReportedIP(ctx, device, tenantSlug)
+	}
+
+	policy, foundPolicy, err := lockCache.GetLockPolicy(ctx, tenantSlug, device.SN)
 	var policyPtr *db.LockPolicy
-	if err == nil && found {
+	if err == nil && foundPolicy {
 		policyPtr = &policy
 	} else {
 		policy, err = tdb.GetLockPolicy(ctx, device.SN)
@@ -203,6 +263,12 @@ func (a *Api) handleLockDeviceOnline(tdb *db.TenantDB, device entity.Device, ten
 		Policy:     policyPtr,
 	})
 
+	prev, found, err := lockStateStore.Get(ctx, tenantSlug, device.SN)
+	if err != nil {
+		log.Printf("lock_engine: get device state %s: %v", device.SN, err)
+		found = false
+	}
+
 	if decision.Status == db.LockStatusPending {
 		_ = tdb.RecordUnauthorizedDevice(ctx, db.UnauthorizedDevice{
 			SN:         device.SN,
@@ -212,19 +278,63 @@ func (a *Api) handleLockDeviceOnline(tdb *db.TenantDB, device entity.Device, ten
 		})
 	}
 
-	a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
-		SN:     device.SN,
-		Action: "evaluate",
-		Status: decision.Status,
-		Details: bson.M{
-			"reason":      decision.Reason,
-			"reported_ip": reportedIP,
-		},
-	})
+	details := bson.M{
+		"reason":      decision.Reason,
+		"reported_ip": reportedIP,
+		"trigger":     trigger,
+	}
+	if found {
+		details["previous_status"] = prev.LastStatus
+		details["previous_ip"] = prev.LastIP
+	}
+
+	now := time.Now()
+	nextState := lockDeviceState{
+		LastIP:     reportedIP,
+		LastStatus: decision.Status,
+		UpdatedAt:  now,
+	}
+	if found {
+		nextState.LastCommand = prev.LastCommand
+		nextState.NotifyOKAt = prev.NotifyOKAt
+	}
+	if trigger == lockTriggerIPChangeNotify {
+		nextState.NotifyOKAt = now
+	}
 
 	if !decision.ShouldCommand {
+		a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+			SN:      device.SN,
+			Action:  "evaluate",
+			Status:  decision.Status,
+			Details: details,
+		})
+		if err := lockStateStore.Put(ctx, tenantSlug, device.SN, nextState); err != nil {
+			log.Printf("lock_engine: put device state %s: %v", device.SN, err)
+		}
 		return
 	}
+
+	if shouldSkipLockCommand(trigger, found, prev.LastStatus, decision.Status, decision.ShouldCommand) {
+		details["command_skipped"] = true
+		a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+			SN:      device.SN,
+			Action:  "evaluate",
+			Status:  decision.Status,
+			Details: details,
+		})
+		if err := lockStateStore.Put(ctx, tenantSlug, device.SN, nextState); err != nil {
+			log.Printf("lock_engine: put device state %s: %v", device.SN, err)
+		}
+		return
+	}
+
+	a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+		SN:      device.SN,
+		Action:  "evaluate",
+		Status:  decision.Status,
+		Details: details,
+	})
 
 	// Circuit breaker: suppress LOCK commands when tripped to prevent
 	// mass-lock accidents (e.g. misconfigured whitelist). UNLOCK is never
@@ -235,6 +345,12 @@ func (a *Api) handleLockDeviceOnline(tdb *db.TenantDB, device entity.Device, ten
 
 	if _, err := a.sendLockCommand(ctx, tdb, device.SN, reportedIP, decision, tenantSlug); err != nil {
 		log.Printf("lock_engine: send lock command %s: %v", device.SN, err)
+		return
+	}
+
+	nextState.LastCommand = decision.CommandValue
+	if err := lockStateStore.Put(ctx, tenantSlug, device.SN, nextState); err != nil {
+		log.Printf("lock_engine: put device state %s: %v", device.SN, err)
 	}
 }
 
