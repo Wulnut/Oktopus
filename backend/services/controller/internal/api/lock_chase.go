@@ -24,7 +24,7 @@ func (a *Api) chaseLockForSN(tenantSlug, sn string) {
 			return
 		}
 		tdb := a.db.ForTenant(tenantSlug)
-		a.handleLockDeviceOnline(tdb, device, tenantSlug)
+		a.evaluateAndMaybeCommand(ctx, tdb, device, tenantSlug, lockTriggerChase, "")
 	}()
 }
 
@@ -77,7 +77,9 @@ func (a *Api) chaseLockAfterConfigUpdate(tenantSlug string) {
 		go func(dev entity.Device) {
 			a.acquireLockSem()
 			defer a.releaseLockSem()
-			a.handleLockDeviceOnline(tdb, dev, tenantSlug)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			a.evaluateAndMaybeCommand(ctx, tdb, dev, tenantSlug, lockTriggerChase, "")
 		}(device)
 	}
 }

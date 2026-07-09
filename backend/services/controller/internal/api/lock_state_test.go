@@ -125,6 +125,48 @@ func TestRedisLockDeviceStateTryLockSoftDegradeOnRedisError(t *testing.T) {
 	unlock() // must not panic
 }
 
+func TestRedisLockDeviceStateTryLockTokenUnlockSafeAfterExpiry(t *testing.T) {
+	store, mr := newTestRedisStateStore(t)
+	defer mr.Close()
+	defer store.client.Close()
+
+	ctx := context.Background()
+	unlock1, ok, err := store.TryLock(ctx, "tenant-a", "SN-001", 50*time.Millisecond)
+	if err != nil || !ok {
+		t.Fatalf("first TryLock: ok=%v err=%v", ok, err)
+	}
+
+	// Expire the first holder's key, then let a second holder acquire it.
+	mr.FastForward(100 * time.Millisecond)
+
+	unlock2, ok, err := store.TryLock(ctx, "tenant-a", "SN-001", 10*time.Second)
+	if err != nil || !ok {
+		t.Fatalf("second TryLock after expiry: ok=%v err=%v", ok, err)
+	}
+
+	// Stale unlock from the first holder must not delete the second holder's lock.
+	unlock1()
+
+	unlock3, ok, err := store.TryLock(ctx, "tenant-a", "SN-001", 10*time.Second)
+	if err != nil {
+		t.Fatalf("third TryLock: %v", err)
+	}
+	if ok {
+		t.Fatal("expected contention: second holder's lock should still be present")
+	}
+	if unlock3 != nil {
+		t.Fatal("expected nil unlock on contention")
+	}
+
+	unlock2()
+
+	unlock4, ok, err := store.TryLock(ctx, "tenant-a", "SN-001", 10*time.Second)
+	if err != nil || !ok {
+		t.Fatalf("TryLock after rightful unlock: ok=%v err=%v", ok, err)
+	}
+	unlock4()
+}
+
 func TestNoopLockDeviceStateStoreSoftMiss(t *testing.T) {
 	var store noopLockDeviceStateStore
 	ctx := context.Background()

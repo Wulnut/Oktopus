@@ -4,13 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/redis/go-redis/v9"
 )
 
 const defaultLockEvalTTL = 15 * time.Second
+
+// unlockEvalScript deletes the eval lock only when the token still matches,
+// so a TTL-expired unlock cannot remove another holder's key.
+var unlockEvalScript = redis.NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+end
+return 0
+`)
 
 type lockDeviceState struct {
 	LastIP      string              `json:"last_ip"`
@@ -79,7 +90,8 @@ func (s *redisLockDeviceStateStore) Put(ctx context.Context, tenant, sn string, 
 	return s.client.Set(ctx, lockDeviceStateKey(tenant, sn), raw, 0).Err()
 }
 
-// TryLock acquires a per-SN eval lock via SET NX EX.
+// TryLock acquires a per-SN eval lock via SET NX EX with a unique token.
+// Unlock is compare-and-del so TTL expiry cannot delete another holder's key.
 // On Redis errors, soft-degrades: returns ok=true with a no-op unlock so the
 // lock pipeline never hard-fails when Redis is unavailable. Contention
 // (key already held) returns ok=false.
@@ -88,16 +100,17 @@ func (s *redisLockDeviceStateStore) TryLock(ctx context.Context, tenant, sn stri
 		ttl = defaultLockEvalTTL
 	}
 	key := lockEvalKey(tenant, sn)
-	ok, err := s.client.SetNX(ctx, key, "1", ttl).Result()
+	token := uuid.NewString()
+	ok, err := s.client.SetNX(ctx, key, token, ttl).Result()
 	if err != nil {
-		// Soft-degrade: proceed without mutual exclusion when Redis is down.
+		log.Printf("lock_state: TryLock soft-degrade tenant=%s sn=%s: %v", tenant, sn, err)
 		return func() {}, true, nil
 	}
 	if !ok {
 		return nil, false, nil
 	}
 	unlock := func() {
-		_ = s.client.Del(context.Background(), key).Err()
+		_, _ = unlockEvalScript.Run(context.Background(), s.client, []string{key}, token).Result()
 	}
 	return unlock, true, nil
 }

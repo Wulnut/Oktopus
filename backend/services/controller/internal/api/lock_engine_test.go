@@ -82,3 +82,95 @@ func TestEvaluateLockDecisionMasterSwitchDisabledUnlocks(t *testing.T) {
 		t.Fatalf("expected UNLOCK command value 0, got command=%v value=%q", decision.ShouldCommand, decision.CommandValue)
 	}
 }
+
+func TestShouldSkipLockCommandSameStatusPollSkips(t *testing.T) {
+	skip := shouldSkipLockCommand(
+		lockTriggerIPChangePoll,
+		true,
+		db.LockStatusLocked,
+		db.LockStatusLocked,
+		true,
+	)
+	if !skip {
+		t.Fatal("same status + poll should skip command")
+	}
+}
+
+func TestShouldSkipLockCommandSameStatusNotifySkips(t *testing.T) {
+	skip := shouldSkipLockCommand(
+		lockTriggerIPChangeNotify,
+		true,
+		db.LockStatusUnlocked,
+		db.LockStatusUnlocked,
+		true,
+	)
+	if !skip {
+		t.Fatal("same status + notify should skip command")
+	}
+}
+
+func TestShouldSkipLockCommandSameStatusOnlineSends(t *testing.T) {
+	skip := shouldSkipLockCommand(
+		lockTriggerOnline,
+		true,
+		db.LockStatusLocked,
+		db.LockStatusLocked,
+		true,
+	)
+	if skip {
+		t.Fatal("same status + online must force-converge (send)")
+	}
+}
+
+func TestShouldSkipLockCommandSameStatusChaseSends(t *testing.T) {
+	skip := shouldSkipLockCommand(
+		lockTriggerChase,
+		true,
+		db.LockStatusLocked,
+		db.LockStatusLocked,
+		true,
+	)
+	if skip {
+		t.Fatal("same status + chase must force-converge (send)")
+	}
+}
+
+func TestShouldSkipLockCommandStatusChangePollSends(t *testing.T) {
+	skip := shouldSkipLockCommand(
+		lockTriggerIPChangePoll,
+		true,
+		db.LockStatusLocked,
+		db.LockStatusUnlocked,
+		true,
+	)
+	if skip {
+		t.Fatal("status change + poll should send")
+	}
+}
+
+func TestShouldSkipLockCommandMissingRedisStateSends(t *testing.T) {
+	skip := shouldSkipLockCommand(
+		lockTriggerIPChangePoll,
+		false,
+		"",
+		db.LockStatusLocked,
+		true,
+	)
+	if skip {
+		t.Fatal("missing Redis state should send when ShouldCommand")
+	}
+}
+
+func TestShouldSkipLockCommandNoShouldCommandNeverSkips(t *testing.T) {
+	// Skip helper only applies when a command would otherwise be sent.
+	skip := shouldSkipLockCommand(
+		lockTriggerIPChangePoll,
+		true,
+		db.LockStatusPending,
+		db.LockStatusPending,
+		false,
+	)
+	if skip {
+		t.Fatal("!ShouldCommand path is handled separately; helper must return false")
+	}
+}
