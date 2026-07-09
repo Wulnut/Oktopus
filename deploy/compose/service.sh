@@ -18,6 +18,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Pin project name so the network is oktopus_usp_network, not compose_usp_network.
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-oktopus}"
+
 # All profiles defined in docker-compose.yaml.
 PROFILES="nats,controller,cwmp,mqtt,stomp,ws,adapter,frontend,portainer,registry"
 export COMPOSE_PROFILES="$PROFILES"

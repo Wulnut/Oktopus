@@ -279,7 +279,7 @@ All scripts are in `deploy/compose/`:
 | `package.sh` | Create offline deployment archive (`oktopus-deploy.tar.gz`) |
 | `image-deploy.sh` | Build, verify, save, scp, and deploy individual service images |
 | `ci-pack-source.sh` | Pack repo source for CI deploy (excludes data dirs and secrets) |
-| `ci-source-deploy.sh` | Remote build from source + restart stack (`staging` or `prod`) |
+| `ci-source-deploy.sh` | Remote build from source + restart stack (`staging` or `prod`). Pins `COMPOSE_PROJECT_NAME=oktopus` and tears down a legacy `compose` project if it still owns `172.16.235.0/24`. |
 | `prod-migrate-layout.sh` | One-time GCP migration from flat prod-deploy layout to repo layout |
 | `ci-build.sh` / `ci-deploy.sh` | Legacy registry build/pull (not used by CI; kept for manual use) |
 | `prod-build-export.sh` / `prod-deploy.sh` | Offline tarball export/load for air-gapped production |
