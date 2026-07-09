@@ -39,6 +39,7 @@ func main() {
 	a.StartApi()
 	a.InitLockEngine(c.LockCircuitBreaker)
 	a.StartLockEngine()
+	a.StartLockIPPoller(c.LockScale)
 	a.StartLockRetryScheduler()
 	a.StartCampaignEngine()
 	a.StartCampaignScheduler()

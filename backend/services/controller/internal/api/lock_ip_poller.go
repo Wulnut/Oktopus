@@ -1,0 +1,142 @@
+package api
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"github.com/leandrofars/oktopus/internal/config"
+	"github.com/leandrofars/oktopus/internal/db"
+	"github.com/leandrofars/oktopus/internal/entity"
+)
+
+const minLockIPPollInterval = 30 * time.Second
+const defaultLockNotifyHealth = 120 * time.Second
+
+// shouldSkipIPPollForNotifyHealth is true when NotifyOKAt is recent enough that
+// the poller should defer to the Notify path (Task 6 sets NotifyOKAt).
+func shouldSkipIPPollForNotifyHealth(notifyOKAt, now time.Time, health time.Duration) bool {
+	if health <= 0 || notifyOKAt.IsZero() {
+		return false
+	}
+	return !notifyOKAt.After(now) && now.Sub(notifyOKAt) < health
+}
+
+// shouldSkipIPPollForSameIP is true when Redis already recorded this WAN IP.
+func shouldSkipIPPollForSameIP(lastIP, currentIP string) bool {
+	return currentIP != "" && lastIP == currentIP
+}
+
+// shouldSkipIPPollForUnsupported skips any SN with a lock_unsupported_devices
+// row (unsupported or opt_out) so those devices never enter evaluate from poll.
+func shouldSkipIPPollForUnsupported(hasRow, _ bool) bool {
+	return hasRow
+}
+
+// StartLockIPPoller periodically re-evaluates online devices when WAN IP changes.
+// Disabled unless LOCK_IP_POLL_ENABLED is true. Interval is floored at 30s.
+func (a *Api) StartLockIPPoller(cfg config.LockScale) {
+	if !cfg.IPPollEnabled {
+		log.Printf("lock_ip_poller: disabled")
+		return
+	}
+
+	interval := cfg.IPPollInterval
+	if interval < minLockIPPollInterval {
+		interval = minLockIPPollInterval
+	}
+	notifyHealth := cfg.NotifyHealth
+	if notifyHealth <= 0 {
+		notifyHealth = defaultLockNotifyHealth
+	}
+
+	log.Printf("lock_ip_poller: started (interval=%s notify_health=%s)", interval, notifyHealth)
+
+	go func() {
+		// Short delay so online/chase startup work settles before the first poll.
+		time.Sleep(5 * time.Second)
+		a.runLockIPPollRound(notifyHealth)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			a.runLockIPPollRound(notifyHealth)
+		}
+	}()
+}
+
+func (a *Api) runLockIPPollRound(notifyHealth time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	tenants, err := a.db.FindAllTenants(ctx)
+	if err != nil {
+		log.Printf("lock_ip_poller: list tenants: %v", err)
+		return
+	}
+
+	for _, tenant := range tenants {
+		if tenant.Slug == "" || tenant.Status != db.TenantStatusActive {
+			continue
+		}
+		a.pollLockIPForTenant(tenant.Slug, notifyHealth)
+	}
+}
+
+func (a *Api) pollLockIPForTenant(tenantSlug string, notifyHealth time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	tdb := a.db.ForTenant(tenantSlug)
+	cfg, err := tdb.GetLockConfig(ctx)
+	if err != nil {
+		log.Printf("lock_ip_poller: tenant %s get config: %v", tenantSlug, err)
+		return
+	}
+	if !cfg.MasterEnabled {
+		return
+	}
+
+	list, err := getDevicesNoHTTP(map[string]interface{}{"status": entity.Online}, a.nc, tenantSlug)
+	if err != nil {
+		log.Printf("lock_ip_poller: tenant %s list online devices: %v", tenantSlug, err)
+		return
+	}
+
+	for _, device := range list.Devices {
+		go a.pollLockIPForDevice(tdb, device, tenantSlug, notifyHealth)
+	}
+}
+
+func (a *Api) pollLockIPForDevice(tdb *db.TenantDB, device entity.Device, tenantSlug string, notifyHealth time.Duration) {
+	a.acquireLockSem()
+	defer a.releaseLockSem()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	hasRow, optOut := a.unsupportedLockRowState(ctx, tdb, device.SN)
+	if shouldSkipIPPollForUnsupported(hasRow, optOut) {
+		return
+	}
+
+	state, _, err := lockStateStore.Get(ctx, tenantSlug, device.SN)
+	if err != nil {
+		log.Printf("lock_ip_poller: tenant %s get state %s: %v", tenantSlug, device.SN, err)
+		// Soft-degrade: continue without NotifyHealth / LastIP skip.
+		state = lockDeviceState{}
+	}
+	if shouldSkipIPPollForNotifyHealth(state.NotifyOKAt, time.Now(), notifyHealth) {
+		return
+	}
+
+	ip := a.lockReportedIP(ctx, device, tenantSlug)
+	if ip == "" {
+		return
+	}
+	if shouldSkipIPPollForSameIP(state.LastIP, ip) {
+		return
+	}
+
+	a.evaluateAndMaybeCommand(ctx, tdb, device, tenantSlug, lockTriggerIPChangePoll, ip)
+}
