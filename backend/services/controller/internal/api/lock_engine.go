@@ -200,8 +200,9 @@ func shouldSkipLockCommand(trigger string, found bool, prevStatus, decisionStatu
 // online/chase force-send when ShouldCommand; poll/notify skip when Redis
 // last_status matches the new decision. reportedIP empty → fetch via USP/CWMP.
 //
-// Capability gate: opt_out before TryLock; probe after TryLock so concurrent
-// online events do not stampede USP Gets. Unsupported/transient skip evaluate.
+// Capability gate: opt_out before TryLock; after TryLock, probe only when
+// shouldProbeOntLockCapability allows (online always re-probes; poll/chase/notify
+// skip without probe when an unsupported row already exists). Unsupported/transient skip evaluate.
 func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, trigger, reportedIP string) {
 	if a.unsupportedLockOptedOut(ctx, tdb, device.SN) {
 		return
@@ -216,7 +217,7 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	}
 	defer unlock()
 
-	if !a.gateLockCapability(ctx, tdb, device, tenantSlug) {
+	if !a.gateLockCapability(ctx, tdb, device, tenantSlug, trigger) {
 		return
 	}
 

@@ -322,6 +322,19 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 		return fmt.Errorf("lock_unauthorized_devices indexes: %w", err)
 	}
 
+	_, err = tdb.UnsupportedLockDevices().Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "sn", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "updated_at", Value: -1}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("lock_unsupported_devices indexes: %w", err)
+	}
+
 	_, err = tdb.LockCommands().Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "command_id", Value: 1}},

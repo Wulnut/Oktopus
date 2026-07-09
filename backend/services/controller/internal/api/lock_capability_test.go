@@ -52,3 +52,38 @@ func TestClassifyLockProbeError(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldProbeOntLockCapability(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		trigger   string
+		hasRow    bool
+		optOut    bool
+		wantProbe bool
+	}{
+		{name: "optOut", trigger: lockTriggerOnline, hasRow: true, optOut: true, wantProbe: false},
+		{name: "optOut poll", trigger: lockTriggerIPChangePoll, hasRow: false, optOut: true, wantProbe: false},
+		{name: "unsupported+poll", trigger: lockTriggerIPChangePoll, hasRow: true, optOut: false, wantProbe: false},
+		{name: "unsupported+notify", trigger: lockTriggerIPChangeNotify, hasRow: true, optOut: false, wantProbe: false},
+		{name: "unsupported+chase", trigger: lockTriggerChase, hasRow: true, optOut: false, wantProbe: false},
+		{name: "unsupported+online", trigger: lockTriggerOnline, hasRow: true, optOut: false, wantProbe: true},
+		{name: "no row+poll", trigger: lockTriggerIPChangePoll, hasRow: false, optOut: false, wantProbe: true},
+		{name: "no row+online", trigger: lockTriggerOnline, hasRow: false, optOut: false, wantProbe: true},
+		{name: "no row+chase", trigger: lockTriggerChase, hasRow: false, optOut: false, wantProbe: true},
+		{name: "no row+notify", trigger: lockTriggerIPChangeNotify, hasRow: false, optOut: false, wantProbe: true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := shouldProbeOntLockCapability(tc.trigger, tc.hasRow, tc.optOut)
+			if got != tc.wantProbe {
+				t.Fatalf("shouldProbeOntLockCapability(%q, hasRow=%v, optOut=%v) = %v, want %v",
+					tc.trigger, tc.hasRow, tc.optOut, got, tc.wantProbe)
+			}
+		})
+	}
+}

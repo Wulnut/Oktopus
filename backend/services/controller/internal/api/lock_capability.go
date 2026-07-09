@@ -89,15 +89,32 @@ func (a *Api) probeOntLockCapabilityCWMP(sn, tenantSlug string) (lockProbeResult
 	return lockProbeOK, ""
 }
 
+// shouldProbeOntLockCapability decides whether to run an OntLock capability probe.
+//
+//	opt_out → never probe
+//	existing unsupported row && trigger != online → skip (no poll/chase/notify hammer)
+//	online → always re-probe (firmware upgrade auto-enroll)
+//	no row yet → probe on any trigger that reaches the gate
+func shouldProbeOntLockCapability(trigger string, hasUnsupportedRow bool, optOut bool) bool {
+	if optOut {
+		return false
+	}
+	if hasUnsupportedRow && trigger != lockTriggerOnline {
+		return false
+	}
+	return true
+}
+
 // gateLockCapability runs the OntLock capability gate before evaluate.
 // Returns true when evaluate should proceed.
 //
-// Order: opt_out fast-path (caller may check before TryLock) → probe →
-// unsupported upsert+audit / transient skip / OK delete-row.
+// Order: load unsupported row → shouldProbe (opt_out / skip-without-probe) →
+// probe → unsupported upsert+audit / transient skip / OK delete-row.
 // Mongo Get/Upsert/Delete failures soft-degrade (log and continue) except when
 // the probe itself classified unsupported.
-func (a *Api) gateLockCapability(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug string) bool {
-	if a.unsupportedLockOptedOut(ctx, tdb, device.SN) {
+func (a *Api) gateLockCapability(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, trigger string) bool {
+	hasRow, optOut := a.unsupportedLockRowState(ctx, tdb, device.SN)
+	if !shouldProbeOntLockCapability(trigger, hasRow, optOut) {
 		return false
 	}
 
@@ -133,18 +150,25 @@ func (a *Api) gateLockCapability(ctx context.Context, tdb *db.TenantDB, device e
 	}
 }
 
-// unsupportedLockOptedOut returns true when Mongo has opt_out set.
-// Get errors soft-degrade to false so evaluate can continue.
-func (a *Api) unsupportedLockOptedOut(ctx context.Context, tdb *db.TenantDB, sn string) bool {
+// unsupportedLockRowState returns whether an unsupported row exists and its opt_out.
+// Get errors soft-degrade to (false, false) so evaluate can continue to probe.
+func (a *Api) unsupportedLockRowState(ctx context.Context, tdb *db.TenantDB, sn string) (hasRow bool, optOut bool) {
 	row, err := tdb.GetUnsupportedLockDevice(ctx, sn)
 	if err == mongo.ErrNoDocuments {
-		return false
+		return false, false
 	}
 	if err != nil {
 		log.Printf("lock_capability: get unsupported %s: %v (continuing)", sn, err)
-		return false
+		return false, false
 	}
-	return row.OptOut
+	return true, row.OptOut
+}
+
+// unsupportedLockOptedOut returns true when Mongo has opt_out set.
+// Get errors soft-degrade to false so evaluate can continue.
+func (a *Api) unsupportedLockOptedOut(ctx context.Context, tdb *db.TenantDB, sn string) bool {
+	_, optOut := a.unsupportedLockRowState(ctx, tdb, sn)
+	return optOut
 }
 
 func (a *Api) listUnsupportedLockDevices(w http.ResponseWriter, r *http.Request) {
