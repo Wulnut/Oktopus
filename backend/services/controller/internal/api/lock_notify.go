@@ -28,16 +28,18 @@ const (
 // and confirm lock_audit_logs details.trigger == "ip_change_notify".
 
 // isLockWanIPValueChange reports whether a Notify ValueChange path refers to
-// Device.X_TELKOMSEL_OntLock.InternetWanIP (full path or suffix match).
+// Device.X_TELKOMSEL_OntLock.InternetWanIP (exact, OntLock suffix, or short name).
+// Rejects unrelated *.InternetWanIP paths (e.g. Device.Foo.InternetWanIP).
 func isLockWanIPValueChange(path string) bool {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return false
 	}
-	if path == lockWanIPPath {
+	if path == lockWanIPPath || path == "InternetWanIP" {
 		return true
 	}
-	return strings.HasSuffix(path, ".InternetWanIP") || path == "InternetWanIP"
+	const ontLockSuffix = "X_TELKOMSEL_OntLock.InternetWanIP"
+	return path == ontLockSuffix || strings.HasSuffix(path, "."+ontLockSuffix)
 }
 
 // extractIPFromValueChange returns the trimmed ParamValue from a ValueChange.
@@ -97,7 +99,8 @@ func (a *Api) StartLockNotifyHandler(cfg config.LockScale) {
 
 // ensureLockIPValueChangeSubscription creates (or confirms) a USP ValueChange
 // subscription after a successful OntLock probe on USP MTP. CWMP is skipped.
-// On 7026/schema miss → unsupported; transient → leave on poll (NotifyOKAt unset).
+// Subscribe 7026/schema miss stays on poll (do not mark unsupported); only
+// OntLock probe failures mark unsupported. Transient → leave on poll.
 func (a *Api) ensureLockIPValueChangeSubscription(ctx context.Context, device entity.Device, tenantSlug, mtp string) {
 	if !a.lockNotifyEnabled || mtp == "" || mtp == "cwmp" {
 		return
@@ -113,21 +116,13 @@ func (a *Api) ensureLockIPValueChangeSubscription(ctx context.Context, device en
 	if err != nil {
 		switch classifyLockProbeError(err) {
 		case lockProbeUnsupported:
-			tdb := a.db.ForTenant(tenantSlug)
 			detail := err.Error()
-			if upsertErr := tdb.UpsertUnsupportedLockDevice(ctx, db.UnsupportedLockDevice{
-				SN:            device.SN,
-				Reason:        db.LockUnsupportedReasonPath,
-				Detail:        detail,
-				LastCheckedAt: time.Now(),
-			}); upsertErr != nil {
-				log.Printf("lock_notify: upsert unsupported %s: %v", device.SN, upsertErr)
-			}
+			log.Printf("lock_notify: subscribe unsupported (stay on poll) %s: %v", device.SN, err)
+			tdb := a.db.ForTenant(tenantSlug)
 			a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
 				SN:     device.SN,
-				Action: "unsupported",
+				Action: "notify_subscribe_failed",
 				Details: bson.M{
-					"reason": db.LockUnsupportedReasonPath,
 					"detail": detail,
 					"source": "notify_subscribe",
 				},
@@ -165,15 +160,35 @@ func (a *Api) lockIPValueChangeSubscriptionExists(sn, mtp, tenantSlug string) bo
 	return false
 }
 
+// touchLockNotifyOKAt sets NotifyOKAt under the per-SN eval TryLock, preserving
+// LastIP/LastStatus/LastCommand when state already exists. First subscribe may
+// create a state blob with only NotifyOKAt. Contended lock → skip (best-effort).
 func (a *Api) touchLockNotifyOKAt(ctx context.Context, tenantSlug, sn string) {
-	state, _, err := lockStateStore.Get(ctx, tenantSlug, sn)
+	unlock, ok, err := lockStateStore.TryLock(ctx, tenantSlug, sn, 0)
+	if err != nil {
+		log.Printf("lock_notify: try lock %s: %v", sn, err)
+	}
+	if !ok {
+		log.Printf("lock_notify: NotifyOKAt skipped (lock held) %s", sn)
+		return
+	}
+	defer unlock()
+
+	state, found, err := lockStateStore.Get(ctx, tenantSlug, sn)
 	if err != nil {
 		log.Printf("lock_notify: get state %s: %v", sn, err)
-		state = lockDeviceState{}
+		return
 	}
 	now := time.Now()
-	state.NotifyOKAt = now
-	state.UpdatedAt = now
+	if !found {
+		state = lockDeviceState{
+			NotifyOKAt: now,
+			UpdatedAt:  now,
+		}
+	} else {
+		state.NotifyOKAt = now
+		state.UpdatedAt = now
+	}
 	if err := lockStateStore.Put(ctx, tenantSlug, sn, state); err != nil {
 		log.Printf("lock_notify: put NotifyOKAt %s: %v", sn, err)
 	}
@@ -224,8 +239,8 @@ func (a *Api) handleLockIPValueChangeNotify(tenantSlug, sn, newIP string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	a.touchLockNotifyOKAt(ctx, tenantSlug, sn)
-
+	// NotifyOKAt is set inside evaluateAndMaybeCommand (same Put as LastIP/status)
+	// to avoid a Get→mutate→Put race that can wipe concurrent evaluate fields.
 	device, online := a.getOnlineDeviceNoWrite(ctx, tenantSlug, sn)
 	if !online {
 		log.Printf("lock_notify: device %s not online, skip evaluate", sn)

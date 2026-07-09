@@ -221,10 +221,10 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		return
 	}
 
-	// After probe OK, schedule USP ValueChange subscribe once evaluate releases
-	// the per-SN lock (defer LIFO: this runs before unlock). Avoids NotifyOKAt
-	// being overwritten by this evaluate's state Put.
-	if a.lockNotifyEnabled {
+	// Subscribe only on online (re-probe path). Poll/notify/chase must not re-Add.
+	// Defer runs before unlock (LIFO) so subscribe's NotifyOKAt touch takes the
+	// per-SN lock after this evaluate's state Put.
+	if a.lockNotifyEnabled && trigger == lockTriggerOnline {
 		if mtp := lockDeviceMTP(device); mtp != "" && mtp != "cwmp" {
 			defer func() {
 				go a.ensureLockIPValueChangeSubscription(context.Background(), device, tenantSlug, mtp)
@@ -297,6 +297,9 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	if found {
 		nextState.LastCommand = prev.LastCommand
 		nextState.NotifyOKAt = prev.NotifyOKAt
+	}
+	if trigger == lockTriggerIPChangeNotify {
+		nextState.NotifyOKAt = now
 	}
 
 	if !decision.ShouldCommand {

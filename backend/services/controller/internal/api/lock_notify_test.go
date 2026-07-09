@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
 )
 
@@ -16,8 +19,10 @@ func TestIsLockWanIPValueChange(t *testing.T) {
 	}{
 		{path: lockWanIPPath, want: true},
 		{path: "Device.X_TELKOMSEL_OntLock.InternetWanIP", want: true},
+		{path: "X_TELKOMSEL_OntLock.InternetWanIP", want: true},
 		{path: "InternetWanIP", want: true},
-		{path: "Device.Foo.InternetWanIP", want: true},
+		{path: "Device.Foo.InternetWanIP", want: false},
+		{path: "Device.IP.Interface.1.InternetWanIP", want: false},
 		{path: "Device.X_TELKOMSEL_OntLock.Lock", want: false},
 		{path: "", want: false},
 		{path: "  ", want: false},
@@ -112,12 +117,113 @@ func TestLockNotifyTenantAndSN(t *testing.T) {
 
 func TestClassifyLockProbeError_SubscribeReuse(t *testing.T) {
 	t.Parallel()
-	// Subscribe failures reuse classifyLockProbeError (7026 → unsupported).
+	// Subscribe failures still classify 7026 as unsupported for logging, but
+	// ensureLockIPValueChangeSubscription must not upsert unsupported (stay on poll).
 	err := fmt.Errorf("usp error %d: path does not exist in the schema", uspErrCodePathNotInSchema)
 	if classifyLockProbeError(err) != lockProbeUnsupported {
 		t.Fatal("7026 should be unsupported")
 	}
 	if classifyLockProbeError(fmt.Errorf("usp request timeout")) != lockProbeTransient {
 		t.Fatal("timeout should be transient")
+	}
+}
+
+func TestTouchLockNotifyOKAtPreservesExistingFields(t *testing.T) {
+	store, mr := newTestRedisStateStore(t)
+	defer mr.Close()
+	defer store.client.Close()
+
+	prev := lockStateStore
+	lockStateStore = store
+	defer func() { lockStateStore = prev }()
+
+	ctx := context.Background()
+	want := lockDeviceState{
+		LastIP:      "10.1.2.3",
+		LastStatus:  db.LockStatusLocked,
+		LastCommand: "1",
+		UpdatedAt:   time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if err := store.Put(ctx, "tenant-a", "SN-001", want); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	a := &Api{}
+	a.touchLockNotifyOKAt(ctx, "tenant-a", "SN-001")
+
+	got, found, err := store.Get(ctx, "tenant-a", "SN-001")
+	if err != nil || !found {
+		t.Fatalf("Get: found=%v err=%v", found, err)
+	}
+	if got.LastIP != want.LastIP || got.LastStatus != want.LastStatus || got.LastCommand != want.LastCommand {
+		t.Fatalf("wiped fields: %+v", got)
+	}
+	if got.NotifyOKAt.IsZero() {
+		t.Fatal("expected NotifyOKAt set")
+	}
+}
+
+func TestTouchLockNotifyOKAtCreatesOnMiss(t *testing.T) {
+	store, mr := newTestRedisStateStore(t)
+	defer mr.Close()
+	defer store.client.Close()
+
+	prev := lockStateStore
+	lockStateStore = store
+	defer func() { lockStateStore = prev }()
+
+	ctx := context.Background()
+	a := &Api{}
+	a.touchLockNotifyOKAt(ctx, "tenant-a", "SN-new")
+
+	got, found, err := store.Get(ctx, "tenant-a", "SN-new")
+	if err != nil || !found {
+		t.Fatalf("Get: found=%v err=%v", found, err)
+	}
+	if got.LastIP != "" || got.LastStatus != "" || got.LastCommand != "" {
+		t.Fatalf("expected empty IP/status/command, got %+v", got)
+	}
+	if got.NotifyOKAt.IsZero() {
+		t.Fatal("expected NotifyOKAt set")
+	}
+}
+
+func TestTouchLockNotifyOKAtSkipsWhenLockHeld(t *testing.T) {
+	store, mr := newTestRedisStateStore(t)
+	defer mr.Close()
+	defer store.client.Close()
+
+	prev := lockStateStore
+	lockStateStore = store
+	defer func() { lockStateStore = prev }()
+
+	ctx := context.Background()
+	want := lockDeviceState{
+		LastIP:     "10.9.8.7",
+		LastStatus: db.LockStatusUnlocked,
+		UpdatedAt:  time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if err := store.Put(ctx, "tenant-a", "SN-001", want); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	unlock, ok, err := store.TryLock(ctx, "tenant-a", "SN-001", 10*time.Second)
+	if err != nil || !ok {
+		t.Fatalf("TryLock: ok=%v err=%v", ok, err)
+	}
+	defer unlock()
+
+	a := &Api{}
+	a.touchLockNotifyOKAt(ctx, "tenant-a", "SN-001")
+
+	got, found, err := store.Get(ctx, "tenant-a", "SN-001")
+	if err != nil || !found {
+		t.Fatalf("Get: found=%v err=%v", found, err)
+	}
+	if !got.NotifyOKAt.IsZero() {
+		t.Fatalf("NotifyOKAt should remain unset while lock held, got %v", got.NotifyOKAt)
+	}
+	if got.LastIP != want.LastIP {
+		t.Fatalf("LastIP changed: %q", got.LastIP)
 	}
 }
