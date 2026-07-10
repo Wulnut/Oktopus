@@ -475,16 +475,19 @@ func (t *TenantDB) DeleteUnsupportedLockDevice(ctx context.Context, sn string) e
 	return err
 }
 
-func (t *TenantDB) DeleteUnauthorizedDevices(ctx context.Context, sns []string) error {
+func (t *TenantDB) DeleteUnauthorizedDevices(ctx context.Context, sns []string) (int64, error) {
 	if len(sns) == 0 {
-		return nil
+		return 0, nil
 	}
 	normalized := make([]string, 0, len(sns))
 	for _, sn := range sns {
 		normalized = append(normalized, NormalizeSN(sn))
 	}
-	_, err := t.UnauthorizedDevices().DeleteMany(ctx, bson.M{"sn": bson.M{"$in": normalized}})
-	return err
+	res, err := t.UnauthorizedDevices().DeleteMany(ctx, bson.M{"sn": bson.M{"$in": normalized}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 // ListLockCommands returns a page of lock command attempts.

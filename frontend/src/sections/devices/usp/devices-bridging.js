@@ -200,16 +200,18 @@ export const DevicesBridging = ({ sn, mtp, onStatusRefresh }) => {
     if (!sn) return;
     setLoading(true);
     try {
-      const bridgeRes = await uspGet(["Device.Bridging.Bridge."], 4);
-      const ifaceRes = await uspGet(["Device.Ethernet.Interface.", "Device.WiFi.SSID."], 1);
-      const linkRes = await uspGet(["Device.Ethernet.Link."], 1);
+      const [bridgeRes, ifaceRes, linkRes] = await Promise.all([
+        uspGet(["Device.Bridging.Bridge."], 4),
+        uspGet(["Device.Ethernet.Interface.", "Device.WiFi.SSID."], 1),
+        uspGet(["Device.Ethernet.Link."], 1),
+      ]);
       if (bridgeRes) setBridgeData(bridgeRes);
       if (ifaceRes) setIfaceData(ifaceRes);
       if (linkRes) setLinkData(linkRes);
     } finally {
       setLoading(false);
     }
-  }, [sn, uspGet]);
+  }, [sn, uspGet, onStatusRefresh]);
 
   useEffect(() => {
     fetchAll();

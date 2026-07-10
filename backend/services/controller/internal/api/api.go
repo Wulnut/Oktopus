@@ -223,6 +223,7 @@ func (a *Api) StartApi() {
 	lock.HandleFunc("/config", a.updateLockConfig).Methods("PUT")
 	lock.HandleFunc("/unauthorized", a.listUnauthorizedDevices).Methods("GET")
 	lock.HandleFunc("/unauthorized/batch-whitelist", a.batchWhitelistFromUnauthorized).Methods("POST")
+	lock.HandleFunc("/unauthorized/batch-delete", a.batchDeleteUnauthorizedDevices).Methods("POST")
 	lock.HandleFunc("/unsupported", a.listUnsupportedLockDevices).Methods("GET")
 	lock.HandleFunc("/unsupported/{sn}/opt-out", a.optOutUnsupportedLockDevice).Methods("POST")
 	lock.HandleFunc("/unsupported/{sn}/opt-out", a.clearOptOutUnsupportedLockDevice).Methods("DELETE")

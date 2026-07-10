@@ -47,10 +47,17 @@ export const SideNavItem = (props) => {
 
   const Wrapper = nested ? 'div' : 'li';
 
+  const handleExpandClick = () => {
+    if (!path) {
+      setOpen(!open);
+    }
+  };
+
   return (
     <Wrapper>
       <Tooltip title={tooltip} placement='bottom-end'>
       <ButtonBase
+        onClick={handleExpandClick}
         sx={{
           alignItems: 'center',
           borderRadius: 1,
@@ -69,15 +76,11 @@ export const SideNavItem = (props) => {
             backgroundColor: 'rgba(255, 255, 255, 0.04)'
           }
         }}
+        {...linkProps}
       >
         {icon && (
           <Box
             component="span"
-            onClick={()=>{
-              if (!path){
-                setOpen(!open)
-              }
-            }}
             sx={{
               alignItems: 'center',
               color: 'neutral.400',
@@ -88,18 +91,12 @@ export const SideNavItem = (props) => {
                 color: '#FFFFFF'
               })
             }}
-            {...linkProps}
           >
             {icon}
           </Box>
         )}
         <Box
           component="span"
-          onClick={()=>{
-            if (!path){
-              setOpen(!open)
-            }
-          }}
           sx={{
             color: 'neutral.400',
             flexGrow: 1,
@@ -116,7 +113,6 @@ export const SideNavItem = (props) => {
               color: 'neutral.500'
             })
           }}
-          {...linkProps}
         >
           {title} {
             external && (
@@ -128,7 +124,11 @@ export const SideNavItem = (props) => {
         </Box>
         { children &&
             <Box
-            onClick={()=>setOpen(!open)}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(!open);
+            }}
             component="span"
             sx={{
               color: 'neutral.400',

@@ -192,7 +192,7 @@ export const items = [
         ),
       },
       {
-        title: 'Scripts',
+        title: 'Mass Scripts',
         path: '/mass-actions/scripts',
         icon: (
           <SvgIcon fontSize="small">

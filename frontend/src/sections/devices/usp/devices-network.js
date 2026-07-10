@@ -230,9 +230,8 @@ export const DevicesNetwork = ({ sn, mtp, onStatusRefresh }) => {
 
   const handleRefresh = useCallback(async () => {
     onStatusRefresh?.();
-    await fetchInterfaces();
-    await fetchWifi();
-  }, [fetchWifi, fetchInterfaces]);
+    await Promise.all([fetchInterfaces(), fetchWifi()]);
+  }, [fetchWifi, fetchInterfaces, onStatusRefresh]);
 
   useEffect(() => {
     handleRefresh();
