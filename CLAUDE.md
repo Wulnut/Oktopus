@@ -87,7 +87,7 @@ npm run lint-fix   # Auto-fix ESLint issues
 ### Branding & version
 
 - Favicon / apple-touch icons use the SEI mark under `frontend/public/` (`favicon*.png`, `favicon.ico`, `apple-touch-icon.png`, `assets/sei-mark.png`)
-- App version is sourced from repo-root `VERSION` (mirrored to `frontend/VERSION` for Docker builds). `frontend/scripts/write-version.js` writes `frontend/public/version.json` (`version`, `commit`, `built_at`, `label`) on `npm run predev` / `prebuild`, from `run_debug.sh` on the host, and from `ci-pack-source.sh` before tarball (so remote builds without `.git` still get `CI_COMMIT_SHORT_SHA`). `version.json` is gitignored; Docker build accepts `OKTOPUS_VERSION` / `OKTOPUS_GIT_COMMIT` args via `docker-compose.dev.yaml`
+- App version is sourced from repo-root `VERSION` (mirrored to `frontend/VERSION` for Docker builds). `frontend/scripts/write-version.js` writes `frontend/public/version.json` on `npm run predev` / `prebuild` and `run_debug.sh`. CI pack (`ci-pack-source.sh`) stamps `version.json` with pure shell using `CI_COMMIT_SHORT_SHA` (deploy job image has no node). `ci-source-deploy.sh` re-stamps and passes `OKTOPUS_GIT_COMMIT` / `OKTOPUS_VERSION` as compose build-args. `version.json` is gitignored
 - Side-nav and auth footers show `version.json` label (e.g. `v3.0.0 (b61206e)`) instead of "Powered by Oktopus"
 - Controller exposes `/healthz` (liveness) and `/readyz` (Mongo ping readiness). Compose controller/nginx healthchecks use `/readyz`; nginx proxies both without API rate limits
 - Overview CPE Settings CWMP status shows `offline` / RTT only (no `ACS` prefix)

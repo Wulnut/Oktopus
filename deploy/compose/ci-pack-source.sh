@@ -7,6 +7,9 @@
 #
 # Excludes server-side data, secrets, and build artifacts so extraction on the
 # deploy host does not overwrite mongo_data, .env.*, firmwares, etc.
+#
+# Also stamps frontend/public/version.json before packing (pure shell — the
+# GitLab deploy job image is debian without node). Remote builds have no .git.
 
 set -euo pipefail
 
@@ -30,15 +33,38 @@ stamp_version() {
     return 0
   fi
   export OKTOPUS_GIT_COMMIT="$commit"
-  if [ -n "${CI_COMMIT_TAG:-}" ]; then
-    export OKTOPUS_VERSION="${OKTOPUS_VERSION:-${CI_COMMIT_TAG#v}}"
+
+  local version="${OKTOPUS_VERSION:-}"
+  if [ -z "$version" ] && [ -n "${CI_COMMIT_TAG:-}" ]; then
+    version="${CI_COMMIT_TAG#v}"
   fi
-  if command -v node >/dev/null 2>&1; then
-    log "Stamping version.json (commit=${OKTOPUS_GIT_COMMIT})"
-    (cd "$REPO_ROOT/frontend" && node scripts/write-version.js) || log "WARN: write-version.js failed"
-  else
-    log "WARN: node not available; skipping version.json stamp"
+  if [ -z "$version" ] && [ -f "$REPO_ROOT/VERSION" ]; then
+    version="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")"
   fi
+  if [ -z "$version" ] && [ -f "$REPO_ROOT/frontend/VERSION" ]; then
+    version="$(tr -d '[:space:]' < "$REPO_ROOT/frontend/VERSION")"
+  fi
+  if [ -z "$version" ]; then
+    version="0.0.0-dev"
+  fi
+  export OKTOPUS_VERSION="$version"
+
+  local built_at="${OKTOPUS_BUILT_AT:-}"
+  if [ -z "$built_at" ]; then
+    built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
+
+  mkdir -p "$REPO_ROOT/frontend/public"
+  # Pure shell write — deploy job image (debian:bookworm-slim) has no node.
+  cat > "$REPO_ROOT/frontend/public/version.json" <<EOF
+{
+  "version": "${version}",
+  "commit": "${commit}",
+  "built_at": "${built_at}",
+  "label": "v${version} (${commit})"
+}
+EOF
+  log "Stamped version.json: v${version} (${commit})"
 }
 stamp_version
 
