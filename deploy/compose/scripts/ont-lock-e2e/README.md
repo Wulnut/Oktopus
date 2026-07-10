@@ -40,8 +40,11 @@ SN=081074000888 GOOD_CIDR=10.172.0.0/16 BAD_CIDR=10.0.0.0/16 ./scripts/ont-lock-
 | TC-4 | Master ON, no whitelist, AutoLock OFF | `PENDING` / **no Set** |
 | TC-5 | Master OFF | `MASTER_DISABLED` / Set `0` / **Lock=0** |
 | TC-3 | Master ON, no whitelist, AutoLock ON | `UNAUTHORIZED` / Set `1` / **Lock=1** |
+| TC-6 | Exceptions `batch-whitelist` with `<WAN>/32` after lock | audit + `AUTHORIZED` chase / Set `0` / **Lock=0** |
 
 After lock cases, the runner unlocks (whitelist hit) before TC-1/4/5. On exit (`RESTORE=1`), restores Master ON, AutoLock OFF, whitelist `GOOD_CIDR`, and attempts unlock.
+
+`GOOD_CIDR` defaults to `<device WAN IP>/32` when unset (`AUTO_GOOD_CIDR=1`). Override with `GOOD_CIDR=10.x.x.x/24` if needed.
 
 ## Environment
 
@@ -49,8 +52,9 @@ After lock cases, the runner unlocks (whitelist hit) before TC-1/4/5. On exit (`
 |----------|---------|--------|
 | `SN` | — | **Required** |
 | `TENANT` | `telkomsel` | |
-| `CASES` | `tc1,tc2,tc4,tc5,tc3` | Comma-separated |
-| `GOOD_CIDR` | `10.172.0.0/16` | Must cover device WAN IP |
+| `CASES` | `tc1,tc2,tc4,tc5,tc3,tc6` | Comma-separated |
+| `GOOD_CIDR` | auto `<WAN>/32` | Must cover device WAN IP; set explicitly to override |
+| `AUTO_GOOD_CIDR` | `1` | When `1` and `GOOD_CIDR` unset, detect WAN via USP Get |
 | `BAD_CIDR` | `10.0.0.0/16` | TC-2 only |
 | `RESTORE` | `1` | Restore on exit |
 | `API_BASE` | `http://127.0.0.1` | nginx or controller URL |
@@ -68,6 +72,7 @@ After lock cases, the runner unlocks (whitelist hit) before TC-1/4/5. On exit (`
 - `run.sh` — entrypoint
 - `lib.sh` — Mongo / NATS / wait / assert / restore
 - `usp_get.py` — JWT + USP Get (`Lock=…` lines only)
+- `lock_api.py` — JWT + Lock REST API (TC-6 batch-whitelist)
 
 ## Risks
 
