@@ -61,6 +61,14 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 	return db
 }
 
+// Ping checks MongoDB connectivity for readiness probes.
+func (d *Database) Ping(ctx context.Context) error {
+	if d.client == nil {
+		return mongo.ErrClientDisconnected
+	}
+	return d.client.Ping(ctx, nil)
+}
+
 // createMessageIndexes creates all indexes for the messages collection
 func createMessageIndexes(ctx context.Context, collection *mongo.Collection) error {
 	// Drop existing msg_id indexes if they exist (might be unique from previous version)

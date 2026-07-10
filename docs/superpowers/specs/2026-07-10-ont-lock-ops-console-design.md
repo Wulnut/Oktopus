@@ -16,7 +16,7 @@ The previous single-page layout stacked Config, Whitelist, Policies, Unauthorize
 | URL | `?tab=overview\|policies\|queue\|activity` |
 | Overview | Config + KPI strip + live column chart + GSAP entrance |
 | Activity pagination | Server `page_number` + `page_size`, Devices-style `TablePagination` |
-| Commands Clear | Added (confirm dialog); clears all command attempts; logs `commands_clear` audit |
+| Commands Clear | Added (confirm dialog); clears completed (success/failed) attempts only — pending/retry preserved for the retry scheduler; logs `commands_clear` audit |
 | Commands Export | Current page rows only |
 | Visual language | Existing MUI / Oktopus theme |
 
@@ -59,7 +59,7 @@ Response:
 
 ### `DELETE /api/tenants/{slug}/lock/commands`
 
-Clears all lock command attempts for the tenant. Returns `{ "deleted": N }` and records a `commands_clear` audit entry.
+Clears completed lock command attempts (`success` / `failed`) for the tenant. Pending and retry rows are preserved so the lock retry scheduler can still resend in-flight commands. Returns `{ "deleted": N }` and records a `commands_clear` audit entry.
 
 ### `GET /api/tenants/{slug}/lock/audit`
 

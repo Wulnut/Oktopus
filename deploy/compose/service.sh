@@ -147,13 +147,13 @@ cmd_doctor() {
         return 1
     fi
 
-    # 3. Controller reachable? (hits MongoDB only, does not exercise NATS)
-    echo -ne "  controller health (admin-exists) ... "
-    if docker exec controller wget -q --spider http://localhost:8000/healthz 2>/dev/null; then
+    # 3. Controller ready? (Mongo ping via /readyz; does not exercise NATS)
+    echo -ne "  controller readiness (/readyz) ... "
+    if docker exec controller wget -q --spider http://localhost:8000/readyz 2>/dev/null; then
         echo -e "${GREEN}OK${NC}"
     else
         echo -e "${RED}FAIL${NC}"
-        echo -e "  ${YELLOW}controller is up but the health endpoint failed.${NC}"
+        echo -e "  ${YELLOW}controller is up but readiness failed (Mongo unreachable?).${NC}"
     fi
 
     # 4. NATS reachable from controller?

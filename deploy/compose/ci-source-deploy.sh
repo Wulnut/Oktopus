@@ -123,6 +123,20 @@ chown 1000:1000 firmwares 2>/dev/null || chmod 1777 firmwares
 # ---------------------------------------------------------------------------
 # Build compose services (docker-compose.dev.yaml provides build contexts)
 # ---------------------------------------------------------------------------
+# Prefer commit stamped into the packed tree; fall back to CI / local git.
+if [ -z "${OKTOPUS_GIT_COMMIT:-}" ]; then
+  if [ -n "${CI_COMMIT_SHORT_SHA:-}" ]; then
+    export OKTOPUS_GIT_COMMIT="$CI_COMMIT_SHORT_SHA"
+  elif [ -f "$REPO_ROOT/frontend/public/version.json" ]; then
+    OKTOPUS_GIT_COMMIT="$(sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      "$REPO_ROOT/frontend/public/version.json" | head -1)"
+    export OKTOPUS_GIT_COMMIT
+  fi
+fi
+if [ -n "${OKTOPUS_GIT_COMMIT:-}" ]; then
+  log "Frontend version stamp: OKTOPUS_GIT_COMMIT=${OKTOPUS_GIT_COMMIT}"
+fi
+
 log "Building compose services: ${COMPOSE_SERVICES[*]}"
 COMPOSE_PROFILES="$STAGING_PROFILES" \
   docker compose -f docker-compose.yaml -f docker-compose.dev.yaml \

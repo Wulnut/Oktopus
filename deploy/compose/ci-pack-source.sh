@@ -18,6 +18,30 @@ log() { printf '==> %s\n' "$*"; }
 
 cd "$REPO_ROOT"
 
+# Stamp frontend/public/version.json before packing so Docker builds without .git
+# still get the correct commit (CI_COMMIT_SHORT_SHA or local git).
+stamp_version() {
+  local commit="${OKTOPUS_GIT_COMMIT:-${CI_COMMIT_SHORT_SHA:-}}"
+  if [ -z "$commit" ] && command -v git >/dev/null 2>&1 && [ -d "$REPO_ROOT/.git" ]; then
+    commit="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+  fi
+  if [ -z "$commit" ]; then
+    log "WARN: no git commit available for version.json stamp"
+    return 0
+  fi
+  export OKTOPUS_GIT_COMMIT="$commit"
+  if [ -n "${CI_COMMIT_TAG:-}" ]; then
+    export OKTOPUS_VERSION="${OKTOPUS_VERSION:-${CI_COMMIT_TAG#v}}"
+  fi
+  if command -v node >/dev/null 2>&1; then
+    log "Stamping version.json (commit=${OKTOPUS_GIT_COMMIT})"
+    (cd "$REPO_ROOT/frontend" && node scripts/write-version.js) || log "WARN: write-version.js failed"
+  else
+    log "WARN: node not available; skipping version.json stamp"
+  fi
+}
+stamp_version
+
 log "Packing source from ${REPO_ROOT} -> ${OUTPUT}"
 
 tar czf "$OUTPUT" \

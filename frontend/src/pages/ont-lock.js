@@ -1354,8 +1354,9 @@ const Page = () => {
         <DialogTitle>Clear Command History?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This will permanently remove all lock command attempts for this tenant. The clear
-            action itself will be logged in Audit History.
+            This will permanently remove completed (success/failed) lock command attempts for this
+            tenant. Pending and retry commands are kept so in-flight lock/unlock retries continue.
+            The clear action itself will be logged in Audit History.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

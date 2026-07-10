@@ -706,6 +706,68 @@ components:
         online_count: { type: integer }
         offline_count: { type: integer }
 
+    # --- ONT Lock ---
+    LockCommandAttempt:
+      type: object
+      properties:
+        id: { type: string }
+        command_id: { type: string }
+        device_sn: { type: string }
+        status:
+          type: string
+          enum: [pending, success, failed, retry]
+        target_status: { type: string }
+        command_value: { type: string }
+        attempt_count: { type: integer }
+        error: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    LockAuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        sn: { type: string }
+        action: { type: string }
+        policy_type: { type: string }
+        operator_id: { type: string }
+        description: { type: string }
+        details: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+
+    LockPaginatedCommands:
+      type: object
+      required: [items, total, page, size]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LockCommandAttempt'
+        total: { type: integer }
+        page: { type: integer, description: 0-based page number }
+        size: { type: integer }
+
+    LockPaginatedAudit:
+      type: object
+      required: [items, total, page, size]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LockAuditLog'
+        total: { type: integer }
+        page: { type: integer, description: 0-based page number }
+        size: { type: integer }
+
+    LockClearResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: integer
+          format: int64
+          description: Number of documents deleted
+
   parameters:
     TenantSlug:
       name: slug
@@ -752,6 +814,8 @@ tags:
     description: Tenant CA certificate management
   - name: Info
     description: Dashboard information and statistics
+  - name: ONT Lock
+    description: Device admission control (whitelist, unauthorized, commands, audit)
 
 paths:
   # =========================================================================
@@ -2525,5 +2589,113 @@ paths:
           description: Cancelled
         '400':
           description: Invalid ID
+
+  # =========================================================================
+  # ONT Lock
+  # =========================================================================
+  /api/tenants/{slug}/lock/commands:
+    get:
+      tags: [ONT Lock]
+      summary: List lock command attempts (paginated)
+      description: |
+        Returns a page of lock command attempts. Response shape is
+        `{items,total,page,size}` (breaking change from a bare array).
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: page_number
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: 0-based page index
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: sn
+          in: query
+          schema:
+            type: string
+          description: Optional device serial number filter
+      responses:
+        '200':
+          description: Paginated command attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockPaginatedCommands'
+        '400':
+          description: Invalid pagination parameters
+    delete:
+      tags: [ONT Lock]
+      summary: Clear completed lock command history
+      description: |
+        Deletes completed (`success` / `failed`) command attempts for the tenant.
+        Pending and retry rows are preserved for the lock retry scheduler.
+        Records a `commands_clear` audit entry.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockClearResponse'
+
+  /api/tenants/{slug}/lock/audit:
+    get:
+      tags: [ONT Lock]
+      summary: List lock audit logs (paginated)
+      description: |
+        Returns a page of lock audit logs. Response shape is
+        `{items,total,page,size}` (breaking change from a bare array).
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: page_number
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: sn
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated audit logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockPaginatedAudit'
+        '400':
+          description: Invalid pagination parameters
+    delete:
+      tags: [ONT Lock]
+      summary: Clear lock audit history
+      description: |
+        Deletes all lock audit logs for the tenant, then records an
+        `audit_clear` entry so the purge itself remains auditable.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockClearResponse'
 
 

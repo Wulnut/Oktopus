@@ -70,8 +70,23 @@ func (a *Api) StartApi() {
 	r := mux.NewRouter()
 	setJSONNotFoundHandler(r)
 
-	// Liveness probe — keep outside /api so nginx healthchecks do not consume API rate-limit budget.
+	// Liveness probe — process up; keep outside /api so nginx healthchecks do not consume API rate-limit budget.
 	r.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}).Methods("GET")
+
+	// Readiness probe — Mongo reachable. Used by compose healthchecks.
+	r.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := a.db.Ping(ctx); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"unavailable","error":"mongo"}`))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

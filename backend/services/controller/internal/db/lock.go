@@ -549,9 +549,19 @@ func (t *TenantDB) ListLockAuditLogs(ctx context.Context, sn string, pageNumber,
 	return logs, total, err
 }
 
-// ClearLockCommands removes all lock command attempts for this tenant.
+// lockCommandHistoryClearFilter matches completed attempts only.
+// Pending/retry rows must remain for StartLockRetryScheduler.
+func lockCommandHistoryClearFilter() bson.M {
+	return bson.M{
+		"status": bson.M{"$in": []LockCommandStatus{LockCommandSuccess, LockCommandFailed}},
+	}
+}
+
+// ClearLockCommands removes completed lock command attempts (success/failed)
+// for this tenant. Pending and retry rows are preserved so the retry scheduler
+// can still resend in-flight lock/unlock commands.
 func (t *TenantDB) ClearLockCommands(ctx context.Context) (int64, error) {
-	res, err := t.LockCommands().DeleteMany(ctx, bson.M{})
+	res, err := t.LockCommands().DeleteMany(ctx, lockCommandHistoryClearFilter())
 	if err != nil {
 		return 0, err
 	}

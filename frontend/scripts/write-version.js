@@ -45,13 +45,14 @@ function gitShort() {
 }
 
 const version = readVersion();
-let commit = (process.env.OKTOPUS_GIT_COMMIT || gitShort() || 'unknown').trim();
+// Prefer explicit env (CI / Docker build-arg), then git, then any pre-stamped file
+// from ci-pack-source.sh. Do not invent a commit — "unknown" is honest when none exist.
+let commit = (process.env.OKTOPUS_GIT_COMMIT || gitShort() || '').trim();
 let builtAt = process.env.OKTOPUS_BUILT_AT || '';
 if (fs.existsSync(outPath)) {
   try {
     const prev = JSON.parse(fs.readFileSync(outPath, 'utf8'));
-    // Never downgrade a known commit to "unknown" (common in Docker without .git).
-    if (commit === 'unknown' && prev.commit && prev.commit !== 'unknown') {
+    if (!commit && prev.commit && prev.commit !== 'unknown') {
       commit = prev.commit;
     }
     if (!builtAt && prev.built_at) {
@@ -60,6 +61,9 @@ if (fs.existsSync(outPath)) {
   } catch {
     // ignore
   }
+}
+if (!commit) {
+  commit = 'unknown';
 }
 if (!builtAt) {
   builtAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');

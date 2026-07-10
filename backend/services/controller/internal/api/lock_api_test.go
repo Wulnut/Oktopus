@@ -56,3 +56,46 @@ func TestEvaluateLockDecisionWhitelistOutOfCIDRAutoLocks(t *testing.T) {
 		t.Fatalf("expected out-of-CIDR whitelist device to auto-lock, got %s", decision.Status)
 	}
 }
+
+func TestParseLockListPaginationDefaults(t *testing.T) {
+	req := httptest.NewRequest("GET", "/lock/commands", nil)
+	page, size, err := parseLockListPagination(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if page != 0 || size != lockListPageSizeDefault {
+		t.Fatalf("got page=%d size=%d, want page=0 size=%d", page, size, lockListPageSizeDefault)
+	}
+}
+
+func TestParseLockListPaginationCustom(t *testing.T) {
+	req := httptest.NewRequest("GET", "/lock/commands?page_number=2&page_size=50", nil)
+	page, size, err := parseLockListPagination(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if page != 2 || size != 50 {
+		t.Fatalf("got page=%d size=%d, want 2/50", page, size)
+	}
+}
+
+func TestParseLockListPaginationRejectsNegativePage(t *testing.T) {
+	req := httptest.NewRequest("GET", "/lock/commands?page_number=-1", nil)
+	if _, _, err := parseLockListPagination(req); err == nil {
+		t.Fatal("expected error for negative page_number")
+	}
+}
+
+func TestParseLockListPaginationRejectsOversize(t *testing.T) {
+	req := httptest.NewRequest("GET", "/lock/commands?page_size=101", nil)
+	if _, _, err := parseLockListPagination(req); err == nil {
+		t.Fatal("expected error for page_size > max")
+	}
+}
+
+func TestParseLockListPaginationRejectsZeroSize(t *testing.T) {
+	req := httptest.NewRequest("GET", "/lock/commands?page_size=0", nil)
+	if _, _, err := parseLockListPagination(req); err == nil {
+		t.Fatal("expected error for page_size=0")
+	}
+}

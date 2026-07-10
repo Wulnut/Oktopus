@@ -3,6 +3,8 @@ package db
 import (
 	"testing"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestLockPolicyNormalizeTrimsAndUppercases(t *testing.T) {
@@ -46,5 +48,34 @@ func TestLockConfigDefaultsEnableMasterAndAutoLock(t *testing.T) {
 	}
 	if cfg.UpdatedAt.IsZero() || time.Since(cfg.UpdatedAt) > time.Second {
 		t.Fatalf("expected UpdatedAt to be initialized, got %v", cfg.UpdatedAt)
+	}
+}
+
+func TestLockCommandHistoryClearFilterOnlyCompleted(t *testing.T) {
+	filter := lockCommandHistoryClearFilter()
+	statusFilter, ok := filter["status"].(bson.M)
+	if !ok {
+		t.Fatalf("expected status filter map, got %#v", filter["status"])
+	}
+	in, ok := statusFilter["$in"].([]LockCommandStatus)
+	if !ok {
+		t.Fatalf("expected $in []LockCommandStatus, got %#v", statusFilter["$in"])
+	}
+	want := map[LockCommandStatus]bool{
+		LockCommandSuccess: true,
+		LockCommandFailed:  true,
+	}
+	if len(in) != len(want) {
+		t.Fatalf("expected %d statuses, got %v", len(want), in)
+	}
+	for _, st := range in {
+		if !want[st] {
+			t.Fatalf("unexpected clear status %q (must not delete pending/retry)", st)
+		}
+	}
+	for _, preserve := range []LockCommandStatus{LockCommandPending, LockCommandRetry} {
+		if want[preserve] {
+			t.Fatalf("%q must not be cleared", preserve)
+		}
 	}
 }

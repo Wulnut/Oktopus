@@ -6,8 +6,8 @@ import gsap from 'gsap';
 const KPI_ITEMS = [
   { key: 'unauthorized', label: 'Unauthorized', color: 'warning.main' },
   { key: 'unsupported', label: 'Unsupported', color: 'info.main' },
-  { key: 'success', label: 'Commands success', color: 'success.main' },
-  { key: 'failed', label: 'Commands failed', color: 'error.main' },
+  { key: 'success', label: 'Success (last 100)', color: 'success.main' },
+  { key: 'failed', label: 'Failed (last 100)', color: 'error.main' },
 ];
 
 export const OverviewKpis = ({ counts }) => {

@@ -67,16 +67,16 @@ func (a *Api) upsertLockPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = lockCache.PutLockPolicy(r.Context(), tenantSlug, created)
-		a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
-			SN:          created.SN,
-			Action:      "policy_upsert",
-			PolicyType:  created.PolicyType,
-			OperatorID:  created.OperatorID,
-			Description: created.Description,
-			Details: bson.M{
-				"allowed_ip_range": created.AllowedIPRange,
-			},
-		})
+	a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+		SN:          created.SN,
+		Action:      "policy_upsert",
+		PolicyType:  created.PolicyType,
+		OperatorID:  created.OperatorID,
+		Description: created.Description,
+		Details: bson.M{
+			"allowed_ip_range": created.AllowedIPRange,
+		},
+	})
 	_ = a.tenantDB(r).DeleteUnauthorizedDevice(r.Context(), created.SN)
 	a.chaseLockForSN(tenantSlug, created.SN)
 	writeJSON(w, http.StatusOK, created)
@@ -410,14 +410,14 @@ func (a *Api) clearLockCommands(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
-		Action:      "commands_clear",
-		OperatorID:  middleware.GetEmail(r),
-		Description: "Command history cleared",
-		Details:     bson.M{"deleted_count": deleted},
-	})
-	writeJSON(w, http.StatusOK, map[string]int64{"deleted": deleted})
-}
+		a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+			Action:      "commands_clear",
+			OperatorID:  middleware.GetEmail(r),
+			Description: "Completed command history cleared (pending/retry preserved)",
+			Details:     bson.M{"deleted_count": deleted},
+		})
+		writeJSON(w, http.StatusOK, map[string]int64{"deleted": deleted})
+	}
 
 func (a *Api) clearLockAuditLogs(w http.ResponseWriter, r *http.Request) {
 	tenantSlug := middleware.GetTenantSlug(r)
