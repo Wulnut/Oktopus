@@ -314,6 +314,9 @@ func (a *Api) batchWhitelistFromUnauthorized(w http.ResponseWriter, r *http.Requ
 			PolicyType:  created.PolicyType,
 			OperatorID:  created.OperatorID,
 			Description: created.Description,
+			Details: bson.M{
+				"allowed_ip_range": created.AllowedIPRange,
+			},
 		})
 	}
 	if req.RemoveFromUnauthorized {
@@ -322,7 +325,8 @@ func (a *Api) batchWhitelistFromUnauthorized(w http.ResponseWriter, r *http.Requ
 	if a.lockCircuitBreaker != nil {
 		a.lockCircuitBreaker.reset(tenantSlug)
 	}
-	go a.chaseLockAfterConfigUpdate(tenantSlug)
+	// Chase only the whitelisted SNs (same as policy upsert), not the full online fleet.
+	a.chaseLockForSNs(tenantSlug, removedSNs)
 	status := http.StatusAccepted
 	if len(result.Errors) > 0 {
 		status = http.StatusMultiStatus

@@ -13,17 +13,23 @@ NATS_BOX_IMAGE="${NATS_BOX_IMAGE:-natsio/nats-box:0.14.3}"
 API_BASE="${API_BASE:-http://127.0.0.1}"
 MTP="${MTP:-mqtt}"
 TENANT="${TENANT:-telkomsel}"
-GOOD_CIDR="${GOOD_CIDR:-10.172.0.0/16}"
+GOOD_CIDR="${GOOD_CIDR:-}"
 BAD_CIDR="${BAD_CIDR:-10.0.0.0/16}"
+AUTO_GOOD_CIDR="${AUTO_GOOD_CIDR:-1}"
 EVAL_TIMEOUT_SEC="${EVAL_TIMEOUT_SEC:-30}"
 CMD_TIMEOUT_SEC="${CMD_TIMEOUT_SEC:-30}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-1}"
+WAN_IP_PATH="${WAN_IP_PATH:-Device.X_TELKOMSEL_OntLock.InternetWanIP}"
 
 GENERAL_DB="tenant_${TENANT}_general"
 
 die() {
   echo "ERROR: $*" >&2
   return 1
+}
+
+fail() {
+  die "$@" || exit 1
 }
 
 log() {
@@ -98,6 +104,81 @@ db.lock_unauthorized_devices.deleteOne({sn:'${SN}'});
 "
 }
 
+seed_unauthorized() {
+  local reported_ip="$1"
+  mongo_eval "
+db=db.getSiblingDB('${GENERAL_DB}');
+var now=new Date();
+db.lock_unauthorized_devices.updateOne(
+  {sn:'${SN}'},
+  {\$set:{
+    sn:'${SN}',
+    reported_ip:'${reported_ip}',
+    reason:'UNAUTHORIZED',
+    status:'PENDING',
+    last_seen:now
+  }, \$setOnInsert:{first_seen:now}},
+  {upsert:true}
+);
+"
+}
+
+get_wan_ip() {
+  local out ip
+  out="$(python3 "$SCRIPT_DIR/usp_get.py" \
+    --sn "$SN" \
+    --tenant "$TENANT" \
+    --mtp "$MTP" \
+    --api-base "$API_BASE" \
+    --controller "$CONTROLLER_CONTAINER" \
+    --params "$WAN_IP_PATH" 2>/dev/null || true)"
+  ip="$(echo "$out" | awk -F= '/^InternetWanIP=/{print $2; exit}')"
+  if [[ -n "$ip" ]]; then
+    echo "$ip"
+    return 0
+  fi
+  ip="$(mongo_eval "
+db=db.getSiblingDB('${GENERAL_DB}');
+var a=db.lock_audit_logs.find({sn:'${SN}', 'details.reported_ip':{\$exists:true}})
+  .sort({created_at:-1}).limit(1).toArray();
+if(a.length && a[0].details && a[0].details.reported_ip){ print(a[0].details.reported_ip); }
+" | tr -d '\r')"
+  [[ -n "${ip// }" ]] && echo "$ip"
+}
+
+resolve_good_cidr() {
+  if [[ -n "${GOOD_CIDR}" ]]; then
+    log "GOOD_CIDR=${GOOD_CIDR} (from env)"
+    return 0
+  fi
+  if [[ "$AUTO_GOOD_CIDR" != "1" ]]; then
+    GOOD_CIDR="10.172.0.0/16"
+    log "GOOD_CIDR=${GOOD_CIDR} (default; set GOOD_CIDR or AUTO_GOOD_CIDR=1)"
+    return 0
+  fi
+  local wan
+  wan="$(get_wan_ip || true)"
+  if [[ -n "$wan" ]]; then
+    GOOD_CIDR="${wan}/32"
+    log "GOOD_CIDR=${GOOD_CIDR} (auto from WAN IP ${wan})"
+    return 0
+  fi
+  fail "could not detect WAN IP; set GOOD_CIDR=<cidr> covering the device WAN"
+}
+
+api_batch_whitelist() {
+  local reported_ip="$1"
+  local cidr="${2:-${reported_ip}/32}"
+  python3 "$SCRIPT_DIR/lock_api.py" batch-whitelist \
+    --sn "$SN" \
+    --tenant "$TENANT" \
+    --api-base "$API_BASE" \
+    --controller "$CONTROLLER_CONTAINER" \
+    --reported-ip "$reported_ip" \
+    --allowed-ip-range "$cidr" \
+    --description "ont-lock-e2e TC-6"
+}
+
 device_snapshot() {
   mongo_eval "
 printjson(db.getSiblingDB('adapter').devices.findOne(
@@ -153,6 +234,29 @@ if(a.length){ print(a[0].status+'|'+((a[0].details&&a[0].details.reason)||'')+'|
     sleep "$POLL_INTERVAL_SEC"
   done
   die "timeout waiting for evaluate after ${marker}"
+  return 1
+}
+
+wait_audit_action_after() {
+  local marker="$1"
+  local action="$2"
+  local deadline=$((SECONDS + EVAL_TIMEOUT_SEC))
+  local out=""
+  while (( SECONDS < deadline )); do
+    out="$(mongo_eval "
+db=db.getSiblingDB('${GENERAL_DB}');
+var m=ISODate('${marker}');
+var a=db.lock_audit_logs.find({sn:'${SN}', action:'${action}', created_at:{\$gte:m}}).sort({created_at:-1}).limit(1).toArray();
+if(a.length){ print((a[0].details&&JSON.stringify(a[0].details))||''); }
+")"
+    if [[ -n "${out// }" ]]; then
+      echo "$out"
+      return 0
+    fi
+    sleep "$POLL_INTERVAL_SEC"
+  done
+  die "timeout waiting for audit action ${action} after ${marker}"
+  return 1
 }
 
 wait_command_after() {
@@ -173,6 +277,7 @@ if(a.length){ print(a[0].command_value+'|'+a[0].status+'|'+(a[0].created_at.toIS
     sleep "$POLL_INTERVAL_SEC"
   done
   die "timeout waiting for command after ${marker}"
+  return 1
 }
 
 count_commands_after() {
@@ -187,16 +292,28 @@ assert_evaluate() {
   local got_line="$1" expect_status="$2" expect_reason="$3"
   local got_status got_reason
   IFS='|' read -r got_status got_reason _ <<<"$got_line"
-  [[ "$got_status" == "$expect_status" ]] || die "evaluate status want=${expect_status} got=${got_status} (${got_line})"
-  [[ "$got_reason" == "$expect_reason" ]] || die "evaluate reason want=${expect_reason} got=${got_reason} (${got_line})"
+  if [[ "$got_status" != "$expect_status" ]]; then
+    die "evaluate status want=${expect_status} got=${got_status} (${got_line})"
+    return 1
+  fi
+  if [[ "$got_reason" != "$expect_reason" ]]; then
+    die "evaluate reason want=${expect_reason} got=${got_reason} (${got_line})"
+    return 1
+  fi
 }
 
 assert_command() {
   local got_line="$1" expect_value="$2" expect_status="${3:-success}"
   local got_value got_status
   IFS='|' read -r got_value got_status _ <<<"$got_line"
-  [[ "$got_value" == "$expect_value" ]] || die "command value want=${expect_value} got=${got_value} (${got_line})"
-  [[ "$got_status" == "$expect_status" ]] || die "command status want=${expect_status} got=${got_status} (${got_line})"
+  if [[ "$got_value" != "$expect_value" ]]; then
+    die "command value want=${expect_value} got=${got_value} (${got_line})"
+    return 1
+  fi
+  if [[ "$got_status" != "$expect_status" ]]; then
+    die "command status want=${expect_status} got=${got_status} (${got_line})"
+    return 1
+  fi
 }
 
 assert_no_new_command() {
@@ -205,7 +322,18 @@ assert_no_new_command() {
   sleep 5
   local n
   n="$(count_commands_after "$marker")"
-  [[ "$n" == "0" ]] || die "expected no new command after ${marker}, got count=${n}"
+  if [[ "$n" != "0" ]]; then
+    die "expected no new command after ${marker}, got count=${n}"
+    return 1
+  fi
+}
+
+assert_audit_cidr() {
+  local details_json="$1" expect_cidr="$2"
+  if [[ "$details_json" != *"\"allowed_ip_range\":\"${expect_cidr}\""* ]]; then
+    die "audit allowed_ip_range want=${expect_cidr} got=${details_json}"
+    return 1
+  fi
 }
 
 get_lock() {
@@ -223,7 +351,10 @@ assert_lock() {
   local expect="$1"
   local got
   got="$(get_lock)"
-  [[ "$got" == "$expect" ]] || die "Lock node want=${expect} got=${got}"
+  if [[ "$got" != "$expect" ]]; then
+    die "Lock node want=${expect} got=${got}"
+    return 1
+  fi
   log "Lock=${got} OK"
 }
 

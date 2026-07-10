@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-CASES="${CASES:-tc1,tc2,tc4,tc5,tc3}"
+CASES="${CASES:-tc1,tc2,tc4,tc5,tc3,tc6}"
 RESTORE="${RESTORE:-1}"
 
 PASS_COUNT=0
@@ -21,8 +21,9 @@ Usage: SN=<serial> [TENANT=telkomsel] ./run.sh
 Env:
   SN            required device serial
   TENANT        default telkomsel
-  CASES         default tc1,tc2,tc4,tc5,tc3
-  GOOD_CIDR     default 10.172.0.0/16
+  CASES         default tc1,tc2,tc4,tc5,tc3,tc6
+  GOOD_CIDR     optional; auto <WAN>/32 when unset (AUTO_GOOD_CIDR=1)
+  AUTO_GOOD_CIDR default 1
   BAD_CIDR      default 10.0.0.0/16
   RESTORE       default 1 (restore whitelist + unlock on exit)
   API_BASE      default http://127.0.0.1
@@ -132,6 +133,43 @@ case_tc3() {
   assert_lock "1"
 }
 
+# Exceptions batch-whitelist API: reported_ip/32 must chase-evaluate to UNLOCKED.
+case_tc6() {
+  local reported_ip wan_cidr marker audit_details eval_line cmd_line
+
+  reported_ip="$(get_wan_ip)"
+  if [[ -z "$reported_ip" ]]; then
+    die "TC-6: could not read WAN IP for ${SN}"
+    return 1
+  fi
+  wan_cidr="${reported_ip}/32"
+  log "TC-6 WAN IP=${reported_ip} whitelist CIDR=${wan_cidr}"
+
+  set_config true true
+  delete_policy
+  clear_unauthorized
+  marker="$(mark_time)"
+  publish_online
+  eval_line="$(wait_evaluate_after "$marker")"
+  assert_evaluate "$eval_line" "LOCKED" "UNAUTHORIZED"
+  cmd_line="$(wait_command_after "$marker")"
+  assert_command "$cmd_line" "1" "success"
+  assert_lock "1"
+
+  seed_unauthorized "$reported_ip"
+  marker="$(mark_time)"
+  api_batch_whitelist "$reported_ip" "$wan_cidr"
+
+  audit_details="$(wait_audit_action_after "$marker" "unauthorized_batch_whitelist")"
+  assert_audit_cidr "$audit_details" "$wan_cidr"
+
+  eval_line="$(wait_evaluate_after "$marker")"
+  assert_evaluate "$eval_line" "UNLOCKED" "AUTHORIZED"
+  cmd_line="$(wait_command_after "$marker")"
+  assert_command "$cmd_line" "0" "success"
+  assert_lock "0"
+}
+
 EXIT_CODE=0
 on_exit() {
   if [[ "$RESTORE" == "1" ]]; then
@@ -143,8 +181,10 @@ on_exit() {
 main() {
   if [[ -z "${SN:-}" ]]; then
     usage
-    die "SN is required"
+    fail "SN is required"
   fi
+
+  resolve_good_cidr
 
   log "ONT Lock E2E  SN=${SN} TENANT=${TENANT} CASES=${CASES}"
   log "COMPOSE_DIR=${COMPOSE_DIR} API_BASE=${API_BASE} MTP=${MTP}"
@@ -179,6 +219,7 @@ main() {
       tc3) run_case TC-3 case_tc3; prev_locked=1 ;;
       tc4) run_case TC-4 case_tc4; prev_locked=0 ;;
       tc5) run_case TC-5 case_tc5; prev_locked=0 ;;
+      tc6) run_case TC-6 case_tc6; prev_locked=0 ;;
       *)
         record_result "$c" FAIL "unknown case"
         ;;

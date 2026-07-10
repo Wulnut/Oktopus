@@ -36,3 +36,4 @@ skills-lock.json
 .playwright-mcp
 .codegraph
 .DS_Store
+__pycache__/
