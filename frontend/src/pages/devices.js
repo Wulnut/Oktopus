@@ -216,17 +216,21 @@ const Page = () => {
         `${apiPrefix}/device?statusOrder=${statusOrder}&page_number=${page}&page_size=${rowsPerPage}&vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
         'GET'
       );
-      if (status == 404) {
+      if (status == 200 && result) {
+        const list = Array.isArray(result.devices) ? result.devices : [];
+        setPages((result.pages || 0) + 1);
+        setPage((result.page || 0) + 1);
+        setTotal(result.total || 0);
+        setDevices(list);
+        setSelected(new Array(list.length).fill(false));
+        setLoading(false);
+        setDeviceFound(list.length > 0);
+      } else if (status == 404) {
+        // Legacy empty-list response; keep compatibility until all clients migrate.
+        setDevices([]);
+        setTotal(0);
         setLoading(false);
         setDeviceFound(false);
-      } else if (status == 200 && result) {
-        setPages(result.pages + 1);
-        setPage(result.page + 1);
-        setTotal(result.total);
-        setDevices(result.devices);
-        setSelected(new Array(result.devices.length).fill(false));
-        setLoading(false);
-        setDeviceFound(true);
       } else {
         setLoading(false);
       }
@@ -356,7 +360,7 @@ const Page = () => {
     <>
       <Head>
         <title>
-          Oktopus | Controller
+          Controller
         </title>
       </Head>
 
@@ -653,7 +657,7 @@ const Page = () => {
                             }
                           </Table>
                         </TableContainer>
-                        {(pages > 0) && total && <TablePagination 
+                        {pages > 0 && total > 0 && <TablePagination 
                           rowsPerPageOptions={rowsPerPageOptions}
                           component="div"
                           count={total}

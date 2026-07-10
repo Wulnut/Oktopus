@@ -105,26 +105,31 @@ const Page = () => {
     } else {
       let content = await result.json();
       console.log('general info result:', content);
-      let totalDevices = content.StatusCount.Offline + content.StatusCount.Online;
+      const online = content.StatusCount?.Online || 0;
+      const offline = content.StatusCount?.Offline || 0;
+      const totalDevices = online + offline;
       setDevicesCount(totalDevices);
-      setOnlineCount(content.StatusCount.Online);
-      setOfflineCount(content.StatusCount.Offline);
+      setOnlineCount(online);
+      setOfflineCount(offline);
 
-      let onlinePercentage = (content.StatusCount.Online * 100) / totalDevices;
-
-      if (Number.isInteger(onlinePercentage)) {
-        setDevicesStatus([onlinePercentage, 100 - onlinePercentage]);
-      } else {
-        onlinePercentage = Number(onlinePercentage.toFixed(1));
-        let offlinePercentage = 100 - onlinePercentage;
-        setDevicesStatus([onlinePercentage, Number(offlinePercentage.toFixed(1))]);
+      // Avoid 0/0 -> NaN% when the tenant has no devices yet.
+      // Empty tenant: show 0% / 0% (not 0% / 100%).
+      let onlinePercentage = 0;
+      let offlinePercentage = 0;
+      if (totalDevices > 0) {
+        onlinePercentage = Number(((online * 100) / totalDevices).toFixed(1));
+        offlinePercentage = Number((100 - onlinePercentage).toFixed(1));
       }
+      setDevicesStatus([onlinePercentage, offlinePercentage]);
 
       let prodClassLabels = [];
       let prodClassValues = [];
       let prodClassValue = 0;
+      const productClasses = Array.isArray(content.ProductClassCount)
+        ? content.ProductClassCount
+        : [];
 
-      content.ProductClassCount?.map((p) => {
+      productClasses.forEach((p) => {
         if (p.productClass === '') {
           prodClassLabels.push('unknown');
         } else {
@@ -133,8 +138,8 @@ const Page = () => {
         prodClassValue += p.count;
       });
 
-      content.ProductClassCount?.map((p) => {
-        let percentageValue = (p.count * 100) / prodClassValue;
+      productClasses.forEach((p) => {
+        let percentageValue = prodClassValue > 0 ? (p.count * 100) / prodClassValue : 0;
         if (Number.isInteger(percentageValue)) {
           prodClassValues.push(percentageValue);
         } else {
@@ -148,7 +153,8 @@ const Page = () => {
       let vLabels = [];
       let vValues = [];
       let vValue = 0;
-      content.VendorsCount?.map((p) => {
+      const vendors = Array.isArray(content.VendorsCount) ? content.VendorsCount : [];
+      vendors.forEach((p) => {
         if (p.vendor === '') {
           vLabels.push('unknown');
         } else {
@@ -157,8 +163,8 @@ const Page = () => {
         vValue = vValue + p.count;
       });
 
-      content.VendorsCount?.map((p) => {
-        let percentageValue = (p.count * 100) / vValue;
+      vendors.forEach((p) => {
+        let percentageValue = vValue > 0 ? (p.count * 100) / vValue : 0;
         if (Number.isInteger(percentageValue)) {
           vValues.push(percentageValue);
         } else {
@@ -168,7 +174,7 @@ const Page = () => {
 
       setVendorLabels(vLabels);
       setVendorValues(vValues);
-      setVendorsTotal(content.VendorsCount?.length || 0);
+      setVendorsTotal(vendors.length);
 
       setGeneralInfo(content);
     }
@@ -181,7 +187,7 @@ const Page = () => {
   return generalInfo ? (
     <>
       <Head>
-        <title>Oktopus | Controller</title>
+        <title>Controller</title>
       </Head>
       <Box
         component="main"

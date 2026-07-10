@@ -67,17 +67,16 @@ func (a *Api) upsertLockPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = lockCache.PutLockPolicy(r.Context(), tenantSlug, created)
-	a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
-		SN:          created.SN,
-		Action:      "policy_upsert",
-		PolicyType:  created.PolicyType,
-		OperatorID:  created.OperatorID,
-		Description: created.Description,
-		Details: bson.M{
-			"allowed_ip_range": created.AllowedIPRange,
-			"reason_code":      created.ReasonCode,
-		},
-	})
+		a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+			SN:          created.SN,
+			Action:      "policy_upsert",
+			PolicyType:  created.PolicyType,
+			OperatorID:  created.OperatorID,
+			Description: created.Description,
+			Details: bson.M{
+				"allowed_ip_range": created.AllowedIPRange,
+			},
+		})
 	_ = a.tenantDB(r).DeleteUnauthorizedDevice(r.Context(), created.SN)
 	a.chaseLockForSN(tenantSlug, created.SN)
 	writeJSON(w, http.StatusOK, created)
@@ -224,7 +223,6 @@ func decodeLockCSV(r *http.Request) ([]db.LockPolicy, error) {
 		policies = append(policies, db.LockPolicy{
 			SN:             csvValue(row, header, "sn"),
 			AllowedIPRange: csvValue(row, header, "allowed_ip_range"),
-			ReasonCode:     csvValue(row, header, "reason"),
 			Description:    csvValue(row, header, "description"),
 		})
 	}
@@ -341,22 +339,84 @@ func (a *Api) listUnauthorizedDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, devices)
 }
 
+const (
+	lockListPageSizeDefault int64 = 25
+	lockListPageSizeMax     int64 = 100
+)
+
+func parseLockListPagination(r *http.Request) (pageNumber, pageSize int64, err error) {
+	pageNumber = 0
+	if raw := r.URL.Query().Get("page_number"); raw != "" {
+		pageNumber, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || pageNumber < 0 {
+			return 0, 0, errors.New("page_number must be a non-negative integer")
+		}
+	}
+	pageSize = lockListPageSizeDefault
+	if raw := r.URL.Query().Get("page_size"); raw != "" {
+		pageSize, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || pageSize <= 0 {
+			return 0, 0, errors.New("page_size must be a positive integer")
+		}
+		if pageSize > lockListPageSizeMax {
+			return 0, 0, errors.New("page_size must not exceed " + strconv.FormatInt(lockListPageSizeMax, 10))
+		}
+	}
+	return pageNumber, pageSize, nil
+}
+
 func (a *Api) listLockCommands(w http.ResponseWriter, r *http.Request) {
-	commands, err := a.tenantDB(r).ListLockCommands(r.Context(), r.URL.Query().Get("sn"))
+	pageNumber, pageSize, err := parseLockListPagination(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	commands, total, err := a.tenantDB(r).ListLockCommands(r.Context(), r.URL.Query().Get("sn"), pageNumber, pageSize)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, commands)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items": commands,
+		"total": total,
+		"page":  pageNumber,
+		"size":  pageSize,
+	})
 }
 
 func (a *Api) listLockAuditLogs(w http.ResponseWriter, r *http.Request) {
-	logs, err := a.tenantDB(r).ListLockAuditLogs(r.Context(), r.URL.Query().Get("sn"))
+	pageNumber, pageSize, err := parseLockListPagination(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	logs, total, err := a.tenantDB(r).ListLockAuditLogs(r.Context(), r.URL.Query().Get("sn"), pageNumber, pageSize)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, logs)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items": logs,
+		"total": total,
+		"page":  pageNumber,
+		"size":  pageSize,
+	})
+}
+
+func (a *Api) clearLockCommands(w http.ResponseWriter, r *http.Request) {
+	tenantSlug := middleware.GetTenantSlug(r)
+	deleted, err := a.tenantDB(r).ClearLockCommands(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+		Action:      "commands_clear",
+		OperatorID:  middleware.GetEmail(r),
+		Description: "Command history cleared",
+		Details:     bson.M{"deleted_count": deleted},
+	})
+	writeJSON(w, http.StatusOK, map[string]int64{"deleted": deleted})
 }
 
 func (a *Api) clearLockAuditLogs(w http.ResponseWriter, r *http.Request) {

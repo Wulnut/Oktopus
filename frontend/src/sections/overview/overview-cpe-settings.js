@@ -74,7 +74,7 @@ const protocols = [
   { name: 'MQTT', rttKey: 'MqttRtt', statusPrefix: '' },
   { name: 'WebSocket', rttKey: 'WebsocketsRtt', statusPrefix: '' },
   { name: 'STOMP', rttKey: 'StompRtt', statusPrefix: '' },
-  { name: 'CWMP', rttKey: 'AcsRtt', statusPrefix: 'ACS ' },
+  { name: 'CWMP', rttKey: 'AcsRtt', statusPrefix: '' },
 ];
 
 export const OverviewCpeSettings = (props) => {

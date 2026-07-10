@@ -144,7 +144,7 @@ const Page = () => {
   return (
     <>
       <Head>
-        <title>Mass Script Execution | Oktopus</title>
+        <title>Mass Script Execution</title>
       </Head>
       <Box component="main" sx={{ flexGrow: 1, py: 8 }}>
         <Container maxWidth="xl">

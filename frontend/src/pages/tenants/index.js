@@ -141,7 +141,7 @@ const Page = () => {
   return (
     <>
       <Head>
-        <title>Oktopus | Tenants</title>
+        <title>Tenants</title>
       </Head>
       <Box component="main" sx={{ flexGrow: 1, py: 8 }}>
         <Container maxWidth="xl">

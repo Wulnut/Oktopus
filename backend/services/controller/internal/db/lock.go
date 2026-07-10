@@ -53,7 +53,6 @@ type LockPolicy struct {
 	SN             string             `bson:"sn"                        json:"sn"`
 	PolicyType     LockPolicyType     `bson:"policy_type"               json:"policy_type"`
 	AllowedIPRange string             `bson:"allowed_ip_range,omitempty" json:"allowed_ip_range,omitempty"`
-	ReasonCode     string             `bson:"reason_code,omitempty"      json:"reason_code,omitempty"`
 	Description    string             `bson:"description,omitempty"      json:"description,omitempty"`
 	OperatorID     string             `bson:"operator_id,omitempty"      json:"operator_id,omitempty"`
 	Status         bool               `bson:"status"                    json:"status"`
@@ -152,7 +151,6 @@ func NormalizeSN(sn string) string {
 func (p *LockPolicy) Normalize() {
 	p.SN = NormalizeSN(p.SN)
 	p.AllowedIPRange = strings.TrimSpace(p.AllowedIPRange)
-	p.ReasonCode = strings.TrimSpace(p.ReasonCode)
 	p.Description = strings.TrimSpace(p.Description)
 	p.OperatorID = strings.TrimSpace(p.OperatorID)
 }
@@ -188,11 +186,14 @@ func (t *TenantDB) UpsertLockPolicy(ctx context.Context, p LockPolicy) (LockPoli
 		"$set": bson.M{
 			"policy_type":      p.PolicyType,
 			"allowed_ip_range": p.AllowedIPRange,
-			"reason_code":      p.ReasonCode,
 			"description":      p.Description,
 			"operator_id":      p.OperatorID,
 			"status":           p.Status,
 			"updated_at":       p.UpdatedAt,
+		},
+		// Drop legacy blacklist-only field if present on older documents.
+		"$unset": bson.M{
+			"reason_code": "",
 		},
 		"$setOnInsert": bson.M{
 			"_id":        p.ID,
@@ -222,6 +223,9 @@ func (t *TenantDB) ListLockPolicies(ctx context.Context, policyType LockPolicyTy
 	}
 	var policies []LockPolicy
 	err = cursor.All(ctx, &policies)
+	if policies == nil {
+		policies = []LockPolicy{}
+	}
 	return policies, err
 }
 
@@ -309,6 +313,9 @@ func (t *TenantDB) ListUnauthorizedDevices(ctx context.Context) ([]UnauthorizedD
 	}
 	var devices []UnauthorizedDevice
 	err = cursor.All(ctx, &devices)
+	if devices == nil {
+		devices = []UnauthorizedDevice{}
+	}
 	return devices, err
 }
 
@@ -480,18 +487,31 @@ func (t *TenantDB) DeleteUnauthorizedDevices(ctx context.Context, sns []string) 
 	return err
 }
 
-func (t *TenantDB) ListLockCommands(ctx context.Context, sn string) ([]LockCommandAttempt, error) {
+// ListLockCommands returns a page of lock command attempts.
+// pageNumber is 0-based; pageSize must be > 0 (caller clamps).
+func (t *TenantDB) ListLockCommands(ctx context.Context, sn string, pageNumber, pageSize int64) ([]LockCommandAttempt, int64, error) {
 	filter := bson.M{}
 	if sn != "" {
 		filter["device_sn"] = NormalizeSN(sn)
 	}
-	cursor, err := t.LockCommands().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100))
+	total, err := t.LockCommands().CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(pageNumber * pageSize).
+		SetLimit(pageSize)
+	cursor, err := t.LockCommands().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
 	}
 	var commands []LockCommandAttempt
 	err = cursor.All(ctx, &commands)
-	return commands, err
+	if commands == nil {
+		commands = []LockCommandAttempt{}
+	}
+	return commands, total, err
 }
 
 func (t *TenantDB) CreateLockAuditLog(ctx context.Context, l LockAuditLog) error {
@@ -502,18 +522,40 @@ func (t *TenantDB) CreateLockAuditLog(ctx context.Context, l LockAuditLog) error
 	return err
 }
 
-func (t *TenantDB) ListLockAuditLogs(ctx context.Context, sn string) ([]LockAuditLog, error) {
+// ListLockAuditLogs returns a page of lock audit logs.
+// pageNumber is 0-based; pageSize must be > 0 (caller clamps).
+func (t *TenantDB) ListLockAuditLogs(ctx context.Context, sn string, pageNumber, pageSize int64) ([]LockAuditLog, int64, error) {
 	filter := bson.M{}
 	if sn != "" {
 		filter["sn"] = NormalizeSN(sn)
 	}
-	cursor, err := t.LockAuditLogs().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(200))
+	total, err := t.LockAuditLogs().CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(pageNumber * pageSize).
+		SetLimit(pageSize)
+	cursor, err := t.LockAuditLogs().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
 	}
 	var logs []LockAuditLog
 	err = cursor.All(ctx, &logs)
-	return logs, err
+	if logs == nil {
+		logs = []LockAuditLog{}
+	}
+	return logs, total, err
+}
+
+// ClearLockCommands removes all lock command attempts for this tenant.
+func (t *TenantDB) ClearLockCommands(ctx context.Context) (int64, error) {
+	res, err := t.LockCommands().DeleteMany(ctx, bson.M{})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 // ClearLockAuditLogs removes all lock audit log entries for this tenant.

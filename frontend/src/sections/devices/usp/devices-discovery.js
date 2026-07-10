@@ -1770,9 +1770,20 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
           </Box>
         </DialogTitle>
         <DialogContent dividers>
-          <DialogContentText tabIndex={-1}>
-            <pre style={{ color: 'inherit' }}>{errorModalText}</pre>
-          </DialogContentText>
+          <Box
+            component="pre"
+            tabIndex={-1}
+            sx={{
+              m: 0,
+              color: 'text.secondary',
+              fontFamily: 'inherit',
+              fontSize: '0.875rem',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {errorModalText}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => { setErrorModalText(""); setErrorModal(false); setErrorModalTitle("Response"); }}>OK</Button>

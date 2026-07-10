@@ -84,6 +84,13 @@ npm run lint-fix   # Auto-fix ESLint issues
 - 修改 `frontend/src/` 文件自动热重载，无需重建镜像
 - 需要后端 API 时，至少启动 nginx + controller
 
+### Branding & version
+
+- Favicon / apple-touch icons use the SEI mark under `frontend/public/` (`favicon*.png`, `favicon.ico`, `apple-touch-icon.png`, `assets/sei-mark.png`)
+- App version is sourced from repo-root `VERSION` (mirrored to `frontend/VERSION` for Docker builds). `frontend/scripts/write-version.js` writes `frontend/public/version.json` (`version`, `commit`, `built_at`, `label`) on `npm run predev` / `prebuild`, and from `run_debug.sh` on the host
+- Side-nav and auth footers show `version.json` label (e.g. `v3.0.0 (b61206e)`) instead of "Powered by Oktopus"
+- Overview CPE Settings CWMP status shows `offline` / RTT only (no `ACS` prefix)
+
 ## Building Docker Images
 
 ```bash

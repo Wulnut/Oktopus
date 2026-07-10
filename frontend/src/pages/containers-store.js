@@ -497,7 +497,7 @@ const Page = () => {
     <>
       <Head>
         <title>
-          Containers Store | Oktopus
+          Containers Store
         </title>
       </Head>
       <Box

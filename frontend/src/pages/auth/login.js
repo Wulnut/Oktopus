@@ -113,7 +113,7 @@ const Page = () => {
     <>
       <Head>
         <title>
-          Login | Oktopus
+          Login
         </title>
       </Head>
       <Box

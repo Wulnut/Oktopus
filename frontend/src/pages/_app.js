@@ -34,7 +34,7 @@ function ThemedApp(props) {
     <CacheProvider value={emotionCache}>
       <Head>
         <title>
-          Oktopus | Controller
+          Controller
         </title>
         <meta
           name="viewport"

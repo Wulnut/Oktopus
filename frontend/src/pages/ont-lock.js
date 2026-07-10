@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import MagnifyingGlassIcon from '@heroicons/react/24/solid/MagnifyingGlassIcon';
+import ArrowDownTrayIcon from '@heroicons/react/24/solid/ArrowDownTrayIcon';
 import {
   Box,
   Button,
@@ -22,17 +24,33 @@ import {
   OutlinedInput,
   SvgIcon,
   Switch,
+  Tab,
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
+  Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
 import { useAlertContext } from 'src/contexts/error-context';
 import { useBackendContext } from 'src/contexts/backend-context';
+import { OverviewKpis } from 'src/sections/ont-lock/overview-kpis';
+import { CommandsStatusChart } from 'src/sections/ont-lock/commands-status-chart';
+
+const TAB_KEYS = ['overview', 'policies', 'exceptions', 'activity'];
+
+/** Legacy ?tab=queue bookmarks map to Exceptions. */
+const normalizeTab = (raw) => {
+  const t = String(raw || 'overview').toLowerCase();
+  if (t === 'queue') return 'exceptions';
+  return TAB_KEYS.includes(t) ? t : 'overview';
+};
 
 const initialPolicyForm = {
   sn: '',
@@ -53,16 +71,138 @@ const statusColor = (status) => {
   }
 };
 
+/** Map lock-engine reason codes to operator-facing labels (Exceptions / Unauthorized). */
+const formatUnauthorizedReason = (reason) => {
+  switch (String(reason || '').toUpperCase()) {
+    case 'UNAUTHORIZED':
+      return 'Not in whitelist / IP outside allowed range';
+    case 'INVALID_IP':
+      return 'Invalid or missing WAN IP';
+    case 'MASTER_DISABLED':
+      return 'Master lock switch is off';
+    case 'AUTHORIZED':
+      return 'Authorized by whitelist';
+    case '':
+      return '—';
+    default:
+      return String(reason);
+  }
+};
+
+const truncateCell = (value, max = 28) => {
+  const text = value == null || value === '' ? '—' : String(value);
+  if (text.length <= max) {
+    return { display: text, full: text, truncated: false };
+  }
+  return { display: `${text.slice(0, max)}…`, full: text, truncated: true };
+};
+
+const TruncatedCell = ({ value, max = 28, sx }) => {
+  const { display, full, truncated } = truncateCell(value, max);
+  const cell = (
+    <TableCell
+      sx={{
+        maxWidth: max * 8,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        ...sx,
+      }}
+    >
+      {display}
+    </TableCell>
+  );
+  if (!truncated) {
+    return cell;
+  }
+  return (
+    <Tooltip title={full} placement="top-start">
+      {cell}
+    </Tooltip>
+  );
+};
+
+const downloadCsv = (filename, headers, rows) => {
+  const escape = (v) => {
+    const s = v == null ? '' : String(v);
+    if (/[",\n\r]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+  const lines = [
+    headers.map(escape).join(','),
+    ...rows.map((row) => row.map(escape).join(',')),
+  ];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const parseListResponse = (data) => {
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page: 0, size: data.length };
+  }
+  return {
+    items: data?.items || [],
+    total: data?.total ?? 0,
+    page: data?.page ?? 0,
+    size: data?.size ?? 25,
+  };
+};
+
+const aggregateCommandStatuses = (commands) => {
+  const order = ['success', 'failed', 'pending', 'retry', 'other'];
+  const counts = { success: 0, failed: 0, pending: 0, retry: 0, other: 0 };
+  commands.forEach((c) => {
+    const s = String(c.status || '').toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(counts, s) && s !== 'other') {
+      counts[s] += 1;
+    } else {
+      counts.other += 1;
+    }
+  });
+  return {
+    labels: order.map((k) => k.charAt(0).toUpperCase() + k.slice(1)),
+    values: order.map((k) => counts[k]),
+    success: counts.success,
+    failed: counts.failed,
+  };
+};
+
 const Page = () => {
   const { httpRequest, apiPrefix } = useBackendContext();
   const { setAlert } = useAlertContext();
+  const router = useRouter();
+
+  const activeTab = useMemo(
+    () => normalizeTab(router.query.tab),
+    [router.query.tab]
+  );
+
+  // Rewrite legacy ?tab=queue to ?tab=exceptions (shallow).
+  useEffect(() => {
+    if (String(router.query.tab || '').toLowerCase() !== 'queue') return;
+    router.replace(
+      { pathname: router.pathname, query: { ...router.query, tab: 'exceptions' } },
+      undefined,
+      { shallow: true }
+    );
+  }, [router]);
 
   const [config, setConfig] = useState({ master_enabled: true, auto_lock_enabled: true });
   const [policies, setPolicies] = useState([]);
   const [unauthorized, setUnauthorized] = useState([]);
   const [unsupported, setUnsupported] = useState([]);
   const [commands, setCommands] = useState([]);
+  const [commandsTotal, setCommandsTotal] = useState(0);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [chartCommands, setChartCommands] = useState([]);
   const [whitelistForm, setWhitelistForm] = useState(initialPolicyForm);
   const [loading, setLoading] = useState(false);
   const [selectedUnauthorized, setSelectedUnauthorized] = useState({});
@@ -71,37 +211,133 @@ const Page = () => {
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [deletingSn, setDeletingSn] = useState(null);
   const [policySearch, setPolicySearch] = useState('');
+  const [policyPage, setPolicyPage] = useState(0);
+  const [policyRowsPerPage, setPolicyRowsPerPage] = useState(25);
+  const [unauthSearch, setUnauthSearch] = useState('');
+  const [unauthPage, setUnauthPage] = useState(0);
+  const [unauthRowsPerPage, setUnauthRowsPerPage] = useState(25);
+  const [cmdSearch, setCmdSearch] = useState('');
+  const [cmdSearchApplied, setCmdSearchApplied] = useState('');
+  const [cmdPage, setCmdPage] = useState(0);
+  const [cmdRowsPerPage, setCmdRowsPerPage] = useState(25);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditSearchApplied, setAuditSearchApplied] = useState('');
+  const [auditPage, setAuditPage] = useState(0);
+  const [auditRowsPerPage, setAuditRowsPerPage] = useState(25);
   const [clearAuditOpen, setClearAuditOpen] = useState(false);
+  const [clearCommandsOpen, setClearCommandsOpen] = useState(false);
   const [unsupportedActionSn, setUnsupportedActionSn] = useState(null);
 
- const whitelistFileRef = useRef(null);
+  const whitelistFileRef = useRef(null);
 
-  const fetchData = useCallback(async () => {
+  const setTab = useCallback(
+    (tab) => {
+      router.replace(
+        { pathname: router.pathname, query: { ...router.query, tab } },
+        undefined,
+        { shallow: true }
+      );
+    },
+    [router]
+  );
+
+  const fetchStatic = useCallback(async () => {
     setLoading(true);
     try {
-      const [cfg, policyResp, unauthorizedResp, unsupportedResp, commandsResp, auditResp] = await Promise.all([
+      const [cfg, policyResp, unauthorizedResp, unsupportedResp, chartResp] = await Promise.all([
         httpRequest(`${apiPrefix}/lock/config`, 'GET'),
         httpRequest(`${apiPrefix}/lock/policies`, 'GET'),
         httpRequest(`${apiPrefix}/lock/unauthorized`, 'GET'),
         httpRequest(`${apiPrefix}/lock/unsupported`, 'GET'),
-        httpRequest(`${apiPrefix}/lock/commands`, 'GET'),
-        httpRequest(`${apiPrefix}/lock/audit`, 'GET'),
+        httpRequest(`${apiPrefix}/lock/commands?page_number=0&page_size=100`, 'GET'),
       ]);
 
       if (cfg.status === 200 && cfg.result) setConfig(cfg.result);
-      if (policyResp.status === 200 && Array.isArray(policyResp.result)) setPolicies(policyResp.result);
-      if (unauthorizedResp.status === 200 && Array.isArray(unauthorizedResp.result)) setUnauthorized(unauthorizedResp.result);
-      if (unsupportedResp.status === 200 && Array.isArray(unsupportedResp.result)) setUnsupported(unsupportedResp.result);
-      if (commandsResp.status === 200 && Array.isArray(commandsResp.result)) setCommands(commandsResp.result);
-      if (auditResp.status === 200 && Array.isArray(auditResp.result)) setAuditLogs(auditResp.result);
+      if (policyResp.status === 200) {
+        setPolicies(Array.isArray(policyResp.result) ? policyResp.result : []);
+      }
+      if (unauthorizedResp.status === 200) {
+        setUnauthorized(Array.isArray(unauthorizedResp.result) ? unauthorizedResp.result : []);
+      }
+      if (unsupportedResp.status === 200) {
+        setUnsupported(Array.isArray(unsupportedResp.result) ? unsupportedResp.result : []);
+      }
+      if (chartResp.status === 200 && chartResp.result) {
+        setChartCommands(parseListResponse(chartResp.result).items);
+      }
     } finally {
       setLoading(false);
     }
   }, [apiPrefix, httpRequest]);
 
+  const fetchCommands = useCallback(async () => {
+    const qs = new URLSearchParams({
+      page_number: String(cmdPage),
+      page_size: String(cmdRowsPerPage),
+    });
+    if (cmdSearchApplied.trim()) {
+      qs.set('sn', cmdSearchApplied.trim());
+    }
+    const { status, result } = await httpRequest(`${apiPrefix}/lock/commands?${qs}`, 'GET');
+    if (status === 200 && result) {
+      const parsed = parseListResponse(result);
+      setCommands(parsed.items);
+      setCommandsTotal(parsed.total);
+    }
+  }, [apiPrefix, httpRequest, cmdPage, cmdRowsPerPage, cmdSearchApplied]);
+
+  const fetchAudit = useCallback(async () => {
+    const qs = new URLSearchParams({
+      page_number: String(auditPage),
+      page_size: String(auditRowsPerPage),
+    });
+    if (auditSearchApplied.trim()) {
+      qs.set('sn', auditSearchApplied.trim());
+    }
+    const { status, result } = await httpRequest(`${apiPrefix}/lock/audit?${qs}`, 'GET');
+    if (status === 200 && result) {
+      const parsed = parseListResponse(result);
+      setAuditLogs(parsed.items);
+      setAuditTotal(parsed.total);
+    }
+  }, [apiPrefix, httpRequest, auditPage, auditRowsPerPage, auditSearchApplied]);
+
+  const fetchData = useCallback(async () => {
+    await fetchStatic();
+    if (activeTab === 'activity') {
+      await Promise.all([fetchCommands(), fetchAudit()]);
+    }
+  }, [fetchStatic, fetchCommands, fetchAudit, activeTab]);
+
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchStatic();
+  }, [fetchStatic]);
+
+  // Activity lists are server-paginated; load only when that tab is active
+  // (Overview chart already comes from fetchStatic page_size=100 — avoid duplicate /commands).
+  useEffect(() => {
+    if (activeTab === 'activity') {
+      fetchCommands();
+    }
+  }, [activeTab, fetchCommands]);
+
+  useEffect(() => {
+    if (activeTab === 'activity') {
+      fetchAudit();
+    }
+  }, [activeTab, fetchAudit]);
+
+  const chartAgg = useMemo(() => aggregateCommandStatuses(chartCommands), [chartCommands]);
+
+  const kpiCounts = useMemo(
+    () => ({
+      unauthorized: unauthorized.length,
+      unsupported: unsupported.length,
+      success: chartAgg.success,
+      failed: chartAgg.failed,
+    }),
+    [unauthorized.length, unsupported.length, chartAgg.success, chartAgg.failed]
+  );
 
   const updateConfig = async (nextConfig) => {
     const body = JSON.stringify({
@@ -122,7 +358,7 @@ const Page = () => {
     if (status === 200) {
       setAlert({ severity: 'success', message: 'Whitelist policy saved.' });
       setWhitelistForm(initialPolicyForm);
-      fetchData();
+      fetchStatic();
     }
   };
 
@@ -144,7 +380,7 @@ const Page = () => {
         severity: response.status === 207 ? 'warning' : 'success',
         message: `Batch import: created ${result.created ?? 0}, errors ${result.errors?.length ?? 0}.`,
       });
-      fetchData();
+      fetchStatic();
     } else {
       setAlert({ severity: 'error', message: result.error || 'Batch import failed.' });
     }
@@ -165,54 +401,110 @@ const Page = () => {
         description: 'Whitelisted from unauthorized list',
       })),
     });
-    const { status, result } = await httpRequest(`${apiPrefix}/lock/unauthorized/batch-whitelist`, 'POST', body);
+    const { status, result } = await httpRequest(
+      `${apiPrefix}/lock/unauthorized/batch-whitelist`,
+      'POST',
+      body
+    );
     if (status === 202 || status === 207) {
       setAlert({
         severity: status === 207 ? 'warning' : 'success',
         message: `Whitelisted ${result.created ?? 0} device(s).`,
       });
       setSelectedUnauthorized({});
-      fetchData();
+      fetchStatic();
     }
   };
 
   const deletePolicy = async (sn) => {
     setDeletingSn(sn);
     try {
-      const { status } = await httpRequest(`${apiPrefix}/lock/policies/${encodeURIComponent(sn)}`, 'DELETE');
+      const { status } = await httpRequest(
+        `${apiPrefix}/lock/policies/${encodeURIComponent(sn)}`,
+        'DELETE'
+      );
       if (status >= 200 && status < 300) {
         setPolicies((prev) => prev.filter((p) => p.sn !== sn));
         setUnauthorized((prev) => prev.filter((u) => u.sn !== sn));
         setAlert({ severity: 'success', message: 'Policy deleted.' });
       }
-   } finally {
-     setDeletingSn(null);
-   }
- };
+    } finally {
+      setDeletingSn(null);
+    }
+  };
+
+  const clearCommands = async () => {
+    setClearCommandsOpen(false);
+    const { status, result } = await httpRequest(`${apiPrefix}/lock/commands`, 'DELETE');
+    if (status >= 200 && status < 300) {
+      setCommands([]);
+      setCommandsTotal(0);
+      setCmdPage(0);
+      setChartCommands([]);
+      setAlert({
+        severity: 'success',
+        message: `Cleared ${result?.deleted ?? 0} command record(s).`,
+      });
+      fetchCommands().catch(() => {});
+      fetchStatic().catch(() => {});
+    } else {
+      setAlert({ severity: 'error', message: result?.error || 'Failed to clear command history.' });
+    }
+  };
 
   const clearAudit = async () => {
     setClearAuditOpen(false);
     const { status, result } = await httpRequest(`${apiPrefix}/lock/audit`, 'DELETE');
     if (status >= 200 && status < 300) {
       setAuditLogs([]);
+      setAuditTotal(0);
+      setAuditPage(0);
       setAlert({ severity: 'success', message: `Cleared ${result?.deleted ?? 0} audit record(s).` });
-      fetchData().catch(() => {});
+      fetchAudit().catch(() => {});
     } else {
       setAlert({ severity: 'error', message: result?.error || 'Failed to clear audit history.' });
     }
   };
 
- const filteredPolicies = useMemo(() => {
+  const filteredPolicies = useMemo(() => {
     const q = policySearch.trim().toLowerCase();
     if (!q) return policies;
-    return policies.filter((p) => [
-      p.sn,
-      p.policy_type,
-      p.allowed_ip_range,
-      p.reason_code,
-      p.description,
-    ].some((v) => String(v ?? '').toLowerCase().includes(q)));
+    return policies.filter((p) =>
+      [p.sn, p.policy_type, p.allowed_ip_range, p.description].some((v) =>
+        String(v ?? '')
+          .toLowerCase()
+          .includes(q)
+      )
+    );
   }, [policies, policySearch]);
+
+  const pagedPolicies = useMemo(() => {
+    const start = policyPage * policyRowsPerPage;
+    return filteredPolicies.slice(start, start + policyRowsPerPage);
+  }, [filteredPolicies, policyPage, policyRowsPerPage]);
+
+  const filteredUnauthorized = useMemo(() => {
+    const q = unauthSearch.trim().toLowerCase();
+    if (!q) return unauthorized;
+    return unauthorized.filter((item) =>
+      [
+        item.sn,
+        item.reported_ip,
+        item.status,
+        item.reason,
+        formatUnauthorizedReason(item.reason),
+      ].some((v) =>
+        String(v ?? '')
+          .toLowerCase()
+          .includes(q)
+      )
+    );
+  }, [unauthorized, unauthSearch]);
+
+  const pagedUnauthorized = useMemo(() => {
+    const start = unauthPage * unauthRowsPerPage;
+    return filteredUnauthorized.slice(start, start + unauthRowsPerPage);
+  }, [filteredUnauthorized, unauthPage, unauthRowsPerPage]);
 
   const selectedPolicyCount = Object.values(selectedPolicies).filter(Boolean).length;
 
@@ -220,18 +512,23 @@ const Page = () => {
     setSelectedPolicies((prev) => ({ ...prev, [sn]: !prev[sn] }));
   };
 
-  const allPoliciesSelected = filteredPolicies.length > 0 && filteredPolicies.every((p) => selectedPolicies[p.sn]);
+  const allPoliciesSelected =
+    pagedPolicies.length > 0 && pagedPolicies.every((p) => selectedPolicies[p.sn]);
 
   const toggleAllPolicies = () => {
     if (allPoliciesSelected) {
       setSelectedPolicies((prev) => {
         const next = { ...prev };
-        filteredPolicies.forEach((p) => { delete next[p.sn]; });
+        pagedPolicies.forEach((p) => {
+          delete next[p.sn];
+        });
         return next;
       });
     } else {
       const next = { ...selectedPolicies };
-      filteredPolicies.forEach((p) => { next[p.sn] = true; });
+      pagedPolicies.forEach((p) => {
+        next[p.sn] = true;
+      });
       setSelectedPolicies(next);
     }
   };
@@ -240,7 +537,11 @@ const Page = () => {
     const sns = policies.filter((p) => selectedPolicies[p.sn]).map((p) => p.sn);
     if (sns.length === 0) return;
     const body = JSON.stringify({ sns });
-    const { status, result } = await httpRequest(`${apiPrefix}/lock/policies/batch-delete`, 'POST', body);
+    const { status, result } = await httpRequest(
+      `${apiPrefix}/lock/policies/batch-delete`,
+      'POST',
+      body
+    );
     setBatchDeleteOpen(false);
     if (status >= 200 && status < 300) {
       const deletedSet = new Set(sns);
@@ -248,10 +549,12 @@ const Page = () => {
       setUnauthorized((prev) => prev.filter((u) => !deletedSet.has(u.sn)));
       setAlert({
         severity: status === 207 ? 'warning' : 'success',
-        message: `Deleted ${result.deleted ?? sns.length} policy/policies${result.errors?.length ? `, ${result.errors.length} error(s)` : ''}.`,
+        message: `Deleted ${result.deleted ?? sns.length} policy/policies${
+          result.errors?.length ? `, ${result.errors.length} error(s)` : ''
+        }.`,
       });
       setSelectedPolicies({});
-      fetchData().catch(() => {});
+      fetchStatic().catch(() => {});
     } else {
       setAlert({ severity: 'error', message: result?.error || 'Batch delete failed.' });
     }
@@ -259,6 +562,30 @@ const Page = () => {
 
   const toggleUnauthorized = (sn) => {
     setSelectedUnauthorized((prev) => ({ ...prev, [sn]: !prev[sn] }));
+  };
+
+  const allUnauthorizedSelected =
+    pagedUnauthorized.length > 0 &&
+    pagedUnauthorized.every((item) => selectedUnauthorized[item.sn]);
+
+  const selectedUnauthorizedCount = Object.values(selectedUnauthorized).filter(Boolean).length;
+
+  const toggleAllUnauthorized = () => {
+    if (allUnauthorizedSelected) {
+      setSelectedUnauthorized((prev) => {
+        const next = { ...prev };
+        pagedUnauthorized.forEach((item) => {
+          delete next[item.sn];
+        });
+        return next;
+      });
+    } else {
+      const next = { ...selectedUnauthorized };
+      pagedUnauthorized.forEach((item) => {
+        next[item.sn] = true;
+      });
+      setSelectedUnauthorized(next);
+    }
   };
 
   const optOutUnsupported = async (sn) => {
@@ -270,7 +597,7 @@ const Page = () => {
       );
       if (status >= 200 && status < 300) {
         setAlert({ severity: 'success', message: 'Stopped detecting this device.' });
-        fetchData();
+        fetchStatic();
       }
     } finally {
       setUnsupportedActionSn(null);
@@ -286,49 +613,42 @@ const Page = () => {
       );
       if (status >= 200 && status < 300) {
         setAlert({ severity: 'success', message: 'Resumed detecting this device.' });
-        fetchData();
+        fetchStatic();
       }
     } finally {
       setUnsupportedActionSn(null);
     }
   };
 
-  const renderPolicyRows = () => {
-    if (filteredPolicies.length === 0) {
-      return (
-        <TableRow>
-          <TableCell colSpan={7}>
-            {policies.length === 0 ? 'No lock policies found.' : 'No policies match your search.'}
-          </TableCell>
-        </TableRow>
-      );
-    }
-    return filteredPolicies.map((policy) => (
-      <TableRow key={policy.sn}>
-        <TableCell padding="checkbox">
-          <Checkbox
-            checked={Boolean(selectedPolicies[policy.sn])}
-            onChange={() => togglePolicy(policy.sn)}
-          />
-        </TableCell>
-        <TableCell>{policy.sn}</TableCell>
-        <TableCell>{policy.policy_type}</TableCell>
-        <TableCell>{policy.allowed_ip_range || '-'}</TableCell>
-        <TableCell>{policy.reason_code || '-'}</TableCell>
-        <TableCell>{policy.description || '-'}</TableCell>
-        <TableCell align="right">
-          <Button color="error" size="small" disabled={deletingSn === policy.sn} onClick={() => deletePolicy(policy.sn)}>
-            Delete
-          </Button>
-        </TableCell>
-      </TableRow>
-    ));
+  const exportCommandsPage = () => {
+    downloadCsv(
+      'lock-commands.csv',
+      ['SN', 'Target', 'Status', 'Command ID', 'Error', 'Updated'],
+      commands.map((c) => [
+        c.device_sn,
+        c.target_status,
+        c.status,
+        c.command_id,
+        c.error || '',
+        c.updated_at ? new Date(c.updated_at).toISOString() : '',
+      ])
+    );
+  };
+
+  const applyCmdSearch = () => {
+    setCmdPage(0);
+    setCmdSearchApplied(cmdSearch.trim());
+  };
+
+  const applyAuditSearch = () => {
+    setAuditPage(0);
+    setAuditSearchApplied(auditSearch.trim());
   };
 
   return (
     <>
       <Head>
-        <title>ONT Lock | Oktopus</title>
+        <title>ONT Lock</title>
       </Head>
       <Box component="main" sx={{ flexGrow: 1, py: 8 }}>
         <Container maxWidth="xl">
@@ -345,317 +665,672 @@ const Page = () => {
               </Button>
             </Stack>
 
-            <Card>
-              <CardHeader title="Global Configuration" />
-              <Divider />
-              <CardContent>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={Boolean(config.master_enabled)}
-                        onChange={(event) => {
-                          const next = { ...config, master_enabled: event.target.checked };
-                          setConfig(next);
-                          updateConfig(next);
-                        }}
-                      />
-                    }
-                    label="Master lock switch"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={Boolean(config.auto_lock_enabled)}
-                        onChange={(event) => {
-                          const next = { ...config, auto_lock_enabled: event.target.checked };
-                          setConfig(next);
-                          updateConfig(next);
-                        }}
-                      />
-                    }
-                    label="Auto lock unauthorized devices"
-                  />
-                </Stack>
-              </CardContent>
-            </Card>
+            <Tabs
+              value={activeTab}
+              onChange={(_, v) => setTab(v)}
+              variant="scrollable"
+              scrollButtons="auto"
+            >
+              <Tab label="Overview" value="overview" />
+              <Tab label="Policies" value="policies" />
+              <Tab label="Exceptions" value="exceptions" />
+              <Tab label="Activity" value="activity" />
+            </Tabs>
 
-            <Card>
-              <CardHeader title="Add Whitelist" />
-              <Divider />
-              <CardContent>
-                <Stack spacing={2}>
-                  <TextField
-                    label="SN"
-                    value={whitelistForm.sn}
-                    onChange={(event) => setWhitelistForm((prev) => ({ ...prev, sn: event.target.value }))}
-                    required
-                    fullWidth
-                  />
-                  <TextField
-                    label="Allowed IP Range (CIDR)"
-                    value={whitelistForm.allowed_ip_range}
-                    onChange={(event) => setWhitelistForm((prev) => ({ ...prev, allowed_ip_range: event.target.value }))}
-                    placeholder="10.10.0.0/16"
-                    required
-                    fullWidth
-                  />
-                  <TextField
-                    label="Description"
-                    value={whitelistForm.description}
-                    onChange={(event) => setWhitelistForm((prev) => ({ ...prev, description: event.target.value }))}
-                    fullWidth
-                    multiline
-                    minRows={2}
-                  />
-                  <Button variant="contained" onClick={submitPolicy} disabled={!whitelistForm.sn || !whitelistForm.allowed_ip_range}>
-                    Save
-                  </Button>
-                  <Button variant="outlined" onClick={() => whitelistFileRef.current?.click()}>
-                    Import CSV
-                  </Button>
-                  <input
-                    ref={whitelistFileRef}
-                    type="file"
-                    accept=".csv,text/csv"
-                    hidden
-                    onChange={(event) => {
-                      uploadBatchCSV(event.target.files?.[0]);
-                      event.target.value = '';
-                    }}
-                  />
-                </Stack>
-              </CardContent>
-            </Card>
-
-            {batchResult && (
-              <Card>
-                <CardHeader title="Batch Import Result" />
-                <Divider />
-                <CardContent>
-                  <Typography variant="body2">
-                    Created: {batchResult.result?.created ?? 0}
-                    {batchResult.result?.errors?.length ? ` | Errors: ${batchResult.result.errors.length}` : ''}
-                  </Typography>
-                  {batchResult.result?.errors?.map((err, idx) => (
-                    <Typography key={idx} color="error" variant="body2">
-                      {err}
+            {activeTab === 'overview' && (
+              <Stack spacing={3}>
+                <Card>
+                  <CardHeader title="Global Configuration" />
+                  <Divider />
+                  <CardContent>
+                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={Boolean(config.master_enabled)}
+                            onChange={(event) => {
+                              const next = { ...config, master_enabled: event.target.checked };
+                              setConfig(next);
+                              updateConfig(next);
+                            }}
+                          />
+                        }
+                        label="Master lock switch"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={Boolean(config.auto_lock_enabled)}
+                            onChange={(event) => {
+                              const next = { ...config, auto_lock_enabled: event.target.checked };
+                              setConfig(next);
+                              updateConfig(next);
+                            }}
+                          />
+                        }
+                        label="Auto lock unauthorized devices"
+                      />
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                      When AutoLock is on, online devices are evaluated against whitelist policies.
+                      Matching WAN IP unlocks; non-matching locks and lists the device under
+                    Exceptions.
                     </Typography>
-                  ))}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+
+                <OverviewKpis counts={kpiCounts} />
+                <CommandsStatusChart labels={chartAgg.labels} values={chartAgg.values} />
+              </Stack>
             )}
 
-            <Card>
-              <CardHeader
-                title="Policies"
-                action={
-                 <Stack direction="row" spacing={1} alignItems="center">
+            {activeTab === 'policies' && (
+              <Stack spacing={3}>
+                <Card>
+                  <CardHeader title="Add Whitelist" />
+                  <Divider />
+                  <CardContent>
+                    <Stack spacing={2}>
+                      <TextField
+                        label="SN"
+                        value={whitelistForm.sn}
+                        onChange={(event) =>
+                          setWhitelistForm((prev) => ({ ...prev, sn: event.target.value }))
+                        }
+                        required
+                        fullWidth
+                      />
+                      <TextField
+                        label="Allowed IP Range (CIDR)"
+                        value={whitelistForm.allowed_ip_range}
+                        onChange={(event) =>
+                          setWhitelistForm((prev) => ({
+                            ...prev,
+                            allowed_ip_range: event.target.value,
+                          }))
+                        }
+                        placeholder="10.10.0.0/16"
+                        required
+                        fullWidth
+                      />
+                      <TextField
+                        label="Description"
+                        value={whitelistForm.description}
+                        onChange={(event) =>
+                          setWhitelistForm((prev) => ({
+                            ...prev,
+                            description: event.target.value,
+                          }))
+                        }
+                        fullWidth
+                        multiline
+                        minRows={2}
+                      />
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="contained"
+                          onClick={submitPolicy}
+                          disabled={!whitelistForm.sn || !whitelistForm.allowed_ip_range}
+                        >
+                          Save
+                        </Button>
+                        <Button variant="outlined" onClick={() => whitelistFileRef.current?.click()}>
+                          Import CSV
+                        </Button>
+                        <input
+                          ref={whitelistFileRef}
+                          type="file"
+                          accept=".csv,text/csv"
+                          hidden
+                          onChange={(event) => {
+                            uploadBatchCSV(event.target.files?.[0]);
+                            event.target.value = '';
+                          }}
+                        />
+                      </Stack>
+                    </Stack>
+                  </CardContent>
+                </Card>
+
+                {batchResult && (
+                  <Card>
+                    <CardHeader title="Batch Import Result" />
+                    <Divider />
+                    <CardContent>
+                      <Typography variant="body2">
+                        Created: {batchResult.result?.created ?? 0}
+                        {batchResult.result?.errors?.length
+                          ? ` | Errors: ${batchResult.result.errors.length}`
+                          : ''}
+                      </Typography>
+                      {batchResult.result?.errors?.map((err, idx) => (
+                        <Typography key={idx} color="error" variant="body2">
+                          {err}
+                        </Typography>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card>
+                  <CardHeader title="Policies" />
+                  <Divider />
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    sx={{ px: 2, pt: 2 }}
+                    alignItems={{ sm: 'center' }}
+                  >
                     <OutlinedInput
                       size="small"
+                      fullWidth
                       value={policySearch}
-                      onChange={(event) => setPolicySearch(event.target.value)}
+                      onChange={(event) => {
+                        setPolicySearch(event.target.value);
+                        setPolicyPage(0);
+                      }}
                       placeholder="Search SN / IP / description"
-                      startAdornment={(
+                      startAdornment={
                         <InputAdornment position="start">
-                          <SvgIcon
-                            color="action"
-                            fontSize="small"
-                          >
+                          <SvgIcon color="action" fontSize="small">
                             <MagnifyingGlassIcon />
                           </SvgIcon>
                         </InputAdornment>
-                      )}
-                      sx={{ width: 260 }}
+                      }
                     />
                     {selectedPolicyCount > 0 ? (
-                      <Button color="error" size="small" variant="outlined" onClick={() => setBatchDeleteOpen(true)}>
+                      <Button
+                        color="error"
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setBatchDeleteOpen(true)}
+                        sx={{ flexShrink: 0 }}
+                      >
                         Delete Selected ({selectedPolicyCount})
                       </Button>
                     ) : null}
                   </Stack>
-                }
-              />
-              <Divider />
-              <CardContent sx={{ p: 0 }}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          checked={allPoliciesSelected}
-                          indeterminate={selectedPolicyCount > 0 && !allPoliciesSelected}
-                          onChange={toggleAllPolicies}
-                        />
-                      </TableCell>
-                      <TableCell>SN</TableCell>
-                      <TableCell>Type</TableCell>
-                      <TableCell>Allowed IP Range</TableCell>
-                      <TableCell>Reason</TableCell>
-                      <TableCell>Description</TableCell>
-                      <TableCell align="right">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>{renderPolicyRows()}</TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-
-            <Stack direction={{ xs: 'column', lg: 'row' }} spacing={3}>
-              <Card sx={{ flex: 1 }}>
-                <CardHeader
-                  title="Unauthorized Devices"
-                  action={
-                    <Button size="small" variant="contained" onClick={batchWhitelistFromUnauthorized}>
-                      Whitelist Selected
-                    </Button>
-                  }
-                />
-                <Divider />
-                <CardContent sx={{ p: 0 }}>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell padding="checkbox" />
-                        <TableCell>SN</TableCell>
-                        <TableCell>Reported IP</TableCell>
-                        <TableCell>Status</TableCell>
-                        <TableCell>Reason</TableCell>
-                        <TableCell>Last Seen</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {unauthorized.length === 0 ? (
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table sx={{ minWidth: 800 }} size="small">
+                      <TableHead>
                         <TableRow>
-                          <TableCell colSpan={6}>No unauthorized devices.</TableCell>
-                        </TableRow>
-                      ) : (
-                        unauthorized.map((item) => (
-                          <TableRow key={item.sn}>
-                            <TableCell padding="checkbox">
-                              <Checkbox
-                                checked={Boolean(selectedUnauthorized[item.sn])}
-                                onChange={() => toggleUnauthorized(item.sn)}
-                              />
-                            </TableCell>
-                            <TableCell>{item.sn}</TableCell>
-                            <TableCell>{item.reported_ip || '-'}</TableCell>
-                            <TableCell>
-                              <Chip label={item.status} color={statusColor(item.status)} size="small" />
-                            </TableCell>
-                            <TableCell>{item.reason}</TableCell>
-                            <TableCell>{item.last_seen ? new Date(item.last_seen).toLocaleString() : '-'}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-              <SimpleTable
-                sx={{ flex: 1 }}
-                title="Recent Commands"
-                columns={['SN', 'Target', 'Status', 'Command ID', 'Updated']}
-                rows={commands.map((item) => [
-                  item.device_sn,
-                  item.target_status,
-                  <Chip
-                    key="status"
-                    label={item.status}
-                    color={item.status === 'success' ? 'success' : item.status === 'failed' ? 'error' : 'warning'}
-                    size="small"
-                  />,
-                  item.command_id,
-                  item.updated_at ? new Date(item.updated_at).toLocaleString() : '-',
-                ])}
-                empty="No lock commands yet."
-              />
-            </Stack>
-
-            <Card>
-              <CardHeader title="Unsupported Devices" />
-              <Divider />
-              <CardContent sx={{ p: 0 }}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>SN</TableCell>
-                      <TableCell>Reason</TableCell>
-                      <TableCell>Detail</TableCell>
-                      <TableCell>Last Checked</TableCell>
-                      <TableCell>Opt-out</TableCell>
-                      <TableCell align="right">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {unsupported.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6}>No unsupported devices.</TableCell>
-                      </TableRow>
-                    ) : (
-                      unsupported.map((item) => (
-                        <TableRow key={item.sn}>
-                          <TableCell>{item.sn}</TableCell>
-                          <TableCell>{item.reason || '-'}</TableCell>
-                          <TableCell>{item.detail || '-'}</TableCell>
-                          <TableCell>
-                            {item.last_checked_at ? new Date(item.last_checked_at).toLocaleString() : '-'}
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={item.opt_out ? 'Yes' : 'No'}
-                              color={item.opt_out ? 'default' : 'warning'}
-                              size="small"
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={allPoliciesSelected}
+                              indeterminate={selectedPolicyCount > 0 && !allPoliciesSelected}
+                              onChange={toggleAllPolicies}
                             />
                           </TableCell>
-                          <TableCell align="right">
-                            {item.opt_out ? (
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                disabled={unsupportedActionSn === item.sn}
-                                onClick={() => resumeUnsupported(item.sn)}
-                              >
-                                Resume
-                              </Button>
-                            ) : (
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                disabled={unsupportedActionSn === item.sn}
-                                onClick={() => optOutUnsupported(item.sn)}
-                              >
-                                Stop detecting
-                              </Button>
-                            )}
-                          </TableCell>
+                          <TableCell>SN</TableCell>
+                          <TableCell>Type</TableCell>
+                          <TableCell>Allowed IP Range</TableCell>
+                          <TableCell>Description</TableCell>
+                          <TableCell align="right">Actions</TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                      </TableHead>
+                      <TableBody>
+                        {pagedPolicies.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6}>
+                              {policies.length === 0
+                                ? 'No lock policies found.'
+                                : 'No policies match your search.'}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          pagedPolicies.map((policy) => (
+                            <TableRow key={policy.sn} hover>
+                              <TableCell padding="checkbox">
+                                <Checkbox
+                                  checked={Boolean(selectedPolicies[policy.sn])}
+                                  onChange={() => togglePolicy(policy.sn)}
+                                />
+                              </TableCell>
+                              <TruncatedCell value={policy.sn} max={20} />
+                              <TruncatedCell value={policy.policy_type} max={12} />
+                              <TruncatedCell value={policy.allowed_ip_range || '-'} max={22} />
+                              <TruncatedCell value={policy.description || '-'} max={36} />
+                              <TableCell align="right">
+                                <Button
+                                  color="error"
+                                  size="small"
+                                  disabled={deletingSn === policy.sn}
+                                  onClick={() => deletePolicy(policy.sn)}
+                                >
+                                  Delete
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  <TablePagination
+                    component="div"
+                    count={filteredPolicies.length}
+                    page={policyPage}
+                    onPageChange={(_, p) => setPolicyPage(p)}
+                    rowsPerPage={policyRowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setPolicyRowsPerPage(parseInt(e.target.value, 10));
+                      setPolicyPage(0);
+                    }}
+                    rowsPerPageOptions={[10, 25, 50]}
+                  />
+                </Card>
+              </Stack>
+            )}
 
-           <SimpleTable
-             title="Audit History"
-             columns={['Action', 'SN', 'Status', 'Operator', 'Created']}
-             rows={auditLogs.map((item) => [
-               item.action,
-               item.sn || '-',
-               item.status || '-',
-               item.operator_id || '-',
-               item.created_at ? new Date(item.created_at).toLocaleString() : '-',
-             ])}
-             empty="No audit logs yet."
-             action={
-               auditLogs.length > 0 ? (
-                 <Button color="error" size="small" variant="outlined" onClick={() => setClearAuditOpen(true)}>
-                   Clear
-                 </Button>
-               ) : null
-             }
-           />
+            {activeTab === 'exceptions' && (
+              <Stack spacing={3}>
+                <Card>
+                  <CardHeader title="Unauthorized Devices" />
+                  <Divider />
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    sx={{ px: 2, pt: 2 }}
+                    alignItems={{ sm: 'center' }}
+                  >
+                    <OutlinedInput
+                      size="small"
+                      fullWidth
+                      value={unauthSearch}
+                      onChange={(event) => {
+                        setUnauthSearch(event.target.value);
+                        setUnauthPage(0);
+                      }}
+                      placeholder="Search SN / IP / status / reason…"
+                      startAdornment={
+                        <InputAdornment position="start">
+                          <SvgIcon color="action" fontSize="small">
+                            <MagnifyingGlassIcon />
+                          </SvgIcon>
+                        </InputAdornment>
+                      }
+                    />
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={batchWhitelistFromUnauthorized}
+                      disabled={selectedUnauthorizedCount === 0}
+                      sx={{ flexShrink: 0 }}
+                    >
+                      Whitelist Selected
+                      {selectedUnauthorizedCount > 0 ? ` (${selectedUnauthorizedCount})` : ''}
+                    </Button>
+                  </Stack>
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table sx={{ minWidth: 800 }} size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={allUnauthorizedSelected}
+                              indeterminate={
+                                selectedUnauthorizedCount > 0 && !allUnauthorizedSelected
+                              }
+                              onChange={toggleAllUnauthorized}
+                              disabled={pagedUnauthorized.length === 0}
+                            />
+                          </TableCell>
+                          <TableCell>SN</TableCell>
+                          <TableCell>Reported IP</TableCell>
+                          <TableCell>Status</TableCell>
+                          <TableCell>Reason</TableCell>
+                          <TableCell>Last Seen</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {pagedUnauthorized.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6}>No unauthorized devices.</TableCell>
+                          </TableRow>
+                        ) : (
+                          pagedUnauthorized.map((item) => (
+                            <TableRow key={item.sn} hover>
+                              <TableCell padding="checkbox">
+                                <Checkbox
+                                  checked={Boolean(selectedUnauthorized[item.sn])}
+                                  onChange={() => toggleUnauthorized(item.sn)}
+                                />
+                              </TableCell>
+                              <TruncatedCell value={item.sn} max={22} />
+                              <TruncatedCell value={item.reported_ip || '-'} max={18} />
+                              <TableCell>
+                                <Chip
+                                  label={item.status}
+                                  color={statusColor(item.status)}
+                                  size="small"
+                                />
+                              </TableCell>
+                              <TruncatedCell
+                                value={formatUnauthorizedReason(item.reason)}
+                                max={36}
+                              />
+                              <TruncatedCell
+                                value={
+                                  item.last_seen ? new Date(item.last_seen).toLocaleString() : '-'
+                                }
+                                max={22}
+                              />
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  <TablePagination
+                    component="div"
+                    count={filteredUnauthorized.length}
+                    page={unauthPage}
+                    onPageChange={(_, p) => setUnauthPage(p)}
+                    rowsPerPage={unauthRowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setUnauthRowsPerPage(parseInt(e.target.value, 10));
+                      setUnauthPage(0);
+                    }}
+                    rowsPerPageOptions={[10, 25, 50]}
+                  />
+                </Card>
+
+                <Card>
+                  <CardHeader title="Unsupported Devices" />
+                  <Divider />
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table sx={{ minWidth: 800 }} size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>SN</TableCell>
+                          <TableCell>Reason</TableCell>
+                          <TableCell>Detail</TableCell>
+                          <TableCell>Last Checked</TableCell>
+                          <TableCell>Opt-out</TableCell>
+                          <TableCell align="right">Actions</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {unsupported.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6}>No unsupported devices.</TableCell>
+                          </TableRow>
+                        ) : (
+                          unsupported.map((item) => (
+                            <TableRow key={item.sn} hover>
+                              <TruncatedCell value={item.sn} max={22} />
+                              <TruncatedCell value={item.reason || '-'} max={18} />
+                              <TruncatedCell value={item.detail || '-'} max={36} />
+                              <TruncatedCell
+                                value={
+                                  item.last_checked_at
+                                    ? new Date(item.last_checked_at).toLocaleString()
+                                    : '-'
+                                }
+                                max={22}
+                              />
+                              <TableCell>
+                                <Chip
+                                  label={item.opt_out ? 'Yes' : 'No'}
+                                  color={item.opt_out ? 'default' : 'warning'}
+                                  size="small"
+                                />
+                              </TableCell>
+                              <TableCell align="right">
+                                {item.opt_out ? (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    disabled={unsupportedActionSn === item.sn}
+                                    onClick={() => resumeUnsupported(item.sn)}
+                                  >
+                                    Resume
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    disabled={unsupportedActionSn === item.sn}
+                                    onClick={() => optOutUnsupported(item.sn)}
+                                  >
+                                    Stop detecting
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Card>
+              </Stack>
+            )}
+
+            {activeTab === 'activity' && (
+              <Stack spacing={3}>
+                <Card>
+                  <CardHeader title="Recent Commands" />
+                  <Divider />
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    sx={{ px: 2, pt: 2 }}
+                    alignItems={{ sm: 'center' }}
+                  >
+                    <OutlinedInput
+                      size="small"
+                      fullWidth
+                      value={cmdSearch}
+                      onChange={(event) => setCmdSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') applyCmdSearch();
+                      }}
+                      placeholder="Filter by SN (exact)"
+                      startAdornment={
+                        <InputAdornment position="start">
+                          <SvgIcon color="action" fontSize="small">
+                            <MagnifyingGlassIcon />
+                          </SvgIcon>
+                        </InputAdornment>
+                      }
+                    />
+                    <Button size="small" variant="outlined" onClick={applyCmdSearch} sx={{ flexShrink: 0 }}>
+                      Search
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={
+                        <SvgIcon fontSize="small">
+                          <ArrowDownTrayIcon />
+                        </SvgIcon>
+                      }
+                      onClick={exportCommandsPage}
+                      disabled={commands.length === 0}
+                      sx={{ flexShrink: 0 }}
+                    >
+                      Export
+                    </Button>
+                    {commandsTotal > 0 ? (
+                      <Button
+                        color="error"
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setClearCommandsOpen(true)}
+                        sx={{ flexShrink: 0 }}
+                      >
+                        Clear
+                      </Button>
+                    ) : null}
+                  </Stack>
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table sx={{ minWidth: 800 }} size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>SN</TableCell>
+                          <TableCell>Target</TableCell>
+                          <TableCell>Status</TableCell>
+                          <TableCell>Command ID</TableCell>
+                          <TableCell>Updated</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {commands.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5}>No lock commands yet.</TableCell>
+                          </TableRow>
+                        ) : (
+                          commands.map((item) => (
+                            <TableRow key={item.id || item.command_id} hover>
+                              <TruncatedCell value={item.device_sn} max={20} />
+                              <TableCell>
+                                <Chip
+                                  label={item.target_status || '—'}
+                                  color={statusColor(item.target_status)}
+                                  size="small"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Chip
+                                  label={item.status}
+                                  color={
+                                    item.status === 'success'
+                                      ? 'success'
+                                      : item.status === 'failed'
+                                        ? 'error'
+                                        : 'warning'
+                                  }
+                                  size="small"
+                                />
+                              </TableCell>
+                              <TruncatedCell value={item.command_id} max={24} />
+                              <TruncatedCell
+                                value={
+                                  item.updated_at
+                                    ? new Date(item.updated_at).toLocaleString()
+                                    : '-'
+                                }
+                                max={22}
+                              />
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  <TablePagination
+                    component="div"
+                    count={commandsTotal}
+                    page={cmdPage}
+                    onPageChange={(_, p) => setCmdPage(p)}
+                    rowsPerPage={cmdRowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setCmdRowsPerPage(parseInt(e.target.value, 10));
+                      setCmdPage(0);
+                    }}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                  />
+                </Card>
+
+                <Card>
+                  <CardHeader title="Audit History" />
+                  <Divider />
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    sx={{ px: 2, pt: 2 }}
+                    alignItems={{ sm: 'center' }}
+                  >
+                    <OutlinedInput
+                      size="small"
+                      fullWidth
+                      value={auditSearch}
+                      onChange={(event) => setAuditSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') applyAuditSearch();
+                      }}
+                      placeholder="Filter by SN (exact)"
+                      startAdornment={
+                        <InputAdornment position="start">
+                          <SvgIcon color="action" fontSize="small">
+                            <MagnifyingGlassIcon />
+                          </SvgIcon>
+                        </InputAdornment>
+                      }
+                    />
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={applyAuditSearch}
+                      sx={{ flexShrink: 0 }}
+                    >
+                      Search
+                    </Button>
+                    {auditTotal > 0 ? (
+                      <Button
+                        color="error"
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setClearAuditOpen(true)}
+                        sx={{ flexShrink: 0 }}
+                      >
+                        Clear
+                      </Button>
+                    ) : null}
+                  </Stack>
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table sx={{ minWidth: 800 }} size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Action</TableCell>
+                          <TableCell>SN</TableCell>
+                          <TableCell>Status</TableCell>
+                          <TableCell>Operator</TableCell>
+                          <TableCell>Created</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {auditLogs.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5}>No audit logs yet.</TableCell>
+                          </TableRow>
+                        ) : (
+                          auditLogs.map((item) => (
+                            <TableRow key={item.id || `${item.sn}-${item.created_at}`} hover>
+                              <TruncatedCell value={item.action} max={22} />
+                              <TruncatedCell value={item.sn || '-'} max={20} />
+                              <TruncatedCell value={item.status || '-'} max={12} />
+                              <TruncatedCell value={item.operator_id || '-'} max={24} />
+                              <TruncatedCell
+                                value={
+                                  item.created_at
+                                    ? new Date(item.created_at).toLocaleString()
+                                    : '-'
+                                }
+                                max={22}
+                              />
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  <TablePagination
+                    component="div"
+                    count={auditTotal}
+                    page={auditPage}
+                    onPageChange={(_, p) => setAuditPage(p)}
+                    rowsPerPage={auditRowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setAuditRowsPerPage(parseInt(e.target.value, 10));
+                      setAuditPage(0);
+                    }}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                  />
+                </Card>
+              </Stack>
+            )}
           </Stack>
         </Container>
       </Box>
@@ -664,21 +1339,38 @@ const Page = () => {
         <DialogTitle>Delete {selectedPolicyCount} Policy/Policies?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This will permanently remove the selected lock policies. Affected devices will be re-evaluated for lock status.
+            This will permanently remove the selected lock policies. Affected devices will be
+            re-evaluated for lock status.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBatchDeleteOpen(false)}>Cancel</Button>
-         <Button color="error" variant="contained" onClick={doBatchDeletePolicies}>
-           Delete
-         </Button>
-       </DialogActions>
-     </Dialog>
+          <Button color="error" variant="contained" onClick={doBatchDeletePolicies}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={clearCommandsOpen} onClose={() => setClearCommandsOpen(false)}>
+        <DialogTitle>Clear Command History?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will permanently remove all lock command attempts for this tenant. The clear
+            action itself will be logged in Audit History.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClearCommandsOpen(false)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={clearCommands}>
+            Clear
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={clearAuditOpen} onClose={() => setClearAuditOpen(false)}>
         <DialogTitle>Clear Audit History?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This will permanently remove all lock audit records for this tenant. The clear action itself will be logged.
+            This will permanently remove all lock audit records for this tenant. The clear action
+            itself will be logged.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -688,42 +1380,9 @@ const Page = () => {
           </Button>
         </DialogActions>
       </Dialog>
-   </>
+    </>
   );
 };
-
-const SimpleTable = ({ title, columns, rows, empty, sx, action }) => (
-  <Card sx={sx}>
-    <CardHeader title={title} action={action} />
-    <Divider />
-    <CardContent sx={{ p: 0 }}>
-      <Table>
-        <TableHead>
-          <TableRow>
-            {columns.map((column) => (
-              <TableCell key={column}>{column}</TableCell>
-            ))}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={columns.length}>{empty}</TableCell>
-            </TableRow>
-          ) : (
-            rows.map((row, idx) => (
-              <TableRow key={idx}>
-                {row.map((cell, cellIdx) => (
-                  <TableCell key={cellIdx}>{cell}</TableCell>
-                ))}
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </CardContent>
-  </Card>
-);
 
 Page.getLayout = (page) => <DashboardLayout>{page}</DashboardLayout>;
 

@@ -75,7 +75,7 @@ const Page = () => {
     return (
         <>
             <Head>
-                <title>Oktopus | Controller</title>
+                <title>Controller</title>
             </Head>
             <Box
                 component="main"

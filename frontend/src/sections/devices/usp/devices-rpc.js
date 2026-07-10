@@ -463,7 +463,6 @@ const fetchMessages = async () => {
           <DialogContent>
           <Stack
               direction={"row"}
-              container
               pb={3}
               // direction="column"
               // alignItems="center"

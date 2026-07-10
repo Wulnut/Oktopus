@@ -11,6 +11,9 @@ services:
       # Mount source for hot-reload
       - ../../frontend/src:/app/src
       - ../../frontend/public:/app/public
+      - ../../frontend/scripts:/app/scripts
+      - ../../frontend/VERSION:/app/VERSION:ro
+      - ../../VERSION:/VERSION:ro
       - ../../frontend/next.config.js:/app/next.config.js
       - ../../frontend/jsconfig.json:/app/jsconfig.json
       - ../../frontend/package.json:/app/package.json

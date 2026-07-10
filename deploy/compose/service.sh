@@ -149,7 +149,7 @@ cmd_doctor() {
 
     # 3. Controller reachable? (hits MongoDB only, does not exercise NATS)
     echo -ne "  controller health (admin-exists) ... "
-    if docker exec controller wget -q --spider http://localhost:8000/api/auth/admin/exists 2>/dev/null; then
+    if docker exec controller wget -q --spider http://localhost:8000/healthz 2>/dev/null; then
         echo -e "${GREEN}OK${NC}"
     else
         echo -e "${RED}FAIL${NC}"

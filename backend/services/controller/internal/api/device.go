@@ -17,6 +17,7 @@ import (
 	"github.com/leandrofars/oktopus/internal/utils"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func (a *Api) retrieveDevices(w http.ResponseWriter, r *http.Request) {
@@ -167,16 +168,7 @@ func (a *Api) retrieveDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if devices.Total == 0 {
-		w.WriteHeader(http.StatusNotFound)
-		err := json.NewEncoder(w).Encode("No devices found")
-		if err != nil {
-			log.Println(err)
-		}
-		return
-	}
-
-	if skip >= devices.Total {
+	if devices.Total > 0 && skip >= devices.Total {
 		w.WriteHeader(http.StatusBadRequest)
 		err := json.NewEncoder(w).Encode("Page number is out of range")
 		if err != nil {
@@ -185,11 +177,15 @@ func (a *Api) retrieveDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	list := devices.Devices
+	if list == nil {
+		list = []entity.Device{}
+	}
 	err = json.NewEncoder(w).Encode(map[string]interface{}{
 		"pages":   devices.Total / page_size,
 		"page":    page_number,
 		"size":    page_size,
-		"devices": devices.Devices,
+		"devices": list,
 		"total":   devices.Total,
 	})
 	if err != nil {
@@ -214,6 +210,12 @@ func (a *Api) deviceAuth(w http.ResponseWriter, r *http.Request) {
 	email := middleware.GetEmail(r)
 	user, err := a.db.FindUser(email)
 	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			// JWT email is not a known platform user (e.g. minted test tokens).
+			w.WriteHeader(http.StatusUnauthorized)
+			utils.MarshallEncoder("user not found", w)
+			return
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		utils.MarshallEncoder(err, w)
 		return
