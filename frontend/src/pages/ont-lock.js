@@ -209,6 +209,7 @@ const Page = () => {
   const [batchResult, setBatchResult] = useState(null);
   const [selectedPolicies, setSelectedPolicies] = useState({});
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [unauthDismissOpen, setUnauthDismissOpen] = useState(false);
   const [deletingSn, setDeletingSn] = useState(null);
   const [policySearch, setPolicySearch] = useState('');
   const [policyPage, setPolicyPage] = useState(0);
@@ -241,6 +242,73 @@ const Page = () => {
     [router]
   );
 
+  const loadedRef = useRef({
+    overview: false,
+    policies: false,
+    exceptions: false,
+  });
+
+  const fetchOverview = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [cfg, unauthorizedResp, unsupportedResp, chartResp] = await Promise.all([
+        httpRequest(`${apiPrefix}/lock/config`, 'GET'),
+        httpRequest(`${apiPrefix}/lock/unauthorized`, 'GET'),
+        httpRequest(`${apiPrefix}/lock/unsupported`, 'GET'),
+        httpRequest(`${apiPrefix}/lock/commands?page_number=0&page_size=100`, 'GET'),
+      ]);
+
+      if (cfg.status === 200 && cfg.result) setConfig(cfg.result);
+      if (unauthorizedResp.status === 200) {
+        setUnauthorized(Array.isArray(unauthorizedResp.result) ? unauthorizedResp.result : []);
+      }
+      if (unsupportedResp.status === 200) {
+        setUnsupported(Array.isArray(unsupportedResp.result) ? unsupportedResp.result : []);
+      }
+      if (chartResp.status === 200 && chartResp.result) {
+        setChartCommands(parseListResponse(chartResp.result).items);
+      }
+      // Do not mark exceptions loaded here — Exceptions tab should refetch on enter
+      // so new unauthorized devices are not hidden after visiting Overview first.
+      loadedRef.current.overview = true;
+    } finally {
+      setLoading(false);
+    }
+  }, [apiPrefix, httpRequest]);
+
+  const fetchPolicies = useCallback(async () => {
+    setLoading(true);
+    try {
+      const policyResp = await httpRequest(`${apiPrefix}/lock/policies`, 'GET');
+      if (policyResp.status === 200) {
+        setPolicies(Array.isArray(policyResp.result) ? policyResp.result : []);
+      }
+      loadedRef.current.policies = true;
+    } finally {
+      setLoading(false);
+    }
+  }, [apiPrefix, httpRequest]);
+
+  const fetchExceptions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [unauthorizedResp, unsupportedResp] = await Promise.all([
+        httpRequest(`${apiPrefix}/lock/unauthorized`, 'GET'),
+        httpRequest(`${apiPrefix}/lock/unsupported`, 'GET'),
+      ]);
+      if (unauthorizedResp.status === 200) {
+        setUnauthorized(Array.isArray(unauthorizedResp.result) ? unauthorizedResp.result : []);
+      }
+      if (unsupportedResp.status === 200) {
+        setUnsupported(Array.isArray(unsupportedResp.result) ? unsupportedResp.result : []);
+      }
+      loadedRef.current.exceptions = true;
+    } finally {
+      setLoading(false);
+    }
+  }, [apiPrefix, httpRequest]);
+
+  // Full refresh used after mutations that may touch multiple tabs.
   const fetchStatic = useCallback(async () => {
     setLoading(true);
     try {
@@ -265,6 +333,7 @@ const Page = () => {
       if (chartResp.status === 200 && chartResp.result) {
         setChartCommands(parseListResponse(chartResp.result).items);
       }
+      loadedRef.current = { overview: true, policies: true, exceptions: true };
     } finally {
       setLoading(false);
     }
@@ -303,18 +372,35 @@ const Page = () => {
   }, [apiPrefix, httpRequest, auditPage, auditRowsPerPage, auditSearchApplied]);
 
   const fetchData = useCallback(async () => {
-    await fetchStatic();
+    if (activeTab === 'overview') {
+      await fetchOverview();
+      return;
+    }
+    if (activeTab === 'policies') {
+      await fetchPolicies();
+      return;
+    }
+    if (activeTab === 'exceptions') {
+      await fetchExceptions();
+      return;
+    }
     if (activeTab === 'activity') {
       await Promise.all([fetchCommands(), fetchAudit()]);
     }
-  }, [fetchStatic, fetchCommands, fetchAudit, activeTab]);
+  }, [activeTab, fetchOverview, fetchPolicies, fetchExceptions, fetchCommands, fetchAudit]);
 
+  // Lazy-load per tab; skip refetch when cached for this session (Refresh forces via fetchData).
   useEffect(() => {
-    fetchStatic();
-  }, [fetchStatic]);
+    if (activeTab === 'overview' && !loadedRef.current.overview) {
+      fetchOverview();
+    } else if (activeTab === 'policies' && !loadedRef.current.policies) {
+      fetchPolicies();
+    } else if (activeTab === 'exceptions' && !loadedRef.current.exceptions) {
+      fetchExceptions();
+    }
+  }, [activeTab, fetchOverview, fetchPolicies, fetchExceptions]);
 
-  // Activity lists are server-paginated; load only when that tab is active
-  // (Overview chart already comes from fetchStatic page_size=100 — avoid duplicate /commands).
+  // Activity lists are server-paginated; load only when that tab is active.
   useEffect(() => {
     if (activeTab === 'activity') {
       fetchCommands();
@@ -413,6 +499,34 @@ const Page = () => {
       });
       setSelectedUnauthorized({});
       fetchStatic();
+    }
+  };
+
+  const dismissUnauthorizedSelected = async () => {
+    const sns = Object.keys(selectedUnauthorized).filter((sn) => selectedUnauthorized[sn]);
+    if (sns.length === 0) {
+      setAlert({ severity: 'warning', message: 'Select at least one unauthorized device.' });
+      return;
+    }
+    const body = JSON.stringify({ sns });
+    const { status, result } = await httpRequest(
+      `${apiPrefix}/lock/unauthorized/batch-delete`,
+      'POST',
+      body
+    );
+    setUnauthDismissOpen(false);
+    if (status === 200) {
+      setSelectedUnauthorized({});
+      setAlert({
+        severity: 'success',
+        message: `Removed ${result?.deleted ?? sns.length} device(s) from the unauthorized list.`,
+      });
+      await fetchExceptions();
+    } else {
+      setAlert({
+        severity: 'error',
+        message: result?.error || result?.errors?.[0] || 'Failed to remove unauthorized devices.',
+      });
     }
   };
 
@@ -818,7 +932,7 @@ const Page = () => {
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
-                    sx={{ px: 2, pt: 2 }}
+                    sx={{ px: 2, pt: 2, pb: 2 }}
                     alignItems={{ sm: 'center' }}
                   >
                     <OutlinedInput
@@ -871,7 +985,7 @@ const Page = () => {
                       <TableBody>
                         {pagedPolicies.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={6}>
+                            <TableCell colSpan={6} sx={{ color: 'text.secondary' }}>
                               {policies.length === 0
                                 ? 'No lock policies found.'
                                 : 'No policies match your search.'}
@@ -930,7 +1044,7 @@ const Page = () => {
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
-                    sx={{ px: 2, pt: 2 }}
+                    sx={{ px: 2, pt: 2, pb: 2 }}
                     alignItems={{ sm: 'center' }}
                   >
                     <OutlinedInput
@@ -960,6 +1074,17 @@ const Page = () => {
                       Whitelist Selected
                       {selectedUnauthorizedCount > 0 ? ` (${selectedUnauthorizedCount})` : ''}
                     </Button>
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      onClick={() => setUnauthDismissOpen(true)}
+                      disabled={selectedUnauthorizedCount === 0}
+                      sx={{ flexShrink: 0 }}
+                    >
+                      Remove Selected
+                      {selectedUnauthorizedCount > 0 ? ` (${selectedUnauthorizedCount})` : ''}
+                    </Button>
                   </Stack>
                   <TableContainer sx={{ overflowX: 'auto' }}>
                     <Table sx={{ minWidth: 800 }} size="small">
@@ -985,7 +1110,7 @@ const Page = () => {
                       <TableBody>
                         {pagedUnauthorized.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={6}>No unauthorized devices.</TableCell>
+                            <TableCell colSpan={6} sx={{ color: 'text.secondary' }}>No unauthorized devices.</TableCell>
                           </TableRow>
                         ) : (
                           pagedUnauthorized.map((item) => (
@@ -1053,7 +1178,7 @@ const Page = () => {
                       <TableBody>
                         {unsupported.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={6}>No unsupported devices.</TableCell>
+                            <TableCell colSpan={6} sx={{ color: 'text.secondary' }}>No unsupported devices.</TableCell>
                           </TableRow>
                         ) : (
                           unsupported.map((item) => (
@@ -1115,7 +1240,7 @@ const Page = () => {
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
-                    sx={{ px: 2, pt: 2 }}
+                    sx={{ px: 2, pt: 2, pb: 2 }}
                     alignItems={{ sm: 'center' }}
                   >
                     <OutlinedInput
@@ -1178,7 +1303,7 @@ const Page = () => {
                       <TableBody>
                         {commands.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5}>No lock commands yet.</TableCell>
+                            <TableCell colSpan={5} sx={{ color: 'text.secondary' }}>No lock commands yet.</TableCell>
                           </TableRow>
                         ) : (
                           commands.map((item) => (
@@ -1239,7 +1364,7 @@ const Page = () => {
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1}
-                    sx={{ px: 2, pt: 2 }}
+                    sx={{ px: 2, pt: 2, pb: 2 }}
                     alignItems={{ sm: 'center' }}
                   >
                     <OutlinedInput
@@ -1293,7 +1418,7 @@ const Page = () => {
                       <TableBody>
                         {auditLogs.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5}>No audit logs yet.</TableCell>
+                            <TableCell colSpan={5} sx={{ color: 'text.secondary' }}>No audit logs yet.</TableCell>
                           </TableRow>
                         ) : (
                           auditLogs.map((item) => (
@@ -1347,6 +1472,24 @@ const Page = () => {
           <Button onClick={() => setBatchDeleteOpen(false)}>Cancel</Button>
           <Button color="error" variant="contained" onClick={doBatchDeletePolicies}>
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={unauthDismissOpen} onClose={() => setUnauthDismissOpen(false)}>
+        <DialogTitle>
+          Remove {selectedUnauthorizedCount} Unauthorized Device
+          {selectedUnauthorizedCount === 1 ? '' : 's'}?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This only clears the selected entries from the Unauthorized list. No whitelist policy
+            is created. If a device reconnects and is still unauthorized, it will appear here again.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUnauthDismissOpen(false)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={dismissUnauthorizedSelected}>
+            Remove
           </Button>
         </DialogActions>
       </Dialog>

@@ -317,7 +317,7 @@ func (a *Api) batchWhitelistFromUnauthorized(w http.ResponseWriter, r *http.Requ
 		})
 	}
 	if req.RemoveFromUnauthorized {
-		_ = a.tenantDB(r).DeleteUnauthorizedDevices(r.Context(), removedSNs)
+		_, _ = a.tenantDB(r).DeleteUnauthorizedDevices(r.Context(), removedSNs)
 	}
 	if a.lockCircuitBreaker != nil {
 		a.lockCircuitBreaker.reset(tenantSlug)
@@ -337,6 +337,37 @@ func (a *Api) listUnauthorizedDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, devices)
+}
+
+// batchDeleteUnauthorizedDevices removes entries from the unauthorized list only
+// (no whitelist policy is created). Devices that reconnect unauthorized will reappear.
+func (a *Api) batchDeleteUnauthorizedDevices(w http.ResponseWriter, r *http.Request) {
+	var req lockBatchDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if len(req.SNs) == 0 {
+		http.Error(w, "sns is required", http.StatusBadRequest)
+		return
+	}
+	tenantSlug := middleware.GetTenantSlug(r)
+	operator := middleware.GetEmail(r)
+	deleted, err := a.tenantDB(r).DeleteUnauthorizedDevices(r.Context(), req.SNs)
+	result := lockBatchDeleteResult{Deleted: deleted}
+	if err != nil {
+		result.Errors = append(result.Errors, err.Error())
+		writeJSON(w, http.StatusMultiStatus, result)
+		return
+	}
+	for _, sn := range req.SNs {
+		a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+			SN:         sn,
+			Action:     "unauthorized_dismiss",
+			OperatorID: operator,
+		})
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 const (

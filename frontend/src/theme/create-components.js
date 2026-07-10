@@ -293,8 +293,10 @@ export function createComponents(config) {
           borderBottom: 'none',
           [`& .${tableCellClasses.root}`]: {
             borderBottom: 'none',
-            backgroundColor: palette.neutral[50],
-            color: palette.neutral[700],
+            // Light: soft gray header + dark text. Dark: keep brand table color + white text.
+            // (neutral[50]/[700] are brand-mapped and unsuitable for light table heads.)
+            backgroundColor: palette.mode === 'dark' ? palette.neutral[50] : palette.neutral[100],
+            color: palette.mode === 'dark' ? palette.neutral[700] : palette.neutral[600],
             fontSize: 12,
             fontWeight: 600,
             lineHeight: 1,
@@ -303,7 +305,8 @@ export function createComponents(config) {
           },
           [`& .${tableCellClasses.paddingCheckbox}`]: {
             paddingTop: 4,
-            paddingBottom: 4
+            paddingBottom: 4,
+            color: palette.mode === 'dark' ? palette.neutral[700] : palette.neutral[600],
           }
         }
       }
