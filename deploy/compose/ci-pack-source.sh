@@ -70,6 +70,9 @@ stamp_version
 
 log "Packing source from ${REPO_ROOT} -> ${OUTPUT}"
 
+# macOS: skip AppleDouble (._*) / resource-fork sidecars that break Next.js builds.
+export COPYFILE_DISABLE=1
+
 tar czf "$OUTPUT" \
   --exclude='.git' \
   --exclude='.codegraph' \
@@ -78,6 +81,10 @@ tar czf "$OUTPUT" \
   --exclude='test-reports' \
   --exclude='*.tar.gz' \
   --exclude='images.tar' \
+  --exclude='._*' \
+  --exclude='*/._*' \
+  --exclude='.DS_Store' \
+  --exclude='*/.DS_Store' \
   --exclude='deploy/compose/mongo_data' \
   --exclude='deploy/compose/nats_data' \
   --exclude='deploy/compose/portainer_data' \
