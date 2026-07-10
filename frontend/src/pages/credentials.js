@@ -182,7 +182,7 @@ const Page = () => {
     <>
       <Head>
         <title>
-          Devices Credentials | Oktopus
+          Devices Credentials
         </title>
       </Head>
       <Box

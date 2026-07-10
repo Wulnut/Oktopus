@@ -640,7 +640,7 @@ const Page = () => {
   return (
     <>
       <Head>
-        <title>Firmware Campaigns | Oktopus</title>
+        <title>Firmware Campaigns</title>
       </Head>
       <Box component="main" sx={{ flexGrow: 1, py: 8 }}>
         <Container maxWidth="xl">

@@ -64,6 +64,13 @@ export const BackendProvider = (props) => {
             return {status: response.status, result: null};
         }
         if (!response.ok) {
+            if (response.status === 429) {
+                setAlert({
+                    severity: "warning",
+                    message: "Too many requests. Please wait a moment and try again.",
+                });
+                return {status : response.status, result: null};
+            }
             const data = await response.text();
             setAlert({
                 severity: "error",

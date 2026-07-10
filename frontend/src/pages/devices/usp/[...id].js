@@ -76,7 +76,7 @@ const Page = () => {
     <>
         <Head>
             <title>
-                Oktopus | Controller
+                Controller
             </title>
         </Head>
         <Box

@@ -1,9 +1,11 @@
 import PropTypes from 'prop-types';
 import Link from 'next/link'
-import { Box, Typography, Stack } from '@mui/material';
+import { Box, Typography } from '@mui/material';
+import { useAppVersion } from 'src/hooks/use-app-version';
 
 export const Layout = (props) => {
   const { children } = props;
+  const appVersion = useAppVersion();
 
   return (
     <Box
@@ -44,25 +46,15 @@ export const Layout = (props) => {
         {children}
       </Box>
 
-      {/* Footer */}
-      <Stack sx={{ position: 'absolute', bottom: 2, left: 2 }} direction="row" spacing={1}>
-        <Typography
-          align="center"
-          color="text.secondary"
-          component="footer"
-          variant="body2"
-          sx={{ p: 2 }}
-        >
-          Powered by
-        </Typography>
-      </Stack>
-      <a href='https://oktopus.app.br' style={{ position: 'absolute', bottom: 10, left: 100 }} target='_blank'>
-        <img
-          src="/assets/logo.png"
-          alt="Oktopus logo image"
-          width={80}
-        />
-      </a>
+      <Typography
+        component="footer"
+        color="text.secondary"
+        variant="caption"
+        title={appVersion.built_at ? `Built ${appVersion.built_at}` : undefined}
+        sx={{ position: 'absolute', bottom: 16, left: 16 }}
+      >
+        {appVersion.label}
+      </Typography>
     </Box>
   );
 };

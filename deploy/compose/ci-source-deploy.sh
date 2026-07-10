@@ -175,8 +175,43 @@ chown 1000:1000 firmwares 2>/dev/null || chmod 1777 firmwares
 # ---------------------------------------------------------------------------
 # Build compose services (docker-compose.dev.yaml provides build contexts)
 # ---------------------------------------------------------------------------
+# Prefer commit from CI / env; else read pre-stamped version.json from the pack.
+if [ -z "${OKTOPUS_GIT_COMMIT:-}" ] || [ "${OKTOPUS_GIT_COMMIT}" = "unknown" ]; then
+  if [ -n "${CI_COMMIT_SHORT_SHA:-}" ]; then
+    export OKTOPUS_GIT_COMMIT="$CI_COMMIT_SHORT_SHA"
+  elif [ -f "$REPO_ROOT/frontend/public/version.json" ]; then
+    OKTOPUS_GIT_COMMIT="$(sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      "$REPO_ROOT/frontend/public/version.json" | head -1)"
+    export OKTOPUS_GIT_COMMIT
+  fi
+fi
+# Ensure version.json exists for Docker COPY even if pack stamp was skipped.
+if [ -n "${OKTOPUS_GIT_COMMIT:-}" ] && [ "${OKTOPUS_GIT_COMMIT}" != "unknown" ]; then
+  ver="${OKTOPUS_VERSION:-}"
+  if [ -z "$ver" ] && [ -f "$REPO_ROOT/VERSION" ]; then
+    ver="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")"
+  fi
+  ver="${ver:-0.0.0-dev}"
+  built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  mkdir -p "$REPO_ROOT/frontend/public"
+  cat > "$REPO_ROOT/frontend/public/version.json" <<EOF
+{
+  "version": "${ver}",
+  "commit": "${OKTOPUS_GIT_COMMIT}",
+  "built_at": "${built_at}",
+  "label": "v${ver} (${OKTOPUS_GIT_COMMIT})"
+}
+EOF
+  export OKTOPUS_VERSION="$ver"
+  log "Frontend version stamp: OKTOPUS_GIT_COMMIT=${OKTOPUS_GIT_COMMIT} label=v${ver} (${OKTOPUS_GIT_COMMIT})"
+else
+  log "WARN: OKTOPUS_GIT_COMMIT unset; frontend version.json may show unknown"
+fi
+
 log "Building compose services: ${COMPOSE_SERVICES[*]}"
 COMPOSE_PROFILES="$STAGING_PROFILES" \
+  OKTOPUS_GIT_COMMIT="${OKTOPUS_GIT_COMMIT:-}" \
+  OKTOPUS_VERSION="${OKTOPUS_VERSION:-}" \
   docker compose -f docker-compose.yaml -f docker-compose.dev.yaml \
   build "${COMPOSE_SERVICES[@]}"
 

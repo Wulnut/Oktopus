@@ -12,6 +12,9 @@ services:
     build:
       context: ../../frontend
       dockerfile: build/Dockerfile
+      args:
+        OKTOPUS_VERSION: ${OKTOPUS_VERSION:-}
+        OKTOPUS_GIT_COMMIT: ${OKTOPUS_GIT_COMMIT:-}
 
   stomp:
     build:

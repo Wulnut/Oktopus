@@ -195,7 +195,7 @@ const Page = () => {
     <>
       <Head>
         <title>
-          Oktopus | Users
+          Users
         </title>
       </Head>
       <Box

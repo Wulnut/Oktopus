@@ -22,12 +22,14 @@ import { items, getDeviceSubItems } from './config';
 import { SideNavItem } from './side-nav-item';
 import { useTheme } from '@mui/material';
 import { useTenant } from 'src/contexts/tenant-context';
+import { useAppVersion } from 'src/hooks/use-app-version';
 
 export const SideNav = (props) => {
   const { open, onClose } = props;
   const pathname = usePathname();
   const lgUp = useMediaQuery((theme) => theme.breakpoints.up('lg'));
   const { isSuperAdmin } = useTenant();
+  const appVersion = useAppVersion();
 
   const theme = useTheme();
 
@@ -181,21 +183,15 @@ export const SideNav = (props) => {
             py: 2
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography
-              color="primary.contrastText"
-              variant="body2"
-            >
-              Powered by
-            </Typography>
-            <a href='https://oktopus.app.br' target='_blank' rel="noopener noreferrer">
-              <img
-                src="/assets/logo.png"
-                alt="Oktopus logo image"
-                width={80}
-              />
-            </a>
-          </Stack>
+          <Typography
+            color="neutral.400"
+            variant="caption"
+            component="div"
+            sx={{ lineHeight: 1.4 }}
+            title={appVersion.built_at ? `Built ${appVersion.built_at}` : undefined}
+          >
+            {appVersion.label}
+          </Typography>
         </Box>
       </Box>
     </Scrollbar>
