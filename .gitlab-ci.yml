@@ -288,12 +288,12 @@ deploy:staging:
     SSH_PORT: $DEPLOY_DEV_SSH_PORT
     DEPLOY_REPO_ROOT: /root/oktopus
     DEPLOY_COMPOSE_DIR: /root/oktopus/deploy/compose
-   OKTOPUS_DEPLOY_ENV: staging
- rules:
-   # Nightly schedule only runs tests (incl. snapshot); never re-deploy.
-   - if: $CI_PIPELINE_SOURCE == "schedule"
-     when: never
-   - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
+    OKTOPUS_DEPLOY_ENV: staging
+  rules:
+    # Nightly schedule only runs tests (incl. snapshot); never re-deploy.
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock-dev"
 
 deploy:production:
   extends: .deploy_ssh
@@ -312,9 +312,9 @@ deploy:production:
     SSH_PORT: $SSH_PORT
     DEPLOY_REPO_ROOT: /home/sei/oktopus
     DEPLOY_COMPOSE_DIR: /home/sei/oktopus/deploy/compose
-   OKTOPUS_DEPLOY_ENV: prod
- rules:
-   # Nightly schedule only runs tests (incl. snapshot); never re-deploy.
-   - if: $CI_PIPELINE_SOURCE == "schedule"
-     when: never
-   - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock"
+    OKTOPUS_DEPLOY_ENV: prod
+  rules:
+    # Nightly schedule only runs tests (incl. snapshot); never re-deploy.
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "telkomsel/ont-lock"
