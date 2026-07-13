@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,16 +55,32 @@ var FixtureMap = map[string]string{
 	"lock_command_attempts.json": "lock_command_attempts",
 }
 
+var (
+	sharedOnce     sync.Once
+	sharedInitErr  error
+	sharedDatabase db.Database
+	sharedMongoURI string
+)
+
 // Env holds everything a snapshot test needs. Setup returns a populated Env
-// plus a cleanup registered via t.Cleanup that drops the tenant DBs and tears
-// the server down.
+// plus a cleanup registered via t.Cleanup that tears the per-test server down.
 type Env struct {
 	Server      *httptest.Server
 	JWT         string // TenantAdmin token scoped to SnapshotTenantSlug (level 1)
 	AdminJWT    string // SuperAdmin token (level 0)
 	OperatorJWT string // Operator token scoped to SnapshotTenantSlug (level 2)
 	Mongo       *mongo.Client
-	Database    db.Database // controller DB; disconnected in cleanup to avoid pool leaks
+	Database    db.Database
+}
+
+// Shutdown disconnects the shared Mongo client. Call from TestMain after m.Run().
+func Shutdown() {
+	if sharedDatabase.Client() == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = sharedDatabase.Disconnect(ctx)
 }
 
 // Setup boots test Mongo + test NATS (provided by docker-compose.test.yaml),
@@ -75,46 +92,45 @@ type Env struct {
 func Setup(t *testing.T, fixtures []string) *Env {
 	t.Helper()
 
-	mongoURI := getenv("MONGO_TEST_URI", "mongodb://localhost:27017")
-	natsURL := getenv("NATS_TEST_URL", "nats://localhost:4222")
+	sharedOnce.Do(func() {
+		sharedMongoURI = getenv("MONGO_TEST_URI", "mongodb://localhost:27017")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 
-	// Short-lived setup ctx for the bootstrap phase.
+		clientOpts := options.Client().
+			ApplyURI(sharedMongoURI).
+			SetMaxPoolSize(10).
+			SetMinPoolSize(1)
+		client, err := mongo.Connect(ctx, clientOpts)
+		if err != nil {
+			sharedInitErr = fmt.Errorf("mongo.Connect: %w", err)
+			return
+		}
+		if err := client.Ping(ctx, nil); err != nil {
+			sharedInitErr = fmt.Errorf("cannot reach Mongo at %s: %w", sharedMongoURI, err)
+			return
+		}
+
+		controllerCtx := context.Background()
+		sharedDatabase = db.NewDatabaseFromClient(controllerCtx, client, sharedMongoURI)
+		if err := sharedDatabase.ProvisionTenantDBs(controllerCtx, SnapshotTenantSlug); err != nil {
+			sharedInitErr = fmt.Errorf("ProvisionTenantDBs: %w", err)
+			return
+		}
+	})
+	if sharedInitErr != nil {
+		t.Fatalf("snapshot: shared init failed: %v\n"+
+			"hint: start deps with `docker compose -f docker-compose.test.yaml --profile integration up -d mongo_test nats_test`",
+			sharedInitErr)
+	}
+
+	client := sharedDatabase.Client()
+	database := sharedDatabase
+
 	setupCtx, setupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer setupCancel()
 
-	// Our own Mongo client — independent from the controller's, so we can seed
-	// and tear down without needing new exported methods on db.Database.
-	client, err := mongo.Connect(setupCtx, options.Client().ApplyURI(mongoURI))
-	if err != nil {
-		t.Fatalf("snapshot: mongo.Connect failed: %v", err)
-	}
-	if err := client.Ping(setupCtx, nil); err != nil {
-		t.Fatalf("snapshot: cannot reach Mongo at %s: %v\n"+
-			"hint: start deps with `docker compose -f docker-compose.test.yaml --profile integration up -d mongo_test nats_test`",
-			mongoURI, err)
-	}
-
-	// Drop any prior snapshot tenant DBs so each test starts clean.
-	dropTenantDBs(setupCtx, t, client, SnapshotTenantSlug)
-
-	// Also wipe account-mngr.users and account-mngr.tenants so each test starts
-	// from a known empty state (some auth tests assert "no admin exists").
-	// The snapshot tenant row is re-inserted below.
-	_, _ = client.Database("account-mngr").Collection("users").DeleteMany(setupCtx, bson.M{})
-	_, _ = client.Database("account-mngr").Collection("tenants").DeleteMany(setupCtx, bson.M{})
-
-	// Long-lived context for the controller's Database — it stores this ctx
-	// internally and uses it for all subsequent operations, so it must outlive
-	// Setup(). context.Background() is correct here; cleanup disconnects the
-	// client at the end of the test.
-	controllerCtx := context.Background()
-	database := db.NewDatabase(controllerCtx, mongoURI)
-	if err := database.Ping(controllerCtx); err != nil {
-		t.Fatalf("snapshot: controller db ping failed: %v", err)
-	}
-	if err := database.ProvisionTenantDBs(controllerCtx, SnapshotTenantSlug); err != nil {
-		t.Fatalf("snapshot: ProvisionTenantDBs failed: %v", err)
-	}
+	resetTenantState(setupCtx, t, client)
 	seedTenantRow(setupCtx, t, client)
 
 	fixtureDir := resolveFixtureDir(t)
@@ -126,6 +142,7 @@ func Setup(t *testing.T, fixtures []string) *Env {
 		loadFixture(setupCtx, t, client, filepath.Join(fixtureDir, f), coll)
 	}
 
+	natsURL := getenv("NATS_TEST_URL", "nats://localhost:4222")
 	nc, err := nats.Connect(natsURL, nats.Name("snapshot-test"))
 	if err != nil {
 		t.Fatalf("snapshot: cannot reach NATS at %s: %v", natsURL, err)
@@ -172,13 +189,6 @@ func Setup(t *testing.T, fixtures []string) *Env {
 	t.Cleanup(func() {
 		srv.Close()
 		nc.Close()
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cleanupCancel()
-		dropTenantDBs(cleanupCtx, t, client, SnapshotTenantSlug)
-		_, _ = client.Database("account-mngr").Collection("tenants").
-			DeleteOne(cleanupCtx, bson.M{"slug": SnapshotTenantSlug})
-		_ = client.Disconnect(cleanupCtx)
-		_ = database.Disconnect(cleanupCtx)
 	})
 
 	return env
@@ -233,9 +243,6 @@ func loadFixture(ctx context.Context, t *testing.T, client *mongo.Client, path, 
 		t.Fatalf("snapshot: cannot read fixture %s: %v", path, err)
 	}
 
-	// Parse each element of the JSON array as a bson.M via UnmarshalExtJSON,
-	// which understands mongo-extended JSON ({"$date": "..."}, {"$oid": "..."}).
-	// First parse as []json.RawMessage to get each element, then ext-json each.
 	var rawDocs []json.RawMessage
 	if err := json.Unmarshal(raw, &rawDocs); err != nil {
 		t.Fatalf("snapshot: fixture %s is not a JSON array: %v", path, err)
@@ -250,7 +257,6 @@ func loadFixture(ctx context.Context, t *testing.T, client *mongo.Client, path, 
 		if err := bson.UnmarshalExtJSON(rd, false, &bd); err != nil {
 			t.Fatalf("snapshot: fixture %s[%d] invalid ext JSON: %v", path, i, err)
 		}
-		// Strip any client-supplied _id so inserts don't conflict.
 		delete(bd, "_id")
 		docsBson = append(docsBson, bd)
 	}
@@ -268,12 +274,27 @@ func seedTenantRow(ctx context.Context, t *testing.T, client *mongo.Client) {
 			"status": "active",
 		})
 	if err != nil {
-		// Already present from a previous test in the same container; not fatal.
 		return
 	}
 }
 
-func dropTenantDBs(ctx context.Context, t *testing.T, client *mongo.Client, slug string) {
-	_ = client.Database(fmt.Sprintf("tenant_%s_general", slug)).Drop(ctx)
-	_ = client.Database(fmt.Sprintf("tenant_%s_usp", slug)).Drop(ctx)
+// resetTenantState clears tenant and account data without dropping databases or
+// indexes. Re-provisioning indexes on every test was OOM-killing CI MongoDB.
+func resetTenantState(ctx context.Context, t *testing.T, client *mongo.Client) {
+	t.Helper()
+	_, _ = client.Database("account-mngr").Collection("users").DeleteMany(ctx, bson.M{})
+	_, _ = client.Database("account-mngr").Collection("tenants").DeleteMany(ctx, bson.M{})
+
+	for _, dbName := range []string{
+		fmt.Sprintf("tenant_%s_general", SnapshotTenantSlug),
+		fmt.Sprintf("tenant_%s_usp", SnapshotTenantSlug),
+	} {
+		cols, err := client.Database(dbName).ListCollectionNames(ctx, bson.M{})
+		if err != nil {
+			continue
+		}
+		for _, coll := range cols {
+			_, _ = client.Database(dbName).Collection(coll).DeleteMany(ctx, bson.M{})
+		}
+	}
 }
