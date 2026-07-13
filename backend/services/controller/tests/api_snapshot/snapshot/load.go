@@ -63,6 +63,7 @@ type Env struct {
 	AdminJWT    string // SuperAdmin token (level 0)
 	OperatorJWT string // Operator token scoped to SnapshotTenantSlug (level 2)
 	Mongo       *mongo.Client
+	Database    db.Database // controller DB; disconnected in cleanup to avoid pool leaks
 }
 
 // Setup boots test Mongo + test NATS (provided by docker-compose.test.yaml),
@@ -165,6 +166,7 @@ func Setup(t *testing.T, fixtures []string) *Env {
 		AdminJWT:    adminJWT,
 		OperatorJWT: operatorJWT,
 		Mongo:       client,
+		Database:    database,
 	}
 
 	t.Cleanup(func() {
@@ -176,6 +178,7 @@ func Setup(t *testing.T, fixtures []string) *Env {
 		_, _ = client.Database("account-mngr").Collection("tenants").
 			DeleteOne(cleanupCtx, bson.M{"slug": SnapshotTenantSlug})
 		_ = client.Disconnect(cleanupCtx)
+		_ = database.Disconnect(cleanupCtx)
 	})
 
 	return env

@@ -16,6 +16,11 @@ type Database struct {
 	ctx     context.Context
 }
 
+// Disconnect closes the underlying Mongo client. Safe to call multiple times.
+func (d Database) Disconnect(ctx context.Context) error {
+	return d.client.Disconnect(ctx)
+}
+
 func NewDatabase(ctx context.Context, mongoUri string) Database {
 	var db Database
 

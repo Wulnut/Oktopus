@@ -184,6 +184,7 @@ test:snapshot:api:
   services:
     - name: mongo:7.0
       alias: mongo_test
+      command: ["--wiredTigerCacheSizeGB=0.5"]
     - name: nats:2.10
       alias: nats_test
       command: ["--js"]
@@ -218,6 +219,7 @@ test:snapshot:load:
   services:
     - name: mongo:7.0
       alias: mongo_test
+      command: ["--wiredTigerCacheSizeGB=0.5"]
     - name: nats:2.10
       alias: nats_test
       command: ["--js"]
