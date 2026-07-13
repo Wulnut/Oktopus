@@ -115,9 +115,8 @@ func NatsCustomReq[T entity.DataType](
 	var answer T
 
 	ch := make(chan *nats.Msg, 64)
-	done := make(chan string)
-	
-	// Subscribe only for this specific request
+	done := make(chan error)
+
 	sub, err := nc.ChanSubscribe(subSubj, ch)
 	if err != nil {
 		log.Println(err)
@@ -125,11 +124,32 @@ func NatsCustomReq[T entity.DataType](
 		w.Write(utils.Marshall("Error to communicate with nats: " + err.Error()))
 		return nil, err
 	}
-	
-	// Ensure subscription is cleaned up after request completes
+
 	defer func() {
 		if err := sub.Unsubscribe(); err != nil {
 			log.Printf("Error unsubscribing from %s: %v", subSubj, err)
+		}
+	}()
+
+	deadline := time.After(local.NATS_REQUEST_TIMEOUT)
+
+	go func() {
+		select {
+		case msg := <-ch:
+			log.Println("Received an api message response")
+			if err := json.Unmarshal(msg.Data, &answer); err != nil {
+				log.Println(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(msg.Data)
+				done <- err
+				return
+			}
+			done <- nil
+		case <-deadline:
+			log.Println("Api message response timeout")
+			w.WriteHeader(http.StatusGatewayTimeout)
+			w.Write(utils.Marshall("api message response timeout"))
+			done <- errNatsRequestTimeout
 		}
 	}()
 
@@ -141,27 +161,11 @@ func NatsCustomReq[T entity.DataType](
 		return nil, err
 	}
 
-	select {
-	case msg := <-ch:
-		log.Println("Received an api message response")
-		err = json.Unmarshal(msg.Data, &answer)
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write(msg.Data)
-			return nil, err
-		}
-		done <- "done"
-	case <-time.After(local.NATS_REQUEST_TIMEOUT):
-		log.Println("Api message response timeout")
-		w.WriteHeader(http.StatusGatewayTimeout)
-		w.Write(utils.Marshall("api message response timeout"))
-		done <- "timeout"
+	if err := <-done; err != nil {
+		return nil, err
 	}
 
-	<-done
-
-	return nil, nil
+	return answer, nil
 }
 
 /*

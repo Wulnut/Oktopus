@@ -29,9 +29,9 @@ func TestRedisLockPolicyCacheRoundTrip(t *testing.T) {
 	}
 	defer mr.Close()
 
-	cache, err := newRedisLockPolicyCache("redis://" + mr.Addr())
+	cache, err := newRedisLockBackend("redis://" + mr.Addr())
 	if err != nil {
-		t.Fatalf("newRedisLockPolicyCache: %v", err)
+		t.Fatalf("newRedisLockBackend: %v", err)
 	}
 
 	policy := db.LockPolicy{

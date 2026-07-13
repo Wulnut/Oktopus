@@ -10,14 +10,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func newTestRedisStateStore(t *testing.T) (*redisLockDeviceStateStore, *miniredis.Miniredis) {
+func newTestRedisStateStore(t *testing.T) (*redisLockBackend, *miniredis.Miniredis) {
 	t.Helper()
 	mr, err := miniredis.Run()
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	return &redisLockDeviceStateStore{client: client}, mr
+	return &redisLockBackend{client: client}, mr
 }
 
 func TestRedisLockDeviceStateGetMiss(t *testing.T) {
