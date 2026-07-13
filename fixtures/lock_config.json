@@ -1,0 +1,11 @@
+[
+  {
+    "_id": "global",
+    "auto_lock_enabled": true,
+    "master_enabled": true,
+    "updated_at": {
+      "$date": "2026-07-10T08:50:01.046Z"
+    },
+    "updated_by": "user5@test.example.com"
+  }
+]

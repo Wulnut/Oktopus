@@ -1,4 +1,6 @@
 # Oktopus CI — 8 test jobs; unit tests parallel, integration after unit (parallel).
+# Snapshot black-box API tests (test:snapshot:api / :load) are opt-in/manual and
+# never gate deploys.
 # Deploy: source pack + SSH + remote build (auto on telkomsel/ont-lock-dev and telkomsel/ont-lock).
 # Local tests: deploy/compose/docker-compose.test.yaml
 # Runner tag: oktopus-docker
@@ -25,6 +27,7 @@ variables:
 stages:
   - test-unit
   - test-integration
+  - test-snapshot
   - deploy
 
 .test_artifacts:
@@ -165,6 +168,70 @@ test:integration:handlers:
   script:
    - sleep 5
    - go_test_report test-reports/test-handlers.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller && go test -v -count=1 -tags=integration -timeout=120s ./internal/api/'
+
+# ---------------------------------------------------------------------------
+# Snapshot / black-box API tests — new HTTP black-box suite under
+# backend/services/controller/tests/api_snapshot/. Runs the real controller
+# router against throwaway Mongo+NATS services. Default: manual, does NOT
+# gate deploys.
+# ---------------------------------------------------------------------------
+test:snapshot:api:
+  extends: .go_job
+  stage: test-snapshot
+  variables:
+    JUNIT_REPORT: test-reports/test-snapshot-api-junit.xml
+    SECRET_API_KEY: "ci-snapshot-secret"
+  services:
+    - name: mongo:7.0
+      alias: mongo_test
+    - name: nats:2.10
+      alias: nats_test
+      command: ["--js"]
+  script:
+    - sleep 5
+    # The snapshot module is a separate go module with a replace directive;
+    # run from its own directory. Excludes the load/ subpackage by default
+    # (RUN_LOAD unset -> all TestLoad_* skipped).
+    - go_test_report test-reports/test-snapshot-api.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller/tests/api_snapshot && go test -v -count=1 -timeout=300s ./...'
+  rules:
+    # Nightly schedule on any branch.
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    # Telkomsel branches: opt-in manual, never auto-runs and never blocks deploys.
+    - if: $CI_COMMIT_BRANCH =~ /^telkomsel\//
+      when: manual
+      allow_failure: true
+    # MR: opt-in manual.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
+
+# Optional: load tests, separate job so the main snapshot job stays fast.
+# Gated by RUN_LOAD=1 inside the test binary; also manual at the CI level.
+test:snapshot:load:
+  extends: .go_job
+  stage: test-snapshot
+  variables:
+    JUNIT_REPORT: test-reports/test-snapshot-load-junit.xml
+    SECRET_API_KEY: "ci-snapshot-secret"
+    RUN_LOAD: "1"
+    LOAD_INFO_DURATION_SEC: "10"
+  services:
+    - name: mongo:7.0
+      alias: mongo_test
+    - name: nats:2.10
+      alias: nats_test
+      command: ["--js"]
+  script:
+    - sleep 5
+    - go_test_report test-reports/test-snapshot-load.log "$JUNIT_REPORT" bash -c 'cd backend/services/controller/tests/api_snapshot && go test -v -count=1 -timeout=600s -run TestLoad ./load/...'
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH =~ /^telkomsel\//
+      when: manual
+      allow_failure: true
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
 
 # ---------------------------------------------------------------------------
 # Deploy — upload source, build on target server, restart compose stack

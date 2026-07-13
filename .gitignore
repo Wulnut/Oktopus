@@ -37,3 +37,23 @@ skills-lock.json
 .codegraph
 .DS_Store
 __pycache__/
+
+# Test data capture: raw mongodump/HTTP captures from production never enter git.
+# Only the sanitized fixtures/ directory is committed.
+scripts/test-data/raw/
+scripts/test-data/sanitize_map.json
+.warp   
+.windsurf
+.trae
+.qoder
+.opencode
+.kiro
+.kilocode
+.github
+.gemini
+.factory
+.continue
+.codex
+.codebuddy
+.augment
+.roo

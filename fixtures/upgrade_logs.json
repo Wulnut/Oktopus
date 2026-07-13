@@ -1,0 +1,26 @@
+[
+  {
+    "device_sn": "SN-DEV-0001",
+    "device_alias": "living-room-ont",
+    "firmware_name": "HG8145V5-V5R019C00S150",
+    "firmware_build_ver": "V5R019C00S150",
+    "previous_version": "V5R018C00S100",
+    "trigger_type": "manual",
+    "status": "success",
+    "retry_count": 0,
+    "triggered_at": { "$date": "2026-07-01T10:00:00Z" },
+    "completed_at": { "$date": "2026-07-01T10:02:30Z" }
+  },
+  {
+    "device_sn": "SN-DEV-0001",
+    "device_alias": "living-room-ont",
+    "firmware_name": "HG8145V5-V5R018C00S100",
+    "firmware_build_ver": "V5R018C00S100",
+    "previous_version": "V5R017C00S080",
+    "trigger_type": "campaign_scheduled",
+    "status": "success",
+    "retry_count": 0,
+    "triggered_at": { "$date": "2026-06-15T03:00:00Z" },
+    "completed_at": { "$date": "2026-06-15T03:03:12Z" }
+  }
+]

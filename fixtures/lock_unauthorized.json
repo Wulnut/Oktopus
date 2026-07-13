@@ -1,0 +1,18 @@
+[
+  {
+    "sn": "SN-DEV-0003",
+    "reported_ip": "10.99.99.1",
+    "reason": "UNAUTHORIZED",
+    "status": "LOCKED",
+    "first_seen": { "$date": "2026-07-10T08:00:00Z" },
+    "last_seen": { "$date": "2026-07-10T12:00:00Z" }
+  },
+  {
+    "sn": "SN-DEV-0005",
+    "reported_ip": "10.99.99.2",
+    "reason": "INVALID_IP",
+    "status": "PENDING",
+    "first_seen": { "$date": "2026-07-10T09:00:00Z" },
+    "last_seen": { "$date": "2026-07-10T11:30:00Z" }
+  }
+]

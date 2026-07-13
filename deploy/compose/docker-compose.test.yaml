@@ -128,6 +128,31 @@ services:
       - test_network
     profiles: [unit]
 
+  # New black-box HTTP snapshot suite — independent Go module under
+  # backend/services/controller/tests/api_snapshot/. Mounts the repo root at
+  # /workspace so the module's replace directive + fixtures/ resolve.
+  # See docs/plans/2026-07-11-test-plan-v3.md.
+  test-controller-snapshot:
+    image: golang:1.23
+    working_dir: /workspace/backend/services/controller/tests/api_snapshot
+    volumes:
+      - ../../:/workspace
+    environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
+      - GOFLAGS=-mod=mod
+      - MONGO_TEST_URI=mongodb://mongo_test:27017
+      - NATS_TEST_URL=nats://nats_test:4222
+      - SECRET_API_KEY=test-secret-key-for-snapshot
+      # Set RUN_LOAD=1 to enable ./load/... tests (off by default).
+      - RUN_LOAD=${RUN_LOAD:-}
+    command: sh -c "sleep 3 && go test -v -count=1 -timeout=300s ./..."
+    depends_on:
+      - mongo_test
+      - nats_test
+    networks:
+      - test_network
+    profiles: [snapshot]
+
 networks:
   test_network:
     driver: bridge

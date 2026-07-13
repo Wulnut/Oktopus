@@ -289,6 +289,7 @@ Container images are prefixed with the tenant slug: `<tenant_slug>/<name>:<tag>`
 - **Device info caching**: `deviceInfoGet` caches raw JSON in `device_info` collection; `deviceCachedInfoGet` serves it when device is offline. Raw JSON is stored as a string to avoid MongoDB BSON `primitive.D` serialization issues.
 - **Offline device access**: The Info tab falls back to cached data when the device is offline, skipping USP queries entirely. Other device tabs show a "Device is Offline" banner.
 - **Tenant deletion** performs full cleanup: firmware files, registry containers, adapter devices, users, databases, KV buckets.
+- **Black-box HTTP snapshot suite**: `backend/services/controller/tests/api_snapshot/` is an independent Go module that drives the real controller router over `httptest.Server` with sanitized GCP-derived fixtures. Zero production-code surface change beyond the extracted `Api.BuildRouter()` method. Coexists with the 54 white-box tests; never gates deploys (CI `test-snapshot` stage is manual/`allow_failure`). See `docs/plans/2026-07-11-test-plan-v3.md`. NATS-mediated routes (GET `/device`, `/info/*`, USP get/operate) assert the expected 500/504 timeout shape in this env since no adapter is subscribed; load tests target pure-Mongo routes only.
 
 ### Build & Deploy Scripts
 
@@ -335,3 +336,20 @@ Deploy jobs use `timeout: 2h` and `resource_group` to prevent concurrent deploys
 - **Build all**: `sg docker -c "cd deploy/compose && ./build.sh"`
 - **Build specific service**: `sg docker -c "cd deploy/compose && ./build.sh controller"`
 - **Run tests**: `cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm <service>` (see README for full list)
+- **Run white-box unit/integration tests** (existing): `cd deploy/compose && docker compose -f docker-compose.test.yaml --profile {unit|integration} run --rm test-{controller-unit|bridge|db|handlers|...}`
+- **Run black-box API snapshot suite** (new, see `docs/plans/2026-07-11-test-plan-v3.md`): bring up `mongo_test`/`nats_test` once, then run the independent Go module under `backend/services/controller/tests/api_snapshot/`:
+  ```bash
+  cd deploy/compose
+  docker compose -f docker-compose.test.yaml --profile integration up -d mongo_test nats_test
+  docker run --rm --network oktopus-test_test_network \
+    -v "$PWD/../..":/workspace \
+    -w /workspace/backend/services/controller/tests/api_snapshot \
+    -e GOPROXY=https://goproxy.cn,direct -e GOFLAGS=-mod=mod \
+    -e MONGO_TEST_URI=mongodb://mongo_test:27017 \
+    -e NATS_TEST_URL=nats://nats_test:4222 \
+    -e SECRET_API_KEY=test-secret-key-for-snapshot \
+    golang:1.23 go test -v -count=1 -timeout=300s ./...
+  ```
+  Or via the compose service: `docker compose -f docker-compose.test.yaml --profile snapshot --profile integration run --rm test-controller-snapshot`.
+- **Run load tests** (gated, off by default): add `-e RUN_LOAD=1` and target `./load/...` with `-run TestLoad`. The default `go test ./...` skips them.
+
