@@ -1,0 +1,62 @@
+[
+  {
+    "_id": {
+      "$oid": "6a4e0fb983a5f7cf271c1d2d"
+    },
+    "device_sn": "proto::GFBD54500001",
+    "info_raw": "{\"req_path_results\":[{\"requested_path\":\"Device.DeviceInfo.Manufacturer\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Manufacturer\":\"GFBD\"}}]},{\"requested_path\":\"Device.DeviceInfo.ModelName\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ModelName\":\"GFD430\"}}]},{\"requested_path\":\"Device.DeviceInfo.HardwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"HardwareVersion\":\"V1.0\"}}]},{\"requested_path\":\"Device.DeviceInfo.SoftwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SoftwareVersion\":\"V4.0.0-260702\"}}]},{\"requested_path\":\"Device.DeviceInfo.SerialNumber\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SerialNumber\":\"GFBD54500001\"}}]},{\"requested_path\":\"Device.DeviceInfo.ProductClass\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ProductClass\":\"GPON\"}}]},{\"requested_path\":\"Device.DeviceInfo.Description\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Description\":\"System Description\"}}]}]}\n",
+    "updated_at": {
+      "$date": "2026-07-09T07:59:57.982Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a4f55408379ad45016a7ef0"
+    },
+    "device_sn": "SN-DEV-0006",
+    "info_raw": "{\"req_path_results\":[{\"requested_path\":\"Device.DeviceInfo.Manufacturer\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Manufacturer\":\"ATEL\"}}]},{\"requested_path\":\"Device.DeviceInfo.ModelName\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ModelName\":\"FH220\"}}]},{\"requested_path\":\"Device.DeviceInfo.HardwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"HardwareVersion\":\"HWVer-B001\"}}]},{\"requested_path\":\"Device.DeviceInfo.SoftwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SoftwareVersion\":\"1.0.0-t1\"}}]},{\"requested_path\":\"Device.DeviceInfo.SerialNumber\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SerialNumber\":\"SN-DEV-0006\"}}]},{\"requested_path\":\"Device.DeviceInfo.ProductClass\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ProductClass\":\"MA7608\"}}]},{\"requested_path\":\"Device.DeviceInfo.Description\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Description\":\"\"}}]}]}\n",
+    "updated_at": {
+      "$date": "2026-07-09T10:00:02.647Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a4f6aeb3e4317d72f7e0dd7"
+    },
+    "device_sn": "SN-DEV-0001",
+    "info_raw": "{\"req_path_results\":[{\"requested_path\":\"Device.DeviceInfo.Manufacturer\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Manufacturer\":\"ATEL\"}}]},{\"requested_path\":\"Device.DeviceInfo.ModelName\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ModelName\":\"FH220\"}}]},{\"requested_path\":\"Device.DeviceInfo.HardwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"HardwareVersion\":\"HWVer-B001\"}}]},{\"requested_path\":\"Device.DeviceInfo.SoftwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SoftwareVersion\":\"lockdebug-2\"}}]},{\"requested_path\":\"Device.DeviceInfo.SerialNumber\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SerialNumber\":\"SN-DEV-0001\"}}]},{\"requested_path\":\"Device.DeviceInfo.ProductClass\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ProductClass\":\"UG-8241\"}}]},{\"requested_path\":\"Device.DeviceInfo.Description\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Description\":\"\"}}]}]}\n",
+    "updated_at": {
+      "$date": "2026-07-10T09:54:33.061Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a4f71ca2d0bc67cbd60b6a1"
+    },
+    "device_sn": "SN-DEV-0002",
+    "info_raw": "{\"req_path_results\":[{\"requested_path\":\"Device.DeviceInfo.Manufacturer\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Manufacturer\":\"ATEL\"}}]},{\"requested_path\":\"Device.DeviceInfo.ModelName\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ModelName\":\"FH220\"}}]},{\"requested_path\":\"Device.DeviceInfo.HardwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"HardwareVersion\":\"HWVer-B001\"}}]},{\"requested_path\":\"Device.DeviceInfo.SoftwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SoftwareVersion\":\"1.0.0-t11\"}}]},{\"requested_path\":\"Device.DeviceInfo.SerialNumber\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SerialNumber\":\"SN-DEV-0002\"}}]},{\"requested_path\":\"Device.DeviceInfo.ProductClass\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ProductClass\":\"MA7608\"}}]},{\"requested_path\":\"Device.DeviceInfo.Description\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Description\":\"\"}}]}]}\n",
+    "updated_at": {
+      "$date": "2026-07-13T03:44:53.256Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a4f76f92d0bc67cbd60b6a7"
+    },
+    "device_sn": "SN-DEV-0003",
+    "info_raw": "{\"req_path_results\":[{\"requested_path\":\"Device.DeviceInfo.Manufacturer\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Manufacturer\":\"ATEL\"}}]},{\"requested_path\":\"Device.DeviceInfo.ModelName\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ModelName\":\"FH220\"}}]},{\"requested_path\":\"Device.DeviceInfo.HardwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"HardwareVersion\":\"HWVer-B001\"}}]},{\"requested_path\":\"Device.DeviceInfo.SoftwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SoftwareVersion\":\"lockdebug-2\"}}]},{\"requested_path\":\"Device.DeviceInfo.SerialNumber\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SerialNumber\":\"SN-DEV-0003\"}}]},{\"requested_path\":\"Device.DeviceInfo.ProductClass\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ProductClass\":\"UG-8241\"}}]},{\"requested_path\":\"Device.DeviceInfo.Description\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Description\":\"\"}}]}]}\n",
+    "updated_at": {
+      "$date": "2026-07-13T03:03:19.073Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a545b9c104b9c37bbb26082"
+    },
+    "device_sn": "SN-DEV-0004",
+    "info_raw": "{\"req_path_results\":[{\"requested_path\":\"Device.DeviceInfo.Manufacturer\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Manufacturer\":\"ATEL\"}}]},{\"requested_path\":\"Device.DeviceInfo.ModelName\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ModelName\":\"FH220\"}}]},{\"requested_path\":\"Device.DeviceInfo.HardwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"HardwareVersion\":\"HWVer-B001\"}}]},{\"requested_path\":\"Device.DeviceInfo.SoftwareVersion\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SoftwareVersion\":\"lockdebug-2\"}}]},{\"requested_path\":\"Device.DeviceInfo.SerialNumber\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"SerialNumber\":\"SN-DEV-0004\"}}]},{\"requested_path\":\"Device.DeviceInfo.ProductClass\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"ProductClass\":\"UG-8241\"}}]},{\"requested_path\":\"Device.DeviceInfo.Description\",\"resolved_path_results\":[{\"resolved_path\":\"Device.DeviceInfo.\",\"result_params\":{\"Description\":\"\"}}]}]}\n",
+    "updated_at": {
+      "$date": "2026-07-13T03:29:32.451Z"
+    }
+  }
+]

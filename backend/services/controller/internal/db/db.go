@@ -16,27 +16,50 @@ type Database struct {
 	ctx     context.Context
 }
 
-func NewDatabase(ctx context.Context, mongoUri string) Database {
-	var db Database
+// Client returns the underlying Mongo client (e.g. for test fixtures sharing the controller pool).
+func (d Database) Client() *mongo.Client {
+	return d.client
+}
 
+// Disconnect closes the underlying Mongo client. Safe to call multiple times.
+func (d Database) Disconnect(ctx context.Context) error {
+	if d.client == nil {
+		return nil
+	}
+	return d.client.Disconnect(ctx)
+}
+
+func NewDatabase(ctx context.Context, mongoUri string) Database {
 	clientOptions := options.Client().ApplyURI(mongoUri)
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		log.Fatal(err)
 	}
+	return newDatabaseFromClient(ctx, client, mongoUri)
+}
+
+// NewDatabaseFromClient wires account-mngr collections on an existing client.
+// Snapshot tests share one pool across all cases; production uses NewDatabase.
+func NewDatabaseFromClient(ctx context.Context, client *mongo.Client, mongoURI string) Database {
+	return newDatabaseFromClient(ctx, client, mongoURI)
+}
+
+// newDatabaseFromClient wires account-mngr collections on an existing client.
+func newDatabaseFromClient(ctx context.Context, client *mongo.Client, mongoURI string) Database {
+	var db Database
 	db.client = client
 
 	log.Println("Trying to ping Mongo database...")
-	err = client.Ping(ctx, nil)
+	err := client.Ping(ctx, nil)
 	if err != nil {
 		log.Fatal("Couldn't connect to MongoDB --> ", err)
 	}
-
-	log.Println("Connected to MongoDB-->", mongoUri)
+	if mongoURI != "" {
+		log.Println("Connected to MongoDB-->", mongoURI)
+	}
 
 	accountDB := client.Database("account-mngr")
 
-	// Users collection with unique email index
 	db.users = accountDB.Collection("users")
 	_, err = db.users.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.M{"email": 1},
@@ -46,7 +69,6 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 		log.Fatalln(err)
 	}
 
-	// Tenants collection with unique slug index
 	db.tenants = accountDB.Collection("tenants")
 	_, err = db.tenants.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "slug", Value: 1}},
@@ -57,7 +79,6 @@ func NewDatabase(ctx context.Context, mongoUri string) Database {
 	}
 
 	db.ctx = ctx
-
 	return db
 }
 

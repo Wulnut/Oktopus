@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,7 +78,17 @@ func (a *Api) upsertLockPolicy(w http.ResponseWriter, r *http.Request) {
 			"allowed_ip_range": created.AllowedIPRange,
 		},
 	})
-	_ = a.tenantDB(r).DeleteUnauthorizedDevice(r.Context(), created.SN)
+	if deleted, err := a.tenantDB(r).DeleteUnauthorizedDevices(r.Context(), []string{created.SN}); err != nil {
+		log.Printf("lock: delete unauthorized for %s: %v", created.SN, err)
+	} else if deleted > 0 {
+		a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+			SN:     created.SN,
+			Action: "unauthorized_auto_resolved",
+			Details: bson.M{
+				"source": "policy_upsert",
+			},
+		})
+	}
 	a.chaseLockForSN(tenantSlug, created.SN)
 	writeJSON(w, http.StatusOK, created)
 }
@@ -254,6 +265,7 @@ func (a *Api) updateLockConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.UpdatedBy = middleware.GetEmail(r)
 	tenantSlug := middleware.GetTenantSlug(r)
+	oldCfg, _ := a.tenantDB(r).GetLockConfig(r.Context())
 	saved, err := a.tenantDB(r).SaveLockConfig(r.Context(), cfg)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -269,6 +281,19 @@ func (a *Api) updateLockConfig(w http.ResponseWriter, r *http.Request) {
 	})
 	if a.lockCircuitBreaker != nil {
 		a.lockCircuitBreaker.reset(tenantSlug)
+	}
+	// When master switch is turned off, all devices become UNLOCKED and the
+	// unauthorized list is meaningless. Clear it and leave an audit trail.
+	if oldCfg.MasterEnabled && !saved.MasterEnabled {
+		if deleted, err := a.tenantDB(r).ClearUnauthorizedDevices(r.Context()); err != nil {
+			log.Printf("lock: clear unauthorized on master disable: %v", err)
+		} else if deleted > 0 {
+			a.recordLockAudit(r.Context(), a.tenantDB(r), tenantSlug, db.LockAuditLog{
+				Action:     "unauthorized_cleared_master_disabled",
+				OperatorID: cfg.UpdatedBy,
+				Details:    bson.M{"deleted_count": deleted},
+			})
+		}
 	}
 	a.chaseLockAfterConfigUpdate(tenantSlug)
 	writeJSON(w, http.StatusOK, saved)

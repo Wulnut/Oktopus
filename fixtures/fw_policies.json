@@ -1,0 +1,12 @@
+[
+  {
+    "_id": {
+      "$oid": "6a4f1485ad5930cba82b04a9"
+    },
+    "device_sn": "SN-DEV-0006",
+    "policy": "campaign",
+    "updated_at": {
+      "$date": "2026-07-09T03:24:57.798Z"
+    }
+  }
+]

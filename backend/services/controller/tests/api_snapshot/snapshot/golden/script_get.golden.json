@@ -1,0 +1,1 @@
+{"id":"<ID>","name":"get-wan-status","description":"Fetch WAN status and IP info","tags":["diagnostic","wan"],"variables":null,"steps":[{"id":"step1","name":"Get WAN IP","type":"GET","param_paths":["Device.WAN.Device.1.Connection.1.IP.IPAddress"],"max_depth":1,"save_result_as":"wan_ip"}],"builtin":false,"created_at":"<TIMESTAMP>","updated_at":"<TIMESTAMP>"}

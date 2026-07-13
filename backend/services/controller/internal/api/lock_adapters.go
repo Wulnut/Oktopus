@@ -31,7 +31,9 @@ func (m multiLockEventSink) PublishLockAudit(ctx context.Context, tenantSlug str
 	return nil
 }
 
-type redisLockPolicyCache struct {
+// redisLockBackend owns a single Redis client and implements both lockPolicyCache
+// and lockDeviceStateStore so connection lifecycle stays in one place.
+type redisLockBackend struct {
 	client *redis.Client
 }
 
@@ -51,19 +53,19 @@ func connectRedis(url string) (*redis.Client, error) {
 	return client, nil
 }
 
-func newRedisLockPolicyCache(url string) (*redisLockPolicyCache, error) {
+func newRedisLockBackend(url string) (*redisLockBackend, error) {
 	client, err := connectRedis(url)
 	if err != nil {
 		return nil, err
 	}
-	return &redisLockPolicyCache{client: client}, nil
+	return &redisLockBackend{client: client}, nil
 }
 
 func lockPolicyCacheKey(tenantSlug, sn string) string {
 	return fmt.Sprintf("oktopus:lock:policy:%s:%s", tenantSlug, db.NormalizeSN(sn))
 }
 
-func (c *redisLockPolicyCache) GetLockPolicy(ctx context.Context, tenantSlug, sn string) (db.LockPolicy, bool, error) {
+func (c *redisLockBackend) GetLockPolicy(ctx context.Context, tenantSlug, sn string) (db.LockPolicy, bool, error) {
 	raw, err := c.client.Get(ctx, lockPolicyCacheKey(tenantSlug, sn)).Bytes()
 	if err == redis.Nil {
 		return db.LockPolicy{}, false, nil
@@ -78,7 +80,7 @@ func (c *redisLockPolicyCache) GetLockPolicy(ctx context.Context, tenantSlug, sn
 	return policy, true, nil
 }
 
-func (c *redisLockPolicyCache) PutLockPolicy(ctx context.Context, tenantSlug string, policy db.LockPolicy) error {
+func (c *redisLockBackend) PutLockPolicy(ctx context.Context, tenantSlug string, policy db.LockPolicy) error {
 	raw, err := json.Marshal(policy)
 	if err != nil {
 		return err
@@ -86,7 +88,7 @@ func (c *redisLockPolicyCache) PutLockPolicy(ctx context.Context, tenantSlug str
 	return c.client.Set(ctx, lockPolicyCacheKey(tenantSlug, policy.SN), raw, lockPolicyCacheTTL).Err()
 }
 
-func (c *redisLockPolicyCache) DeleteLockPolicy(ctx context.Context, tenantSlug, sn string) error {
+func (c *redisLockBackend) DeleteLockPolicy(ctx context.Context, tenantSlug, sn string) error {
 	return c.client.Del(ctx, lockPolicyCacheKey(tenantSlug, sn)).Err()
 }
 
@@ -220,11 +222,11 @@ func InitLockScaleAdapters(cfg config.LockScale) {
 	if cfg.RedisEnabled {
 		if cfg.RedisURL == "" {
 			log.Printf("lock_adapters: LOCK_REDIS_ENABLED=true but LOCK_REDIS_URL is empty, using noop cache")
-		} else if client, err := connectRedis(cfg.RedisURL); err != nil {
+		} else if backend, err := newRedisLockBackend(cfg.RedisURL); err != nil {
 			log.Printf("lock_adapters: redis init failed: %v (using noop cache/state)", err)
 		} else {
-			lockCache = &redisLockPolicyCache{client: client}
-			lockStateStore = &redisLockDeviceStateStore{client: client}
+			lockCache = backend
+			lockStateStore = backend
 			log.Printf("lock_adapters: redis policy cache and device state store enabled")
 		}
 	}

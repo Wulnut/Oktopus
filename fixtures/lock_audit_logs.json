@@ -1,0 +1,544 @@
+[
+  {
+    "_id": {
+      "$oid": "6a53b9116259d5fb36526a66"
+    },
+    "action": "audit_clear",
+    "operator_id": "user5@test.example.com",
+    "description": "Audit history cleared",
+    "details": {
+      "deleted_count": 110
+    },
+    "created_at": {
+      "$date": "2026-07-12T15:56:01.524Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a53cf026259d5fb36526a70"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-12T17:29:38.897Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a54324f6259d5fb36526a7d"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T00:33:19.648Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5445f96259d5fb36526aab"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reported_ip": "10.0.7.1",
+      "trigger": "online",
+      "reason": "UNAUTHORIZED"
+    },
+    "created_at": {
+      "$date": "2026-07-13T01:57:13.781Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5449896259d5fb36526af6"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "trigger": "online",
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:12:25.939Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a544b1a6259d5fb36526b22"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:19:06.023Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a544b1a6259d5fb36526b27"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reported_ip": "10.0.9.1",
+      "trigger": "online",
+      "reason": "UNAUTHORIZED"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:19:06.042Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a544b1a6259d5fb36526b2a"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:19:06.068Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a544d0f6259d5fb36526b87"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:27:27.781Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5450f76259d5fb36526b9d"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:44:07.017Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454156259d5fb36526bbd"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:57:25.344Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454156259d5fb36526bc1"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reported_ip": "10.0.8.1",
+      "trigger": "online",
+      "reason": "UNAUTHORIZED"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:57:25.347Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454156259d5fb36526bcf"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:57:25.516Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454276259d5fb36526bf7"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.9.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:57:43.658Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454276259d5fb36526c03"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:57:43.711Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454276259d5fb36526c0b"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T02:57:43.762Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454d26259d5fb36526c71"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "trigger": "online",
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.9.1"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:00:34.323Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454d26259d5fb36526c72"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.9.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:00:34.324Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5454d26259d5fb36526c7e"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:00:34.361Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a54550e6259d5fb36526cc3"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "trigger": "online",
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:01:34.493Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a54579a6259d5fb36526dd6"
+    },
+    "sn": "SN-DEV-0004",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.10.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:12:26.563Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5457a06259d5fb36526de2"
+    },
+    "sn": "SN-DEV-0004",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.11.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:12:32.2Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5457ba6259d5fb36526def"
+    },
+    "sn": "SN-DEV-0004",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.10.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:12:58.708Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5457c36259d5fb36526dfd"
+    },
+    "sn": "SN-DEV-0004",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.11.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:13:07.555Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5457ce6259d5fb36526e08"
+    },
+    "sn": "SN-DEV-0004",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.12.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:13:18.093Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a54587e6259d5fb36526e16"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:16:14.567Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5458916259d5fb36526e25"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.9.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:16:33.409Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5458a16259d5fb36526e32"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.13.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:16:49.082Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5458ba6259d5fb36526e3e"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.8.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:17:14.041Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5459056259d5fb36526e4b"
+    },
+    "sn": "SN-DEV-0003",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.13.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:18:29.384Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a5459d56259d5fb36526e59"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:21:57.017Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a545bae6259d5fb36526e6c"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:29:50.045Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a545c436259d5fb36526e7c"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1",
+      "trigger": "online"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:32:19.799Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a545f306259d5fb36526e93"
+    },
+    "sn": "SN-DEV-0002",
+    "action": "evaluate",
+    "status": "LOCKED",
+    "details": {
+      "trigger": "online",
+      "reason": "UNAUTHORIZED",
+      "reported_ip": "10.0.7.1"
+    },
+    "created_at": {
+      "$date": "2026-07-13T03:44:48.561Z"
+    }
+  }
+]

@@ -54,10 +54,6 @@ func (noopLockDeviceStateStore) TryLock(context.Context, string, string, time.Du
 	return func() {}, true, nil
 }
 
-type redisLockDeviceStateStore struct {
-	client *redis.Client
-}
-
 func lockDeviceStateKey(tenant, sn string) string {
 	return fmt.Sprintf("oktopus:lock:state:%s:%s", tenant, db.NormalizeSN(sn))
 }
@@ -66,7 +62,7 @@ func lockEvalKey(tenant, sn string) string {
 	return fmt.Sprintf("oktopus:lock:eval:%s:%s", tenant, db.NormalizeSN(sn))
 }
 
-func (s *redisLockDeviceStateStore) Get(ctx context.Context, tenant, sn string) (lockDeviceState, bool, error) {
+func (s *redisLockBackend) Get(ctx context.Context, tenant, sn string) (lockDeviceState, bool, error) {
 	raw, err := s.client.Get(ctx, lockDeviceStateKey(tenant, sn)).Bytes()
 	if err == redis.Nil {
 		return lockDeviceState{}, false, nil
@@ -81,7 +77,7 @@ func (s *redisLockDeviceStateStore) Get(ctx context.Context, tenant, sn string) 
 	return st, true, nil
 }
 
-func (s *redisLockDeviceStateStore) Put(ctx context.Context, tenant, sn string, st lockDeviceState) error {
+func (s *redisLockBackend) Put(ctx context.Context, tenant, sn string, st lockDeviceState) error {
 	raw, err := json.Marshal(st)
 	if err != nil {
 		return err
@@ -95,7 +91,7 @@ func (s *redisLockDeviceStateStore) Put(ctx context.Context, tenant, sn string, 
 // On Redis errors, soft-degrades: returns ok=true with a no-op unlock so the
 // lock pipeline never hard-fails when Redis is unavailable. Contention
 // (key already held) returns ok=false.
-func (s *redisLockDeviceStateStore) TryLock(ctx context.Context, tenant, sn string, ttl time.Duration) (func(), bool, error) {
+func (s *redisLockBackend) TryLock(ctx context.Context, tenant, sn string, ttl time.Duration) (func(), bool, error) {
 	if ttl <= 0 {
 		ttl = defaultLockEvalTTL
 	}

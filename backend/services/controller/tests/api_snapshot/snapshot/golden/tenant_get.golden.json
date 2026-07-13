@@ -1,0 +1,1 @@
+{"id":"<ID>","name":"Snapshot Test Tenant","slug":"snapshot-test","status":"active","auth_policy":{"password_required":false,"cert_required":false},"ca_certs":null,"created_at":"<TIMESTAMP>","updated_at":"<TIMESTAMP>"}

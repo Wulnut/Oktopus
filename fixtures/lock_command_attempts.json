@@ -1,0 +1,1636 @@
+[
+  {
+    "_id": {
+      "$oid": "6a50960c4fef43bb424d9b8c"
+    },
+    "command_id": "40ff1bdf-ee6f-4b6c-97c3-bc46932e6534",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T06:49:48.567Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T06:49:48.738Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5097854fef43bb424d9b99"
+    },
+    "command_id": "745da167-ae3f-42eb-b4c2-515d5bf56a7b",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T06:56:05.016Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T06:56:05.178Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a509c834fef43bb424d9bbc"
+    },
+    "command_id": "44edf8c2-204f-4dbe-85cc-4a93058a5723",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:17:23.936Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:17:24.102Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a509c834fef43bb424d9bc0"
+    },
+    "command_id": "c114606e-2fef-48d2-8152-b598f0b2323e",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:17:23.982Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:17:24.14Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a509d714fef43bb424d9be5"
+    },
+    "command_id": "7d051ba3-c9d8-42cd-b655-fc7dcbaf8998",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:21:21.209Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:21:21.347Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a509dbc4fef43bb424d9bf1"
+    },
+    "command_id": "af73622c-f837-4df8-b498-92ac5bcf453e",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:22:36.856Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:22:37.005Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a509f734fef43bb424d9c16"
+    },
+    "command_id": "767edc2a-389a-40e0-a874-fa7b472b3e31",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:29:55.882Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:29:56.023Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a509fbd4fef43bb424d9c48"
+    },
+    "command_id": "32d23dfa-7747-4499-b5e3-c7b059c534fc",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:31:09.265Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:31:09.386Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a509fcb4fef43bb424d9c54"
+    },
+    "command_id": "c85a0caa-2dbc-42f5-91f3-44a53d64333d",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:31:23.39Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:31:23.514Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a0104fef43bb424d9c74"
+    },
+    "command_id": "c3c3af44-838c-41ac-95b5-36b49f6dfe1b",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:32:32.964Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:32:33.092Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a0594fef43bb424d9ca6"
+    },
+    "command_id": "b48c6b1f-53ef-42d6-9aff-f94405fafdbe",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:33:45.448Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:33:45.564Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a0674fef43bb424d9cb2"
+    },
+    "command_id": "0cacfe52-350f-4990-a113-69135bfc5b33",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:33:59.787Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:33:59.919Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a1074fef43bb424d9ccd"
+    },
+    "command_id": "24b1af84-8709-48b2-8f81-988a0547576e",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:36:39.082Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:36:39.235Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a14d4fef43bb424d9ce6"
+    },
+    "command_id": "1e9a0d37-22d8-4dff-9bb0-def4f1952de2",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:37:49.751Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:37:49.877Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a15b4fef43bb424d9d03"
+    },
+    "command_id": "1c4554b2-5378-45a4-90b3-94697642b971",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:38:03.759Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:38:03.894Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a1694fef43bb424d9d0f"
+    },
+    "command_id": "b1500c18-6bf7-48b0-9b88-61afad2fd1d9",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:38:17.416Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:38:17.534Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a17a4fef43bb424d9d1a"
+    },
+    "command_id": "217a8641-447c-436a-883d-87f2ea94a052",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:38:34.402Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:38:34.521Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a19a4fef43bb424d9d3b"
+    },
+    "command_id": "281a3b8b-cd34-4842-b60d-1fb7a6d8d399",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:39:06.812Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:39:06.946Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a1a74fef43bb424d9d48"
+    },
+    "command_id": "5512ac7e-4486-4402-a669-4aaa114b56a6",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:39:19.693Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:39:19.81Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a1b64fef43bb424d9d58"
+    },
+    "command_id": "114c2d67-7123-450a-a1f4-d9921e139b72",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:39:34.17Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:39:34.292Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a1d14fef43bb424d9d68"
+    },
+    "command_id": "127eac82-38f4-4c14-a893-73323a84ff24",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:40:01.821Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:40:01.953Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a2c94fef43bb424d9da8"
+    },
+    "command_id": "f1e67e75-868f-42af-9d77-5af83370b6fe",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:44:09.979Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:44:10.119Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a5d24fef43bb424d9db8"
+    },
+    "command_id": "1c48a4fb-ef53-4971-bd13-23d6ac0a90e5",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T07:57:06.042Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T07:57:06.182Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a6e94fef43bb424d9dc9"
+    },
+    "command_id": "ac4d27aa-8ef9-4b91-89c1-6167ced0c424",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:01:45.884Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:01:46.022Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a6ea4fef43bb424d9ded"
+    },
+    "command_id": "b541af16-8f96-4e0a-ac42-e146825ed1c3",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:01:46.37Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:01:46.502Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a6ea4fef43bb424d9dec"
+    },
+    "command_id": "ad0928a0-ae91-42c4-9eeb-7f96f50520c6",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:01:46.37Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:01:46.503Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a6ea4fef43bb424d9df3"
+    },
+    "command_id": "043975e4-52a8-4a50-8ac8-562b8ab24f2c",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:01:46.508Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:01:46.649Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50a6ea4fef43bb424d9df7"
+    },
+    "command_id": "bde67f12-d0a0-46b6-bbd7-4f92142b1566",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:01:46.509Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:01:46.648Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50ab11db9395f5051b5f8b"
+    },
+    "command_id": "cec31694-5807-4de8-875f-ff829fe7529b",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:19:29.531Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:19:29.673Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50ab26db9395f5051b5fa0"
+    },
+    "command_id": "77b71e58-7b8c-42b2-822b-2e8db691eb6e",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:19:50.298Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:19:50.44Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50acfcdb9395f5051b5fc0"
+    },
+    "command_id": "e158bdbd-89d0-4b9f-8f22-33d17ec22c42",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.14.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:27:40.902Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:27:41.04Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50adc5db9395f5051b5fce"
+    },
+    "command_id": "c0fc1e8a-d411-4e16-a6d0-2f1388d05313",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:31:01.319Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:31:01.462Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50adcbdb9395f5051b5fdc"
+    },
+    "command_id": "f81d8f88-0bda-45ec-9110-f4db596e73ae",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:31:07.539Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:31:07.692Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50adebdb9395f5051b5fe8"
+    },
+    "command_id": "2800b0de-f962-4254-b374-077b525424f3",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:31:39.98Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:31:40.121Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50ae98db9395f5051b5ff6"
+    },
+    "command_id": "81e49d90-5aed-4064-9956-0346e8eefe7d",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:34:32.048Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:34:32.187Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50aea6db9395f5051b6002"
+    },
+    "command_id": "940ff61b-b05c-4e11-9290-5d78acff0d44",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:34:46.165Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:34:46.308Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50aeb3db9395f5051b600e"
+    },
+    "command_id": "9433b6a3-4bbb-4778-86b8-0a75d2501a12",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:34:59.869Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:35:00.008Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50aec1db9395f5051b601a"
+    },
+    "command_id": "bbd643c9-6744-4feb-91a5-d86d35cf1784",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:35:13.591Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:35:13.73Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50aee2db9395f5051b602e"
+    },
+    "command_id": "8abe0a69-519a-4a82-aed1-5812c40967d6",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:35:46.099Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:35:46.243Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50aeefdb9395f5051b603a"
+    },
+    "command_id": "da4eaf77-d04c-443f-91ac-fd9a9167009b",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:35:59.184Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:35:59.323Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50aefddb9395f5051b6046"
+    },
+    "command_id": "83f12291-d782-4f0d-b854-0c4984448c44",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:36:13.572Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:36:13.712Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50af0bdb9395f5051b6054"
+    },
+    "command_id": "45d612b2-7f50-4aa9-9e5e-8256da70b07a",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:36:27.679Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:36:27.843Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50af10db9395f5051b6062"
+    },
+    "command_id": "8716c39e-616e-4cbe-9c68-9d594e92f4d4",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:36:32.46Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:36:32.6Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50af1fdb9395f5051b606e"
+    },
+    "command_id": "3bcfde25-fe92-4834-97dc-e2f5694e98a1",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:36:47.423Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:36:47.567Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50b1d2db9395f5051b60af"
+    },
+    "command_id": "57eba10f-26d1-4532-aaac-30635452ac3c",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:48:18.866Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:48:19.006Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50b32cdb9395f5051b60c8"
+    },
+    "command_id": "43450968-415f-4e42-98a8-dc1584c518f6",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:54:04.181Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:54:04.325Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50b3896259d5fb365269cd"
+    },
+    "command_id": "b7cb8856-14e6-4c2f-8aac-ff693376f700",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:55:37.907Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:55:38.01Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50b38f6259d5fb365269da"
+    },
+    "command_id": "150c4445-3be3-487d-9156-cd341efec7c6",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T08:55:43.034Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T08:55:43.186Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50bd356259d5fb365269eb"
+    },
+    "command_id": "5ebecfb4-0489-4dfe-a439-9230242cd95f",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T09:36:53.125Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T09:36:53.264Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a50c12b6259d5fb36526a03"
+    },
+    "command_id": "d07f7a7f-e97c-4a51-a04d-SN-DEV-0016",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-10T09:53:47.394Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-10T09:53:47.537Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a51ab826259d5fb36526a37"
+    },
+    "command_id": "dcf5a5b2-4e13-4727-8cfd-19375bfca214",
+    "device_sn": "SN-DEV-0001",
+    "reported_ip": "10.0.15.1",
+    "target_status": "UNLOCKED",
+    "command_value": "0",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-11T02:33:38.1Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-11T02:33:38.239Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a51c1d66259d5fb36526a4c"
+    },
+    "command_id": "8e2ee645-114f-4326-80db-ecfc9dfca1b8",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-11T04:08:54.724Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-11T04:08:54.843Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a51c1d66259d5fb36526a50"
+    },
+    "command_id": "70ce3531-7c76-496d-8c8a-6b0b8ccd34fc",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-11T04:08:54.775Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-11T04:08:54.916Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a53cf026259d5fb36526a71"
+    },
+    "command_id": "9d69bcee-eb8e-477d-bbb6-41d98eee16ea",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-12T17:29:38.898Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-12T17:29:39.052Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a54324f6259d5fb36526a7e"
+    },
+    "command_id": "1d516e76-b072-461a-942d-8ca3d43962c2",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T00:33:19.649Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T00:33:19.785Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5445f96259d5fb36526aac"
+    },
+    "command_id": "66c8f73d-88df-4f27-9395-72ded7a8c706",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T01:57:13.781Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T01:57:13.949Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5449896259d5fb36526af8"
+    },
+    "command_id": "e5f0736a-eb6b-49e2-ac86-560d2d760b30",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T02:12:25.939Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T02:12:26.081Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a544b1a6259d5fb36526b23"
+    },
+    "command_id": "9a1b4d90-6f0c-4631-a5e7-45edb7da6b5a",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:19:06.023Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T02:27:37.347Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a544b1a6259d5fb36526b28"
+    },
+    "command_id": "a793d2c1-3720-4284-ba85-77a8f1b9ffcc",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.9.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:19:06.043Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T02:27:37.349Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a544b1a6259d5fb36526b2d"
+    },
+    "command_id": "d4232844-f771-4cc5-bd8f-9ecc0f21f14c",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:19:06.069Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T02:27:37.347Z"
+    },
+    "error": "usp error 7003: DATABASE_SetParameterValue(569): sqlite3_step failed (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a544d0f6259d5fb36526b88"
+    },
+    "command_id": "880ed021-458f-4f5b-8362-30b5516fa494",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T02:27:27.781Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T02:27:28.018Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5450f76259d5fb36526b9e"
+    },
+    "command_id": "1390e98f-ffca-43db-865f-fe6b702f8030",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T02:44:07.017Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T02:44:07.164Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5454156259d5fb36526bbf"
+    },
+    "command_id": "695848ab-3a6c-4501-861b-a04218df8b1a",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:57:25.345Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:06:07.357Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454156259d5fb36526bc2"
+    },
+    "command_id": "eab4f1f6-62fe-4a33-8735-5bd7b4ac0670",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:57:25.349Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:06:07.327Z"
+    },
+    "error": "usp error 7003: DATABASE_SetParameterValue(569): sqlite3_step failed (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454156259d5fb36526bd1"
+    },
+    "command_id": "0c1c586d-3547-4ee4-974b-729f90ea4937",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:57:25.517Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:06:07.358Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454276259d5fb36526bf9"
+    },
+    "command_id": "4cc9cd9e-f49b-4abd-b496-1ec9be03f428",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.9.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:57:43.659Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:06:37.362Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454276259d5fb36526c04"
+    },
+    "command_id": "09d4237d-037c-4f65-878d-8ef87e04e1c3",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:57:43.711Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:06:37.362Z"
+    },
+    "error": "usp error 7003: DATABASE_SetParameterValue(569): sqlite3_step failed (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454276259d5fb36526c0c"
+    },
+    "command_id": "f273b483-dcc0-4f28-bc33-1cb77a066634",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T02:57:43.763Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:06:37.362Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454d26259d5fb36526c73"
+    },
+    "command_id": "c9e4f346-db57-4b45-b582-f7a4d2b4dbfb",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.9.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T03:00:34.324Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:09:07.394Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454d26259d5fb36526c74"
+    },
+    "command_id": "ddf9cbb1-8389-436e-9ef9-d46282c475db",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.9.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T03:00:34.329Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:09:07.394Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a5454d26259d5fb36526c7f"
+    },
+    "command_id": "b0aa827a-acef-4a63-87b8-13f1cd324cf6",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "failed",
+    "attempt_count": 10,
+    "created_at": {
+      "$date": "2026-07-13T03:00:34.362Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:09:07.394Z"
+    },
+    "error": "usp error 7003: DATABASE_CommitTransaction(712): sqlite3_exec failed: (err=5) database is locked"
+  },
+  {
+    "_id": {
+      "$oid": "6a54550e6259d5fb36526cc4"
+    },
+    "command_id": "9024ee24-f7be-4978-a4e5-d32f82a8fbe1",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:01:34.493Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:01:34.647Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a54579a6259d5fb36526dd7"
+    },
+    "command_id": "bd817bb6-d2db-4b81-a7b1-ebd00c0e2347",
+    "device_sn": "SN-DEV-0004",
+    "reported_ip": "10.0.10.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:12:26.564Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:12:26.814Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5457a06259d5fb36526de3"
+    },
+    "command_id": "5e74f1f9-5015-45b1-8ca8-2a03a552373f",
+    "device_sn": "SN-DEV-0004",
+    "reported_ip": "10.0.11.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:12:32.201Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:12:32.41Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5457ba6259d5fb36526df1"
+    },
+    "command_id": "536283e5-aba7-457f-9143-de7d8038cc0d",
+    "device_sn": "SN-DEV-0004",
+    "reported_ip": "10.0.10.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:12:58.708Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:12:59.244Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5457c36259d5fb36526dfe"
+    },
+    "command_id": "dd2e5339-e000-4a84-baab-fb01bc4287e6",
+    "device_sn": "SN-DEV-0004",
+    "reported_ip": "10.0.11.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 2,
+    "created_at": {
+      "$date": "2026-07-13T03:13:07.556Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:14:07.458Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5457ce6259d5fb36526e09"
+    },
+    "command_id": "5dcd65e9-7586-4fb0-8113-d4bd85c7d6f7",
+    "device_sn": "SN-DEV-0004",
+    "reported_ip": "10.0.12.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:13:18.093Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:13:18.321Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a54587e6259d5fb36526e18"
+    },
+    "command_id": "6192ca8f-aa48-4d9a-b3e8-3b4c387ee7d1",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:16:14.568Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:16:14.715Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5458916259d5fb36526e26"
+    },
+    "command_id": "1c3d103c-8e06-4c1e-837f-5c82780b7ec3",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.9.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:16:33.41Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:16:33.556Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5458a16259d5fb36526e33"
+    },
+    "command_id": "8f6deb9f-51c7-4983-a984-6ab4e060a2bf",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.13.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:16:49.083Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:16:49.228Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5458ba6259d5fb36526e40"
+    },
+    "command_id": "8142c610-a6ed-4b75-aa57-535dd033e75b",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.8.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:17:14.042Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:17:14.178Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5459056259d5fb36526e4d"
+    },
+    "command_id": "174bb626-ca96-4fc2-8cad-32d3ad0c7d45",
+    "device_sn": "SN-DEV-0003",
+    "reported_ip": "10.0.13.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:18:29.385Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:18:29.538Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a5459d56259d5fb36526e5a"
+    },
+    "command_id": "d3815596-1fdd-4cb3-a26d-10ada82cd493",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:21:57.018Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:21:57.163Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a545bae6259d5fb36526e6d"
+    },
+    "command_id": "39fa0934-3b66-45eb-b34a-3bf03a3886eb",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:29:50.045Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:29:50.2Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a545c436259d5fb36526e7d"
+    },
+    "command_id": "b987ea20-c804-4509-80c4-0c9f8661d565",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:32:19.8Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:32:19.951Z"
+    },
+    "error": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a545f306259d5fb36526e94"
+    },
+    "command_id": "02ec387b-5f61-4840-8414-c80c1661bf78",
+    "device_sn": "SN-DEV-0002",
+    "reported_ip": "10.0.7.1",
+    "target_status": "LOCKED",
+    "command_value": "1",
+    "status": "success",
+    "attempt_count": 1,
+    "created_at": {
+      "$date": "2026-07-13T03:44:48.562Z"
+    },
+    "updated_at": {
+      "$date": "2026-07-13T03:44:48.711Z"
+    },
+    "error": ""
+  }
+]

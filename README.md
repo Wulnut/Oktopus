@@ -127,8 +127,15 @@ docker compose -f docker-compose.test.yaml --profile integration run --rm test-d
 docker compose -f docker-compose.test.yaml --profile integration run --rm test-bridge
 docker compose -f docker-compose.test.yaml --profile integration run --rm test-handlers
 
+# Black-box HTTP snapshot suite (see docs/plans/2026-07-11-test-plan-v3.md)
+# Runs the real controller router over httptest.Server with sanitized GCP-derived fixtures.
+docker compose -f docker-compose.test.yaml --profile snapshot --profile integration run --rm test-controller-snapshot
+
+# Same suite with load tests enabled (RUN_LOAD=1 gates TestLoad_* in the load/ subpackage)
+RUN_LOAD=1 docker compose -f docker-compose.test.yaml --profile snapshot --profile integration run --rm test-controller-snapshot
+
 # Clean up
-docker compose -f docker-compose.test.yaml --profile unit --profile integration down
+docker compose -f docker-compose.test.yaml --profile unit --profile integration --profile snapshot down
 ```
 
 ### Certificates

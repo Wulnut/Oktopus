@@ -1,0 +1,22 @@
+[
+  {
+    "vendor": "Huawei",
+    "model": "HG8145V5",
+    "hw_version": "169BW.A",
+    "firmware_id": { "$oid": "507f1f77bcf86cd799439011" },
+    "concurrency": 10,
+    "time_window_start": "",
+    "time_window_end": "",
+    "enabled": true
+  },
+  {
+    "vendor": "Fiberhome",
+    "model": "AN5506-04-FA",
+    "hw_version": "V3.0",
+    "firmware_id": { "$oid": "507f1f77bcf86cd799439012" },
+    "concurrency": 5,
+    "time_window_start": "02:00",
+    "time_window_end": "04:00",
+    "enabled": false
+  }
+]

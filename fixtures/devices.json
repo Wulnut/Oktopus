@@ -1,0 +1,78 @@
+[
+  {
+    "_id": {
+      "$oid": "6a4f6ae53e4317d72f7e0dd6"
+    },
+    "sn": "SN-DEV-0001",
+    "model": "FH220",
+    "tenantid": "telkomsel",
+    "vendor": "ATEL",
+    "version": "lockdebug-2",
+    "productclass": "UG-8241",
+    "hwversion": "HWVer-B001",
+    "alias": "",
+    "status": 0,
+    "mqtt": 0,
+    "stomp": 0,
+    "websockets": 0,
+    "cwmp": 0,
+    "datamodel": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a4f71a82d0bc67cbd60b6a0"
+    },
+    "sn": "SN-DEV-0002",
+    "model": "FH220",
+    "tenantid": "telkomsel",
+    "vendor": "ATEL",
+    "version": "1.0.0-t1",
+    "productclass": "MA7608",
+    "hwversion": "HWVer-B001",
+    "alias": "",
+    "status": 2,
+    "mqtt": 2,
+    "stomp": 0,
+    "websockets": 0,
+    "cwmp": 0,
+    "datamodel": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a4f750e2d0bc67cbd60b6a5"
+    },
+    "sn": "SN-DEV-0003",
+    "model": "FH220",
+    "tenantid": "telkomsel",
+    "vendor": "ATEL",
+    "version": "lockdebug-2",
+    "productclass": "UG-8241",
+    "hwversion": "HWVer-B001",
+    "alias": "",
+    "status": 2,
+    "mqtt": 2,
+    "stomp": 0,
+    "websockets": 0,
+    "cwmp": 0,
+    "datamodel": ""
+  },
+  {
+    "_id": {
+      "$oid": "6a545799104b9c37bbb26081"
+    },
+    "sn": "SN-DEV-0004",
+    "model": "FH220",
+    "tenantid": "telkomsel",
+    "vendor": "ATEL",
+    "version": "lockdebug-2",
+    "productclass": "UG-8241",
+    "hwversion": "HWVer-B001",
+    "alias": "",
+    "status": 2,
+    "mqtt": 2,
+    "stomp": 0,
+    "websockets": 0,
+    "cwmp": 0,
+    "datamodel": ""
+  }
+]

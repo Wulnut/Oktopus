@@ -1,0 +1,38 @@
+[
+  {
+    "name": "HG8145V5 Production Firmware",
+    "vendor": "Huawei",
+    "model": "HG8145V5",
+    "hw_version": "169BW.A",
+    "build_version": "V5R019C00S150",
+    "file_size": 33554432,
+    "fingerprint": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    "phase": "release",
+    "download_url": "http://example.com/firmware/Huawei_HG8145V5_169BW.A_V5R019C00S150.bin",
+    "file_name": "Huawei_HG8145V5_169BW.A_V5R019C00S150.bin"
+  },
+  {
+    "name": "HG8245H Legacy Firmware",
+    "vendor": "Huawei",
+    "model": "HG8245H",
+    "hw_version": "169BW.A",
+    "build_version": "V5R017C00S120",
+    "file_size": 31457280,
+    "fingerprint": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+    "phase": "internal_testing",
+    "download_url": "http://example.com/firmware/Huawei_HG8245H_169BW.A_V5R017C00S120.bin",
+    "file_name": "Huawei_HG8245H_169BW.A_V5R017C00S120.bin"
+  },
+  {
+    "name": "Fiberhome AN5506 RP2631",
+    "vendor": "Fiberhome",
+    "model": "AN5506-04-FA",
+    "hw_version": "V3.0",
+    "build_version": "RP2631",
+    "file_size": 36700160,
+    "fingerprint": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+    "phase": "release",
+    "download_url": "http://example.com/firmware/Fiberhome_AN5506-04-FA_V3.0_RP2631.bin",
+    "file_name": "Fiberhome_AN5506-04-FA_V3.0_RP2631.bin"
+  }
+]

@@ -93,7 +93,7 @@ func TestNatsCustomReq_DoesNotTimeout(t *testing.T) {
 
 	// Responder: when we get a message on pubSubj, reply on subSubj
 	responderSub, err := nc.Subscribe(pubSubj, func(msg *nats.Msg) {
-		nc.Publish(subSubj, []byte(`{"Code":200,"Msg":"ok"}`))
+		nc.Publish(subSubj, []byte(`"ok"`))
 	})
 	if err != nil {
 		t.Fatalf("Failed to subscribe responder: %v", err)
@@ -103,8 +103,19 @@ func TestNatsCustomReq_DoesNotTimeout(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	start := time.Now()
-	_, _ = NatsCustomReq[*string](subSubj, pubSubj, []byte("test"), w, nc)
+	result, err := NatsCustomReq[*string](subSubj, pubSubj, []byte("test"), w, nc)
 	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("NatsCustomReq failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("NatsCustomReq returned nil result")
+	}
+	got, ok := result.(*string)
+	if !ok || got == nil || *got != "ok" {
+		t.Fatalf("NatsCustomReq result = %v, want %q", result, "ok")
+	}
 
 	// If it took close to NATS_REQUEST_TIMEOUT (10s), it timed out instead of
 	// receiving the response.

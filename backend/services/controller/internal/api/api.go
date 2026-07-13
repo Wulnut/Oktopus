@@ -67,6 +67,30 @@ func (a *Api) tenantKV(r *http.Request) (jetstream.KeyValue, error) {
 }
 
 func (a *Api) StartApi() {
+	r := a.BuildRouter()
+
+	corsOpts := cors.GetCorsConfig()
+
+	srv := &http.Server{
+		Addr:         "0.0.0.0:" + a.port,
+		WriteTimeout: time.Second * 60,
+		ReadTimeout:  time.Second * 60,
+		IdleTimeout:  time.Second * 60,
+		Handler:      corsOpts.Handler(r),
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Println(err)
+		}
+	}()
+	log.Println("Running REST API at port", a.port)
+}
+
+// BuildRouter wires every route and middleware onto a fresh mux.Router and returns it.
+// StartApi delegates here, then wraps the router in a CORS handler and binds a real port.
+// External black-box tests (tests/api_snapshot) reuse BuildRouter with httptest.NewServer.
+func (a *Api) BuildRouter() *mux.Router {
 	r := mux.NewRouter()
 	setJSONNotFoundHandler(r)
 
@@ -241,22 +265,7 @@ func (a *Api) StartApi() {
 
 	/* -------------------------------------------------------------------------- */
 
-	corsOpts := cors.GetCorsConfig()
-
-	srv := &http.Server{
-		Addr:         "0.0.0.0:" + a.port,
-		WriteTimeout: time.Second * 60,
-		ReadTimeout:  time.Second * 60,
-		IdleTimeout:  time.Second * 60,
-		Handler:      corsOpts.Handler(r),
-	}
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			log.Println(err)
-		}
-	}()
-	log.Println("Running REST API at port", a.port)
+	return r
 }
 
 func setJSONNotFoundHandler(r *mux.Router) {
