@@ -269,13 +269,36 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		found = false
 	}
 
-	if decision.Status == db.LockStatusPending {
+	// Record unauthorized devices (both LOCKED and PENDING). The state guard
+	// skips redundant upserts when IP and status are unchanged since the last
+	// evaluate (e.g. IP poll every 60s on a steady-state locked device).
+	shouldRecord := decision.Reason == db.LockReasonUnauthorized
+	if shouldRecord && found && prev.LastIP == reportedIP && prev.LastStatus == decision.Status {
+		shouldRecord = false
+	}
+	if shouldRecord {
 		_ = tdb.RecordUnauthorizedDevice(ctx, db.UnauthorizedDevice{
 			SN:         device.SN,
 			ReportedIP: reportedIP,
 			Reason:     decision.Reason,
 			Status:     decision.Status,
 		})
+	}
+
+	// Self-cleanup: when a previously non-unlocked device becomes authorized
+	// (e.g. IP drifted into a whitelist CIDR), remove its unauthorized entry
+	// and leave an audit trail.
+	if found && prev.LastStatus != db.LockStatusUnlocked && decision.Reason == db.LockReasonAuthorized {
+		if deleted, _ := tdb.DeleteUnauthorizedDevices(ctx, []string{device.SN}); deleted > 0 {
+			a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+				SN:     device.SN,
+				Action: "unauthorized_auto_resolved",
+				Details: bson.M{
+					"source":      "evaluate_ip_authorized",
+					"reported_ip": reportedIP,
+				},
+			})
+		}
 	}
 
 	details := bson.M{

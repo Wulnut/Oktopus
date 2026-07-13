@@ -490,6 +490,16 @@ func (t *TenantDB) DeleteUnauthorizedDevices(ctx context.Context, sns []string) 
 	return res.DeletedCount, nil
 }
 
+// ClearUnauthorizedDevices removes all unauthorized device entries.
+// Called when the master switch is disabled.
+func (t *TenantDB) ClearUnauthorizedDevices(ctx context.Context) (int64, error) {
+	res, err := t.UnauthorizedDevices().DeleteMany(ctx, bson.M{})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
+
 // ListLockCommands returns a page of lock command attempts.
 // pageNumber is 0-based; pageSize must be > 0 (caller clamps).
 func (t *TenantDB) ListLockCommands(ctx context.Context, sn string, pageNumber, pageSize int64) ([]LockCommandAttempt, int64, error) {
