@@ -370,7 +370,12 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	// Circuit breaker: suppress LOCK commands when tripped to prevent
 	// mass-lock accidents (e.g. misconfigured whitelist). UNLOCK is never
 	// suppressed. Successful deliveries are counted in deliverLockCommand.
+	// Still persist evaluated state so poll/notify can skip redundant work
+	// (same as the !ShouldCommand / shouldSkip early returns above).
 	if a.suppressLockIfBreakerTripped(ctx, tdb, tenantSlug, device.SN, decision.Status) {
+		if err := lockStateStore.Put(ctx, tenantSlug, device.SN, nextState); err != nil {
+			log.Printf("lock_engine: put device state %s: %v", device.SN, err)
+		}
 		return
 	}
 

@@ -474,6 +474,24 @@ func (t *TenantDB) DeleteUnsupportedLockDevice(ctx context.Context, sn string) e
 	_, err := t.UnsupportedLockDevices().DeleteOne(ctx, bson.M{"sn": NormalizeSN(sn)})
 	return err
 }
+ 
+ // DeleteUnsupportedLockDevices removes multiple unsupported-device rows.
+ // Only rows with opt_out=true should be passed by callers (UI enforces),
+ // but no filter is applied here so the data layer stays generic.
+ func (t *TenantDB) DeleteUnsupportedLockDevices(ctx context.Context, sns []string) (int64, error) {
+ 	if len(sns) == 0 {
+ 		return 0, nil
+ 	}
+ 	normalized := make([]string, 0, len(sns))
+ 	for _, sn := range sns {
+ 		normalized = append(normalized, NormalizeSN(sn))
+ 	}
+ 	res, err := t.UnsupportedLockDevices().DeleteMany(ctx, bson.M{"sn": bson.M{"$in": normalized}})
+ 	if err != nil {
+ 		return 0, err
+ 	}
+ 	return res.DeletedCount, nil
+ }
 
 func (t *TenantDB) DeleteUnauthorizedDevices(ctx context.Context, sns []string) (int64, error) {
 	if len(sns) == 0 {

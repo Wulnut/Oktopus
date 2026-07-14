@@ -251,6 +251,7 @@ func (a *Api) BuildRouter() *mux.Router {
 	lock.HandleFunc("/unsupported", a.listUnsupportedLockDevices).Methods("GET")
 	lock.HandleFunc("/unsupported/{sn}/opt-out", a.optOutUnsupportedLockDevice).Methods("POST")
 	lock.HandleFunc("/unsupported/{sn}/opt-out", a.clearOptOutUnsupportedLockDevice).Methods("DELETE")
+	lock.HandleFunc("/unsupported/batch-delete", a.batchDeleteUnsupportedLockDevices).Methods("POST")
 	lock.HandleFunc("/commands", a.listLockCommands).Methods("GET")
 	lock.HandleFunc("/commands", a.clearLockCommands).Methods("DELETE")
 	lock.HandleFunc("/audit", a.listLockAuditLogs).Methods("GET")
