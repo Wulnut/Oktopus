@@ -66,22 +66,28 @@ func (a *Api) deliverLockCommandByMTP(attempt db.LockCommandAttempt, decision Lo
 	}
 
 	if mtp == "cwmp" {
-		return a.deliverLockCommandCWMP(attempt, decision, tenantSlug)
+		return a.deliverLockCommandCWMP(attempt, decision, device.DataModel, tenantSlug)
 	}
 	return a.deliverLockCommandUSP(attempt, decision, tenantSlug, mtp)
 }
 
-func (a *Api) deliverLockCommandCWMP(attempt db.LockCommandAttempt, decision LockDecision, tenantSlug string) error {
-	payload := cwmp.SetParameterValues(lockParameterPath, decision.CommandValue)
-	qw := &quietResponseWriter{status: http.StatusOK}
-	_, _, err := cwmpInteraction[cwmp.SetParameterValuesResponse](attempt.DeviceSN, []byte(payload), qw, a.nc, tenantSlug)
-	if err != nil {
-		return err
+func (a *Api) deliverLockCommandCWMP(attempt db.LockCommandAttempt, decision LockDecision, dataModel, tenantSlug string) error {
+	// Try the datamodel-native root first, then the alternate root.
+	// Some TR-098 devices expose OntLock under Device. (TR-181) and vice versa.
+	for _, dm := range []string{dataModel, lockOppositeDataModel(dataModel)} {
+		payload := cwmp.SetParameterValues(lockParamPathCWMP(dm), decision.CommandValue)
+		qw := &quietResponseWriter{status: http.StatusOK}
+		_, _, err := cwmpInteraction[cwmp.SetParameterValuesResponse](attempt.DeviceSN, []byte(payload), qw, a.nc, tenantSlug)
+		if err == nil && qw.status == http.StatusOK {
+			return nil
+		}
+		lastErr := err
+		if lastErr == nil {
+			lastErr = fmt.Errorf("cwmp request failed with status %d: %s", qw.status, strings.TrimSpace(string(qw.body)))
+		}
+		_ = lastErr // try next root; return last error if both fail
 	}
-	if qw.status != http.StatusOK {
-		return fmt.Errorf("cwmp request failed with status %d: %s", qw.status, strings.TrimSpace(string(qw.body)))
-	}
-	return nil
+	return fmt.Errorf("cwmp SetParameterValues failed under both roots for %s", attempt.DeviceSN)
 }
 
 func (a *Api) deliverLockCommandUSP(attempt db.LockCommandAttempt, decision LockDecision, tenantSlug, mtp string) error {

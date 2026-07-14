@@ -49,7 +49,7 @@ func (a *Api) probeOntLockCapability(ctx context.Context, device entity.Device, 
 	}
 
 	if mtp == "cwmp" {
-		return a.probeOntLockCapabilityCWMP(device.SN, tenantSlug)
+		return a.probeOntLockCapabilityCWMP(device.SN, device.DataModel, tenantSlug)
 	}
 	return a.probeOntLockCapabilityUSP(device.SN, mtp, tenantSlug)
 }
@@ -65,29 +65,40 @@ func (a *Api) probeOntLockCapabilityUSP(sn, mtp, tenantSlug string) (lockProbeRe
 	return lockProbeOK, ""
 }
 
-func (a *Api) probeOntLockCapabilityCWMP(sn, tenantSlug string) (lockProbeResult, string) {
-	resp, err := cwmpGetValues(sn, []string{lockParameterPath, lockWanIPPath}, a.nc, tenantSlug)
-	if err != nil {
-		return classifyLockProbeError(err), err.Error()
-	}
-	foundLock, foundWan := false, false
-	for _, param := range resp.ParameterList {
-		switch param.Name {
-		case lockParameterPath:
-			foundLock = true
-		case lockWanIPPath:
-			foundWan = true
+func (a *Api) probeOntLockCapabilityCWMP(sn, dataModel, tenantSlug string) (lockProbeResult, string) {
+	// Try the datamodel-native root first, then the alternate root.
+	// Some TR-098 devices expose vendor extensions under Device. (TR-181)
+	// and vice versa, so probing both roots avoids misclassification.
+	roots := []string{dataModel, lockOppositeDataModel(dataModel)}
+	var lastErr error
+	for _, dm := range roots {
+		lockPath := lockParamPathCWMP(dm)
+		wanPath := lockWanIPPathCWMP(dm)
+		resp, err := cwmpGetValues(sn, []string{lockPath, wanPath}, a.nc, tenantSlug)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		foundLock, foundWan := false, false
+		for _, param := range resp.ParameterList {
+			switch param.Name {
+			case lockPath:
+				foundLock = true
+			case wanPath:
+				foundWan = true
+			}
+		}
+		if foundLock && foundWan {
+			return lockProbeOK, ""
+		}
+		if foundLock {
+			return lockProbeUnsupported, fmt.Sprintf("parameter %s not found in CWMP response", wanPath)
 		}
 	}
-	if !foundLock {
-		detail := fmt.Sprintf("parameter %s not found in CWMP response", lockParameterPath)
-		return lockProbeUnsupported, detail
+	if lastErr != nil {
+		return classifyLockProbeError(lastErr), lastErr.Error()
 	}
-	if !foundWan {
-		detail := fmt.Sprintf("parameter %s not found in CWMP response", lockWanIPPath)
-		return lockProbeUnsupported, detail
-	}
-	return lockProbeOK, ""
+	return lockProbeUnsupported, "OntLock parameters not found in CWMP response under either root"
 }
 
 // shouldProbeOntLockCapability decides whether to run an OntLock capability probe.
