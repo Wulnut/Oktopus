@@ -152,6 +152,14 @@ func (a *Api) StartLockEngine() {
 		log.Printf("lock_engine: failed to subscribe to device.v1.*.online: %v", err)
 	} else {
 		log.Printf("lock_engine: subscribed to device.v1.*.online (sub=%s)", sub.Subject)
+ 		// Re-evaluate all already-online devices so that devices that were
+ 		// online before the controller (re)started are not missed (they will
+ 		// not emit a new "online" event). Runs after a short delay to let NATS
+ 		// subscriptions settle.
+ 		go func() {
+ 			time.Sleep(5 * time.Second)
+ 			a.chaseLockOnStartup()
+ 		}()
 	}
 }
 
