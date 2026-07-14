@@ -227,9 +227,11 @@ const Page = () => {
   const [auditRowsPerPage, setAuditRowsPerPage] = useState(25);
   const [clearAuditOpen, setClearAuditOpen] = useState(false);
   const [clearCommandsOpen, setClearCommandsOpen] = useState(false);
-  const [unsupportedActionSn, setUnsupportedActionSn] = useState(null);
+ const [unsupportedActionSn, setUnsupportedActionSn] = useState(null);
+ const [selectedUnsupported, setSelectedUnsupported] = useState({});
+ const [unsupportedDeleteOpen, setUnsupportedDeleteOpen] = useState(false);
 
-  const whitelistFileRef = useRef(null);
+ const whitelistFileRef = useRef(null);
 
   const setTab = useCallback(
     (tab) => {
@@ -728,13 +730,73 @@ const Page = () => {
       if (status >= 200 && status < 300) {
         setAlert({ severity: 'success', message: 'Resumed detecting this device.' });
         fetchStatic();
-      }
-    } finally {
-      setUnsupportedActionSn(null);
-    }
-  };
+     }
+   } finally {
+     setUnsupportedActionSn(null);
+   }
+ };
+ 
+ const optOutUnsupportedDevices = unsupported.filter((d) => d.opt_out);
+ const selectedUnsupportedCount = Object.values(selectedUnsupported).filter(Boolean).length;
+ const allUnsupportedOptOutSelected =
+   optOutUnsupportedDevices.length > 0 &&
+   optOutUnsupportedDevices.every((item) => selectedUnsupported[item.sn]);
+ 
+ const toggleUnsupported = (sn) => {
+   setSelectedUnsupported((prev) => {
+     const next = { ...prev };
+     if (next[sn]) {
+       delete next[sn];
+     } else {
+       next[sn] = true;
+     }
+     return next;
+   });
+ };
+ 
+ const toggleAllUnsupported = () => {
+   if (allUnsupportedOptOutSelected) {
+     const next = { ...selectedUnsupported };
+     optOutUnsupportedDevices.forEach((item) => delete next[item.sn]);
+     setSelectedUnsupported(next);
+   } else {
+     const next = { ...selectedUnsupported };
+     optOutUnsupportedDevices.forEach((item) => {
+       next[item.sn] = true;
+     });
+     setSelectedUnsupported(next);
+   }
+ };
+ 
+ const deleteUnsupportedSelected = async () => {
+   const sns = Object.keys(selectedUnsupported).filter((sn) => selectedUnsupported[sn]);
+   if (sns.length === 0) {
+     setAlert({ severity: 'warning', message: 'Select at least one opted-out device.' });
+     return;
+   }
+   const body = JSON.stringify({ sns });
+   const { status, result } = await httpRequest(
+     `${apiPrefix}/lock/unsupported/batch-delete`,
+     'POST',
+     body
+   );
+   setUnsupportedDeleteOpen(false);
+   if (status === 200) {
+     setSelectedUnsupported({});
+     setAlert({
+       severity: 'success',
+       message: `Removed ${result?.deleted ?? sns.length} device(s) from the unsupported list.`,
+     });
+     await fetchStatic();
+   } else {
+     setAlert({
+       severity: 'error',
+       message: result?.error || result?.errors?.[0] || 'Failed to remove unsupported devices.',
+     });
+   }
+ };
 
-  const exportCommandsPage = () => {
+ const exportCommandsPage = () => {
     downloadCsv(
       'lock-commands.csv',
       ['SN', 'Target', 'Status', 'Command ID', 'Error', 'Updated'],
@@ -1161,29 +1223,64 @@ const Page = () => {
                 </Card>
 
                 <Card>
-                  <CardHeader title="Unsupported Devices" />
-                  <Divider />
-                  <TableContainer sx={{ overflowX: 'auto' }}>
-                    <Table sx={{ minWidth: 800 }} size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>SN</TableCell>
-                          <TableCell>Reason</TableCell>
-                          <TableCell>Detail</TableCell>
-                          <TableCell>Last Checked</TableCell>
-                          <TableCell>Opt-out</TableCell>
-                          <TableCell align="right">Actions</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {unsupported.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={6} sx={{ color: 'text.secondary' }}>No unsupported devices.</TableCell>
-                          </TableRow>
-                        ) : (
-                          unsupported.map((item) => (
-                            <TableRow key={item.sn} hover>
-                              <TruncatedCell value={item.sn} max={22} />
+                 <CardHeader title="Unsupported Devices" />
+                 <Divider />
+                 <Stack
+                   direction={{ xs: 'column', sm: 'row' }}
+                   spacing={1}
+                   sx={{ px: 2, pt: 2 }}
+                   alignItems={{ sm: 'center' }}
+                   justifyContent="flex-end"
+                 >
+                   <Button
+                     variant="outlined"
+                     color="error"
+                     onClick={() => setUnsupportedDeleteOpen(true)}
+                     disabled={selectedUnsupportedCount === 0}
+                     sx={{ flexShrink: 0 }}
+                   >
+                     Remove Selected
+                     {selectedUnsupportedCount > 0 ? ` (${selectedUnsupportedCount})` : ''}
+                   </Button>
+                 </Stack>
+                 <TableContainer sx={{ overflowX: 'auto' }}>
+                   <Table sx={{ minWidth: 800 }} size="small">
+                     <TableHead>
+                       <TableRow>
+                         <TableCell padding="checkbox">
+                           <Checkbox
+                             checked={allUnsupportedOptOutSelected}
+                             indeterminate={
+                               selectedUnsupportedCount > 0 && !allUnsupportedOptOutSelected
+                             }
+                             onChange={toggleAllUnsupported}
+                             disabled={optOutUnsupportedDevices.length === 0}
+                           />
+                         </TableCell>
+                         <TableCell>SN</TableCell>
+                         <TableCell>Reason</TableCell>
+                         <TableCell>Detail</TableCell>
+                         <TableCell>Last Checked</TableCell>
+                         <TableCell>Opt-out</TableCell>
+                         <TableCell align="right">Actions</TableCell>
+                       </TableRow>
+                     </TableHead>
+                     <TableBody>
+                       {unsupported.length === 0 ? (
+                         <TableRow>
+                           <TableCell colSpan={7} sx={{ color: 'text.secondary' }}>No unsupported devices.</TableCell>
+                         </TableRow>
+                       ) : (
+                         unsupported.map((item) => (
+                           <TableRow key={item.sn} hover>
+                             <TableCell padding="checkbox">
+                               <Checkbox
+                                 checked={Boolean(selectedUnsupported[item.sn])}
+                                 onChange={() => toggleUnsupported(item.sn)}
+                                 disabled={!item.opt_out}
+                               />
+                             </TableCell>
+                             <TruncatedCell value={item.sn} max={22} />
                               <TruncatedCell value={item.reason || '-'} max={18} />
                               <TruncatedCell value={item.detail || '-'} max={36} />
                               <TruncatedCell
@@ -1492,8 +1589,27 @@ const Page = () => {
             Remove
           </Button>
         </DialogActions>
-      </Dialog>
-      <Dialog open={clearCommandsOpen} onClose={() => setClearCommandsOpen(false)}>
+     </Dialog>
+     <Dialog open={unsupportedDeleteOpen} onClose={() => setUnsupportedDeleteOpen(false)}>
+       <DialogTitle>
+         Remove {selectedUnsupportedCount} Unsupported Device
+         {selectedUnsupportedCount === 1 ? '' : 's'}?
+       </DialogTitle>
+       <DialogContent>
+         <DialogContentText>
+           This removes the selected entries from the Unsupported list. Only devices that have been
+           stopped (opted out) can be removed. If a removed device comes online again, it will be
+           re-probed and re-added here if it is still unsupported.
+         </DialogContentText>
+       </DialogContent>
+       <DialogActions>
+         <Button onClick={() => setUnsupportedDeleteOpen(false)}>Cancel</Button>
+         <Button color="error" variant="contained" onClick={deleteUnsupportedSelected}>
+           Remove
+         </Button>
+       </DialogActions>
+     </Dialog>
+     <Dialog open={clearCommandsOpen} onClose={() => setClearCommandsOpen(false)}>
         <DialogTitle>Clear Command History?</DialogTitle>
         <DialogContent>
           <DialogContentText>

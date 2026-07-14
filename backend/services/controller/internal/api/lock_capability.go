@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+ 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -207,6 +208,61 @@ func (a *Api) optOutUnsupportedLockDevice(w http.ResponseWriter, r *http.Request
 	})
 	writeJSON(w, http.StatusOK, out)
 }
+ 
+ // batchDeleteUnsupportedLockDevices removes entries from the unsupported list
+ // only when the operator has opted them out (Stop detecting). This is a list
+ // cleanup operation: deleted devices will be re-probed on next online and
+ // re-added if still unsupported.
+ func (a *Api) batchDeleteUnsupportedLockDevices(w http.ResponseWriter, r *http.Request) {
+ 	var req lockBatchDeleteRequest
+ 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+ 		http.Error(w, "invalid body", http.StatusBadRequest)
+ 		return
+ 	}
+ 	if len(req.SNs) == 0 {
+ 		http.Error(w, "sns is required", http.StatusBadRequest)
+ 		return
+ 	}
+ 	tenantSlug := middleware.GetTenantSlug(r)
+ 	operator := middleware.GetEmail(r)
+ 
+ 	// Filter to only opt_out=true rows. Non-opted-out devices must not be
+ 	// silently removed — they are still actively probing.
+ 	eligible := make([]string, 0, len(req.SNs))
+ 	tdb := a.tenantDB(r)
+ 	for _, sn := range req.SNs {
+ 		row, err := tdb.GetUnsupportedLockDevice(r.Context(), sn)
+ 		if err == mongo.ErrNoDocuments {
+ 			continue
+ 		}
+ 		if err != nil {
+ 			http.Error(w, err.Error(), http.StatusInternalServerError)
+ 			return
+ 		}
+ 		if row.OptOut {
+ 			eligible = append(eligible, row.SN)
+ 		}
+ 	}
+ 	if len(eligible) == 0 {
+ 		writeJSON(w, http.StatusOK, lockBatchDeleteResult{Deleted: 0})
+ 		return
+ 	}
+ 	deleted, err := tdb.DeleteUnsupportedLockDevices(r.Context(), eligible)
+ 	result := lockBatchDeleteResult{Deleted: deleted}
+ 	if err != nil {
+ 		result.Errors = append(result.Errors, err.Error())
+ 		writeJSON(w, http.StatusMultiStatus, result)
+ 		return
+ 	}
+ 	for _, sn := range eligible {
+ 		a.recordLockAudit(r.Context(), tdb, tenantSlug, db.LockAuditLog{
+ 			SN:         sn,
+ 			Action:     "unsupported_batch_delete",
+ 			OperatorID: operator,
+ 		})
+ 	}
+ 	writeJSON(w, http.StatusOK, result)
+ }
 
 func (a *Api) clearOptOutUnsupportedLockDevice(w http.ResponseWriter, r *http.Request) {
 	sn := mux.Vars(r)["sn"]
