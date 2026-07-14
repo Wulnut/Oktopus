@@ -21,11 +21,46 @@ const (
 	lockParameterPath = "Device.X_TELKOMSEL_OntLock.Lock"
 	lockWanIPPath     = "Device.X_TELKOMSEL_OntLock.InternetWanIP"
 
+	ontLockObjectPath = "X_TELKOMSEL_OntLock."
+
 	lockTriggerOnline         = "online"
 	lockTriggerChase          = "chase"
 	lockTriggerIPChangePoll   = "ip_change_poll"
 	lockTriggerIPChangeNotify = "ip_change_notify"
 )
+
+
+// lockCWMPRootPrefix returns the CWMP root for OntLock paths based on the
+// device's stored data model. TR-098 devices use "InternetGatewayDevice.";
+// TR-181 (and unknown) devices use "Device.".
+func lockCWMPRootPrefix(dataModel string) string {
+	if dataModel == cwmpDataModelTR098 {
+		return cwmpRootTR098
+	}
+	return cwmpRootTR181
+}
+
+// lockParamPathCWMP returns the OntLock.Lock parameter path adapted for the
+// device's CWMP data model root.
+func lockParamPathCWMP(dataModel string) string {
+	return lockCWMPRootPrefix(dataModel) + ontLockObjectPath + "Lock"
+}
+
+// lockWanIPPathCWMP returns the OntLock.InternetWanIP parameter path adapted
+// for the device's CWMP data model root.
+func lockWanIPPathCWMP(dataModel string) string {
+	return lockCWMPRootPrefix(dataModel) + ontLockObjectPath + "InternetWanIP"
+}
+
+// lockOppositeDataModel returns the data model root opposite to the given one.
+// Used when a device's OntLock vendor extension lives under a different root
+// than its reported data model (e.g. a TR-098 device exposing OntLock under Device.).
+func lockOppositeDataModel(dataModel string) string {
+	if dataModel == cwmpDataModelTR098 {
+		return cwmpDataModelTR181
+	}
+	return cwmpDataModelTR098
+}
 
 // lockEngineConcurrency limits simultaneous device evaluations to protect
 // the database connection pool during burst events (e.g. 10k devices online).
@@ -397,16 +432,19 @@ func (a *Api) lockReportedIP(ctx context.Context, device entity.Device, tenantSl
 	mtp := lockDeviceMTP(device)
 
 	if mtp == "cwmp" {
-		resp, err := cwmpGetValues(device.SN, []string{lockWanIPPath}, a.nc, tenantSlug)
-		if err != nil {
-			log.Printf("lock_engine: get reported IP (cwmp) for %s: %v", device.SN, err)
-			return ""
-		}
-		for _, param := range resp.ParameterList {
-			if param.Name == lockWanIPPath {
-				return strings.TrimSpace(param.Value)
+		for _, dm := range []string{device.DataModel, lockOppositeDataModel(device.DataModel)} {
+			wanPath := lockWanIPPathCWMP(dm)
+			resp, err := cwmpGetValues(device.SN, []string{wanPath}, a.nc, tenantSlug)
+			if err != nil {
+				continue
+			}
+			for _, param := range resp.ParameterList {
+				if param.Name == wanPath {
+					return strings.TrimSpace(param.Value)
+				}
 			}
 		}
+		log.Printf("lock_engine: get reported IP (cwmp) for %s: OntLock not found under either root", device.SN)
 		return ""
 	}
 
