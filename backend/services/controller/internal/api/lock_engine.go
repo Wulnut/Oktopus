@@ -146,11 +146,113 @@ func ipInCIDR(ipValue, cidrValue string) bool {
 	if ip == nil {
 		return false
 	}
-	_, network, err := net.ParseCIDR(strings.TrimSpace(cidrValue))
-	if err != nil {
-		return false
+	for _, cidr := range strings.Split(cidrValue, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
 	}
-	return network.Contains(ip)
+	return false
+}
+
+// hostCIDR returns a single-host CIDR for the given bare IP address.
+// IPv4 -> "/32", IPv6 -> "/128". If the input is not a valid bare IP,
+// returns it unchanged so Validate() can catch it.
+func hostCIDR(ip string) string {
+	trimmed := strings.TrimSpace(ip)
+	parsed := net.ParseIP(trimmed)
+	if parsed == nil {
+		return ip
+	}
+	if ipv4 := parsed.To4(); ipv4 != nil {
+		return ipv4.String() + "/32"
+	}
+	return trimmed + "/128"
+}
+
+// normalizeReportedIP sanitizes a raw IP string from a device report.
+// Handles: multiple space/comma-separated addresses (returns first valid),
+// IPv6 zone IDs (strips "%eth0" suffix), empty/garbage input (returns "").
+func normalizeReportedIP(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	candidates := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ' ' || r == ',' || r == '\t'
+	})
+	for _, c := range candidates {
+		if idx := strings.Index(c, "%"); idx > 0 {
+			c = c[:idx]
+		}
+		if net.ParseIP(c) != nil {
+			return c
+		}
+	}
+	return ""
+}
+
+// mergeCIDRByFamily merges new CIDRs into an existing policy's AllowedIPRange.
+// A new CIDR replaces all existing CIDRs in the same IP family while preserving
+// CIDRs from the other family.
+func mergeCIDRByFamily(existing, newCIDRs string) string {
+	result := strings.TrimSpace(existing)
+	for _, newCIDR := range strings.Split(newCIDRs, ",") {
+		newCIDR = strings.TrimSpace(newCIDR)
+		if newCIDR == "" {
+			continue
+		}
+		result = mergeSingleCIDRByFamily(result, newCIDR)
+	}
+	return result
+}
+
+func mergeSingleCIDRByFamily(existing, newCIDR string) string {
+	newFamily, validNew := cidrFamily(newCIDR)
+	if !validNew {
+		if existing == "" {
+			return newCIDR
+		}
+		return existing + "," + newCIDR
+	}
+
+	parts := make([]string, 0, 2)
+	replaced := false
+	for _, cidr := range strings.Split(existing, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		family, valid := cidrFamily(cidr)
+		if valid && family == newFamily {
+			if !replaced {
+				parts = append(parts, newCIDR)
+				replaced = true
+			}
+			continue
+		}
+		parts = append(parts, cidr)
+	}
+	if !replaced {
+		parts = append(parts, newCIDR)
+	}
+	return strings.Join(parts, ",")
+}
+
+func cidrFamily(cidr string) (int, bool) {
+	_, network, err := net.ParseCIDR(strings.TrimSpace(cidr))
+	if err != nil {
+		return 0, false
+	}
+	_, bits := network.Mask.Size()
+	return bits, bits == 32 || bits == 128
 }
 
 // InitLockEngine initializes the circuit breaker and concurrency semaphore
@@ -247,6 +349,7 @@ func shouldSkipLockCommand(trigger string, found bool, prevStatus, decisionStatu
 // shouldProbeOntLockCapability allows (online always re-probes; poll/chase/notify
 // skip without probe when an unsupported row already exists). Unsupported/transient skip evaluate.
 func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, trigger, reportedIP string) {
+	reportedIP = normalizeReportedIP(reportedIP)
 	if a.unsupportedLockOptedOut(ctx, tdb, device.SN) {
 		return
 	}
@@ -276,7 +379,7 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	}
 
 	if reportedIP == "" {
-		reportedIP = a.lockReportedIP(ctx, device, tenantSlug)
+		reportedIP = normalizeReportedIP(a.lockReportedIP(ctx, device, tenantSlug))
 	}
 
 	policy, foundPolicy, err := lockCache.GetLockPolicy(ctx, tenantSlug, device.SN)

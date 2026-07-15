@@ -79,3 +79,39 @@ func TestLockCommandHistoryClearFilterOnlyCompleted(t *testing.T) {
 		}
 	}
 }
+
+func TestLockPolicyValidateCommaSeparatedCIDRs(t *testing.T) {
+	policy := LockPolicy{
+		SN:             "SN-001",
+		PolicyType:     LockPolicyWhitelist,
+		AllowedIPRange: "10.0.0.0/8,2001:db8::/32",
+		Status:         true,
+	}
+	if err := policy.Validate(); err != nil {
+		t.Fatalf("expected comma-separated v4+v6 CIDRs to validate, got %v", err)
+	}
+}
+
+func TestLockPolicyValidateRejectsBadCIDRInList(t *testing.T) {
+	policy := LockPolicy{
+		SN:             "SN-001",
+		PolicyType:     LockPolicyWhitelist,
+		AllowedIPRange: "10.0.0.0/8,not-a-cidr",
+		Status:         true,
+	}
+	if err := policy.Validate(); err == nil {
+		t.Fatal("expected validation error for bad CIDR in comma-separated list")
+	}
+}
+
+func TestLockPolicyValidateRejectsEmptyCIDRList(t *testing.T) {
+	policy := LockPolicy{
+		SN:             "SN-001",
+		PolicyType:     LockPolicyWhitelist,
+		AllowedIPRange: " , , ",
+		Status:         true,
+	}
+	if err := policy.Validate(); err == nil {
+		t.Fatal("expected validation error when CIDR list has no values")
+	}
+}

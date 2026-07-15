@@ -174,3 +174,122 @@ func TestShouldSkipLockCommandNoShouldCommandNeverSkips(t *testing.T) {
 		t.Fatal("!ShouldCommand path is handled separately; helper must return false")
 	}
 }
+
+func TestHostCIDR_IPv4(t *testing.T) {
+	got := hostCIDR("192.168.1.100")
+	if got != "192.168.1.100/32" {
+		t.Fatalf("expected 192.168.1.100/32, got %q", got)
+	}
+}
+
+func TestHostCIDR_IPv6(t *testing.T) {
+	got := hostCIDR("2001:db8::1")
+	if got != "2001:db8::1/128" {
+		t.Fatalf("expected 2001:db8::1/128, got %q", got)
+	}
+}
+
+func TestHostCIDR_Invalid(t *testing.T) {
+	got := hostCIDR("garbage")
+	if got != "garbage" {
+		t.Fatalf("expected garbage unchanged, got %q", got)
+	}
+}
+
+func TestNormalizeReportedIP_CleanIPv4(t *testing.T) {
+	got := normalizeReportedIP("192.168.1.100")
+	if got != "192.168.1.100" {
+		t.Fatalf("expected 192.168.1.100, got %q", got)
+	}
+}
+
+func TestNormalizeReportedIP_CleanIPv6(t *testing.T) {
+	got := normalizeReportedIP("2001:db8::1")
+	if got != "2001:db8::1" {
+		t.Fatalf("expected 2001:db8::1, got %q", got)
+	}
+}
+
+func TestNormalizeReportedIP_DualStack(t *testing.T) {
+	got := normalizeReportedIP("192.168.1.100 2001:db8::1")
+	if got != "192.168.1.100" {
+		t.Fatalf("expected first valid IP 192.168.1.100, got %q", got)
+	}
+}
+
+func TestNormalizeReportedIP_ZoneID(t *testing.T) {
+	got := normalizeReportedIP("fe80::1%eth0")
+	if got != "fe80::1" {
+		t.Fatalf("expected fe80::1 (zone stripped), got %q", got)
+	}
+}
+
+func TestNormalizeReportedIP_Empty(t *testing.T) {
+	got := normalizeReportedIP("")
+	if got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
+}
+
+func TestNormalizeReportedIP_Garbage(t *testing.T) {
+	got := normalizeReportedIP("not-an-ip")
+	if got != "" {
+		t.Fatalf("expected empty for garbage, got %q", got)
+	}
+}
+
+func TestIpInCIDR_CommaSeparated(t *testing.T) {
+	got := ipInCIDR("2001:db8::1", "192.168.1.100/32,2001:db8::1/128")
+	if !got {
+		t.Fatal("expected IPv6 match in comma-separated dual-stack CIDR")
+	}
+}
+
+func TestIpInCIDR_IPv6SingleHost(t *testing.T) {
+	got := ipInCIDR("2001:db8::1", "2001:db8::1/128")
+	if !got {
+		t.Fatal("expected IPv6 /128 match")
+	}
+}
+
+func TestIpInCIDR_IPv6NoMatch(t *testing.T) {
+	got := ipInCIDR("2001:db8::2", "2001:db8::1/128")
+	if got {
+		t.Fatal("expected no match for different IPv6 address")
+	}
+}
+
+func TestMergeCIDRByFamily_SameFamilyReplace(t *testing.T) {
+	got := mergeCIDRByFamily("10.0.0.1/32", "10.0.0.2/32")
+	if got != "10.0.0.2/32" {
+		t.Fatalf("expected same-family replace to 10.0.0.2/32, got %q", got)
+	}
+}
+
+func TestMergeCIDRByFamily_DifferentFamilyAppend(t *testing.T) {
+	got := mergeCIDRByFamily("10.0.0.1/32", "2001:db8::1/128")
+	if got != "10.0.0.1/32,2001:db8::1/128" {
+		t.Fatalf("expected dual-stack append, got %q", got)
+	}
+}
+
+func TestHostCIDR_IPv4MappedIPv6(t *testing.T) {
+	got := hostCIDR("::ffff:192.0.2.1")
+	if got != "192.0.2.1/32" {
+		t.Fatalf("expected mapped IPv4 to normalize to 192.0.2.1/32, got %q", got)
+	}
+}
+
+func TestMergeCIDRByFamily_DualStackReplaceIPv4(t *testing.T) {
+	got := mergeCIDRByFamily("10.0.0.1/32,2001:db8::1/128", "10.0.0.2/32")
+	if got != "10.0.0.2/32,2001:db8::1/128" {
+		t.Fatalf("expected IPv4 replacement while preserving IPv6, got %q", got)
+	}
+}
+
+func TestMergeCIDRByFamily_DualStackReplaceIPv6(t *testing.T) {
+	got := mergeCIDRByFamily("10.0.0.1/32,2001:db8::1/128", "2001:db8::2/128")
+	if got != "10.0.0.1/32,2001:db8::2/128" {
+		t.Fatalf("expected IPv6 replacement while preserving IPv4, got %q", got)
+	}
+}

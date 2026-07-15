@@ -52,6 +52,12 @@ const normalizeTab = (raw) => {
   return TAB_KEYS.includes(t) ? t : 'overview';
 };
 
+function hostCIDR(ip) {
+  const trimmed = (ip || '').trim();
+  if (!trimmed) return trimmed;
+  return trimmed.includes(':') ? `${trimmed}/128` : `${trimmed}/32`;
+}
+
 const initialPolicyForm = {
   sn: '',
   allowed_ip_range: '',
@@ -485,7 +491,7 @@ const Page = () => {
       items: selected.map((item) => ({
         sn: item.sn,
         reported_ip: item.reported_ip,
-        allowed_ip_range: item.reported_ip ? `${item.reported_ip}/32` : '',
+        allowed_ip_range: item.reported_ip ? hostCIDR(item.reported_ip) : '',
         description: 'Whitelisted from unauthorized list',
       })),
     });
@@ -917,7 +923,7 @@ const Page = () => {
                         fullWidth
                       />
                       <TextField
-                        label="Allowed IP Range (CIDR)"
+                        label="Allowed IP Range (CIDR, supports IPv4/IPv6)"
                         value={whitelistForm.allowed_ip_range}
                         onChange={(event) =>
                           setWhitelistForm((prev) => ({
@@ -925,7 +931,7 @@ const Page = () => {
                             allowed_ip_range: event.target.value,
                           }))
                         }
-                        placeholder="10.10.0.0/16"
+                        placeholder="10.10.0.0/16 or 2001:db8::/64"
                         required
                         fullWidth
                       />

@@ -323,7 +323,12 @@ func (a *Api) batchWhitelistFromUnauthorized(w http.ResponseWriter, r *http.Requ
 			OperatorID:     middleware.GetEmail(r),
 		}
 		if policy.AllowedIPRange == "" && item.ReportedIP != "" {
-			policy.AllowedIPRange = item.ReportedIP + "/32"
+			policy.AllowedIPRange = hostCIDR(item.ReportedIP)
+		}
+		// If the device already has a whitelist policy with a different IP family,
+		// merge the new CIDR into the existing one instead of replacing.
+		if existing, err := a.tenantDB(r).GetLockPolicy(r.Context(), item.SN); err == nil && existing.AllowedIPRange != "" {
+			policy.AllowedIPRange = mergeCIDRByFamily(existing.AllowedIPRange, policy.AllowedIPRange)
 		}
 		created, err := a.tenantDB(r).UpsertLockPolicy(r.Context(), policy)
 		if err != nil {
