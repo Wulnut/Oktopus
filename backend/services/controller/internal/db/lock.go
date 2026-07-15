@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -162,8 +163,19 @@ func (p LockPolicy) Validate() error {
 	if p.AllowedIPRange == "" {
 		return errors.New("allowed_ip_range is required")
 	}
-	if _, _, err := net.ParseCIDR(p.AllowedIPRange); err != nil {
-		return err
+	validCIDRs := 0
+	for _, cidr := range strings.Split(p.AllowedIPRange, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("invalid CIDR %q: %w", cidr, err)
+		}
+		validCIDRs++
+	}
+	if validCIDRs == 0 {
+		return errors.New("allowed_ip_range must contain at least one CIDR")
 	}
 	return nil
 }
