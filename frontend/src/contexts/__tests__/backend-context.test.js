@@ -33,11 +33,14 @@ const wrapper = ({ children }) => <BackendProvider>{children}</BackendProvider>;
 beforeEach(() => {
   jest.clearAllMocks();
   global.fetch = jest.fn();
-  global.localStorage = {
-    getItem: jest.fn(() => 'test-token'),
-    setItem: jest.fn(),
-    removeItem: jest.fn(),
-  };
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: jest.fn(() => 'test-token'),
+      setItem: jest.fn(),
+      removeItem: jest.fn(),
+    },
+  });
 });
 
 test('httpRequest sends GET with auth header and returns parsed JSON', async () => {
@@ -123,4 +126,40 @@ test('httpRequest reads token fresh per request, not cached at init', () => {
       'token is cached at init and never refreshed'
     );
   }
+});
+
+test('httpRequest merges auth and endpoint when custom headers are supplied', async () => {
+  process.env.NEXT_PUBLIC_REST_ENDPOINT = 'https://controller.example';
+  global.fetch.mockResolvedValue({
+    status: 202,
+    ok: true,
+    json: () => Promise.resolve({ created: 1 }),
+  });
+
+  const { result } = renderHook(() => useBackendContext(), { wrapper });
+  const file = new File(['csv'], 'batch.csv', { type: 'text/csv' });
+
+  await act(async () => {
+    await result.current.httpRequest(
+      '/api/lock/whitelist/batch',
+      'POST',
+      file,
+      { 'Content-Type': 'text/csv' },
+      'json'
+    );
+  });
+
+  expect(global.fetch).toHaveBeenCalledWith(
+    'https://controller.example/api/lock/whitelist/batch',
+    expect.objectContaining({
+      method: 'POST',
+      body: file,
+      headers: expect.any(Headers),
+      signal: expect.any(AbortSignal),
+    })
+  );
+  const options = global.fetch.mock.calls[0][1];
+  expect(options.headers.get('Authorization')).toBe('test-token');
+  expect(options.headers.get('Content-Type')).toBe('text/csv');
+  delete process.env.NEXT_PUBLIC_REST_ENDPOINT;
 });

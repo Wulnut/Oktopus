@@ -57,7 +57,6 @@ import TrashIcon from '@heroicons/react/24/outline/TrashIcon';
 
 import { Scrollbar } from 'src/components/scrollbar';
 import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
-import { useAuth } from 'src/hooks/use-auth';
 import { useBackendContext } from 'src/contexts/backend-context';
 import { useRouter } from 'next/router';
 import { useTheme } from '@emotion/react';
@@ -66,7 +65,6 @@ const Page = () => {
 
   const theme = useTheme();
   const router = useRouter()
-  const auth = useAuth();
   const { httpRequest, setAlert, apiPrefix } = useBackendContext();
 
   const [devices, setDevices] = useState([]);
@@ -119,19 +117,6 @@ const Page = () => {
   });
 
   const [showSpeedDial, setShowSpeedDial] = useState(false);
-
-  const getColumns = () => {
-    localStorage.getItem("columns") ? setColumns(JSON.parse(localStorage.getItem("columns"))) : setColumns({
-      version: true,
-      sn: true,
-      alias: false,
-      model: true,
-      vendor: true,
-      status: true,
-      actions: true,
-      label: false
-    })
-  }
 
   const changeColumn = (column) => {
     console.log("columns old:", columns)
@@ -207,49 +192,81 @@ const Page = () => {
   ];
 
   useEffect(() => {
+    const savedColumns = localStorage.getItem("columns");
+    if (savedColumns) {
+      try {
+        setColumns(JSON.parse(savedColumns));
+      } catch {
+        localStorage.removeItem("columns");
+      }
+    } else {
+      setColumns({
+        version: true,
+        sn: true,
+        alias: false,
+        model: true,
+        vendor: true,
+        status: true,
+        actions: true,
+        label: false
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
     const loadDevices = async () => {
-    getColumns()
-    setLoading(true)
+      setLoading(true);
 
-    try {
-      const { status, result } = await httpRequest(
-        `${apiPrefix}/device?statusOrder=${statusOrder}&page_number=${page}&page_size=${rowsPerPage}&vendor=${filtersList["vendor"]}&version=${filtersList["version"]}&alias=${filtersList["alias"]}&type=${filtersList["type"]}&status=${filtersList["status"]}&model=${filtersList["model"]}`,
-        'GET'
-      );
-      if (status == 200 && result) {
-        const list = Array.isArray(result.devices) ? result.devices : [];
-        setPages((result.pages || 0) + 1);
-        setPage((result.page || 0) + 1);
-        setTotal(result.total || 0);
-        setDevices(list);
-        setSelected(new Array(list.length).fill(false));
-        setLoading(false);
-        setDeviceFound(list.length > 0);
-      } else if (status == 404) {
-        // Legacy empty-list response; keep compatibility until all clients migrate.
-        setDevices([]);
-        setTotal(0);
-        setLoading(false);
-        setDeviceFound(false);
-      } else {
-        setLoading(false);
-      }
-    } catch (error) {
-      setAlert({ severity: 'error', message: 'Failed to load devices' });
-      setLoading(false);
-    }
+      try {
+        const { status, result } = await httpRequest(
+          `${apiPrefix}/device?statusOrder=desc&page_number=0&page_size=20&vendor=&version=&alias=&type=&status=&model=`,
+          'GET'
+        );
+        if (cancelled) return;
 
-    try {
-      const { status, result } = await httpRequest(`${apiPrefix}/device/filterOptions`, 'GET');
-      if (status == 200 && result) {
-        setFilterOptions(result);
+        if (status == 200 && result) {
+          const list = Array.isArray(result.devices) ? result.devices : [];
+          setPages((result.pages || 0) + 1);
+          setPage((result.page || 0) + 1);
+          setTotal(result.total || 0);
+          setDevices(list);
+          setSelected(new Array(list.length).fill(false));
+          setDeviceFound(list.length > 0);
+        } else if (status == 404) {
+          // Legacy empty-list response; keep compatibility until all clients migrate.
+          setDevices([]);
+          setTotal(0);
+          setDeviceFound(false);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAlert({ severity: 'error', message: 'Failed to load devices' });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      console.error('Error loading filter options:', error);
-    }
+
+      try {
+        const { status, result } = await httpRequest(`${apiPrefix}/device/filterOptions`, 'GET');
+        if (!cancelled && status == 200 && result) {
+          setFilterOptions(result);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error loading filter options:', error);
+        }
+      }
     };
+
     loadDevices();
-  }, [auth.user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [apiPrefix, httpRequest, setAlert]);
 
   const removeDevice = async (sn) => {
     try {
@@ -413,7 +430,7 @@ const Page = () => {
                 </Button>
                 {Object.keys(filtersList).map((key) => (
                   (filtersList[key] && 
-                  <Chip label={`${key} : ${filtersList[key]}`} sx={{ml:1, mt:1}} onDelete={()=>{
+                  <Chip key={key} label={`${key} : ${filtersList[key]}`} sx={{ml:1, mt:1}} onDelete={()=>{
                     setFiltersList({ ...filtersList, [key]: "" })
                     setNewFiltersList({ ...newFiltersList, [key]: ""})
                     fetchDevicePerPage(1, statusOrder, { ...filtersList, [key]: "" })
@@ -786,8 +803,8 @@ const Page = () => {
                   fullWidth
                 >
                   {
-                    filterOptions.productClasses.map((v) => {
-                      return <MenuItem value={v}>{v}</MenuItem>
+                    filterOptions.productClasses.map((v, index) => {
+                      return <MenuItem key={`${v}-${index}`} value={v}>{v}</MenuItem>
                     })
                   }
                 </Select>
@@ -806,8 +823,8 @@ const Page = () => {
                   fullWidth
                 >
                   {
-                    filterOptions.vendors.map((v) => {
-                      return <MenuItem value={v}>{v}</MenuItem>
+                    filterOptions.vendors.map((v, index) => {
+                      return <MenuItem key={`${v}-${index}`} value={v}>{v}</MenuItem>
                     })
                   }
                 </Select>
@@ -820,8 +837,8 @@ const Page = () => {
                   fullWidth
                 >
                   {
-                    filterOptions.versions.map((v) => {
-                      return <MenuItem value={v}>{v}</MenuItem>
+                    filterOptions.versions.map((v, index) => {
+                      return <MenuItem key={`${v}-${index}`} value={v}>{v}</MenuItem>
                     })
                   }
                 </Select>
@@ -885,8 +902,8 @@ const Page = () => {
                   fullWidth
                 >
                   {
-                    filterOptions.models.map((v) => {
-                      return <MenuItem value={v}>{v}</MenuItem>
+                    filterOptions.models.map((v, index) => {
+                      return <MenuItem key={`${v}-${index}`} value={v}>{v}</MenuItem>
                     })
                   }
                 </Select>

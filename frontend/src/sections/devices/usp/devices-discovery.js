@@ -380,9 +380,9 @@ export const DevicesDiscovery = ({ onStatusRefresh }) => {
 
   // Derive device ID and current TR-181 path from URL
   const deviceID = router.query.id?.[0];
-  const pathSegments = router.query.id?.slice(2) || [];
+  const pathSegments = useMemo(() => router.query.id?.slice(2) || [], [router.query.id]);
   const pathKey = pathSegments.join('/');
-  const currentPath = useMemo(() => segmentsToPath(pathSegments), [pathKey]);
+  const currentPath = useMemo(() => segmentsToPath(pathSegments), [pathSegments]);
 
   // Tab State
   const [activeTab, setActiveTab] = useState(0);

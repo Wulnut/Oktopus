@@ -287,7 +287,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
   const [execUnitDetailViewMode, setExecUnitDetailViewMode] = useState('pretty'); // 'pretty' or 'raw'
 
   // Check if Device.SoftwareModules. is supported
-  const checkSoftwareModulesSupport = async () => {
+  const checkSoftwareModulesSupport = useCallback(async () => {
     try {
       const getSupportedDMCommand = {
         header: {
@@ -342,10 +342,10 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     } finally {
       setCheckingSupport(false);
     }
-  };
+  }, [apiPrefix, deviceID, httpRequest]);
 
   // Fetch Deployment Units list
-  const fetchDeploymentUnits = async () => {
+  const fetchDeploymentUnits = useCallback(async () => {
     onStatusRefresh?.();
     setLoading(true);
     setError(null);
@@ -389,7 +389,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiPrefix, deviceID, httpRequest, onStatusRefresh]);
 
   // Parse DeploymentUnits, ExecutionUnits, and AgentRequests from GET response
   const parseDeploymentUnits = (response) => {
@@ -552,7 +552,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
   };
 
   // Fetch ExecutionUnit details
-  const fetchExecutionUnitDetail = async (execUnitPath) => {
+  const fetchExecutionUnitDetail = useCallback(async (execUnitPath) => {
     if (!execUnitPath) return;
 
     setLoadingExecUnitDetail(true);
@@ -621,7 +621,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     } finally {
       setLoadingExecUnitDetail(false);
     }
-  };
+  }, [apiPrefix, deviceID, httpRequest]);
 
   // Parse ExecutionUnit detail response
   const parseExecutionUnitDetail = (response) => {
@@ -669,7 +669,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
   };
 
   // Fetch IP Interface Aliases for Port Forwarding
-  const fetchInterfaceAliases = async () => {
+  const fetchInterfaceAliases = useCallback(async () => {
     setLoadingInterfaces(true);
     try {
       const getCommand = {
@@ -744,10 +744,10 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     } finally {
       setLoadingInterfaces(false);
     }
-  };
+  }, [apiPrefix, deviceID, httpRequest]);
 
   // Fetch Execution Environments list
-  const fetchExecutionEnvironments = async () => {
+  const fetchExecutionEnvironments = useCallback(async () => {
     try {
       const getCommand = {
         header: {
@@ -781,7 +781,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
       // Set default if fetch fails
       setExecutionEnvironments(['Device.SoftwareModules.ExecEnv.1.']);
     }
-  };
+  }, [apiPrefix, deviceID, httpRequest]);
 
   // Parse ExecutionEnvironments from GET response
   const parseExecutionEnvironments = (response) => {
@@ -916,7 +916,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     } finally {
       setLoadingDockerImages(false);
     }
-  }, []);
+  }, [tenantSlug]);
 
   // Parse docker:// URL to extract container name and tag
   // We use the local registry from compose, so we don't need the host
@@ -973,7 +973,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
 
   // Check if there's a newer version available
   // Compares current tag with available tags (already fetched)
-  const checkForUpdates = (unit, availableTags) => {
+  const checkForUpdates = useCallback((unit, availableTags) => {
     if (!unit.url || !availableTags || availableTags.length === 0) {
       return { hasUpdate: false, latestTag: null };
     }
@@ -1021,7 +1021,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     }
 
     return { hasUpdate: false, latestTag };
-  };
+  }, []);
 
   // Check update status for all deployment units
   // Optimized: fetches tags once per unique container
@@ -1078,7 +1078,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     };
 
     checkAllUpdates();
-  }, [deploymentUnits]);
+  }, [checkForUpdates, deploymentUnits]);
 
   // Auto-fetch images and interfaces when install dialog opens
   useEffect(() => {
@@ -1095,7 +1095,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
       setInstallUrl('');
       setPortForwarding([]);
     }
-  }, [showInstallDialog, fetchDockerImages]);
+  }, [showInstallDialog, fetchDockerImages, fetchInterfaceAliases]);
 
   // Ensure subscription exists for async operation
   // Returns true if subscription exists or was created successfully, false on error
@@ -1851,7 +1851,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     if (deviceID) {
       checkSoftwareModulesSupport();
     }
-  }, [deviceID]);
+  }, [checkSoftwareModulesSupport, deviceID]);
 
   // Fetch data after support check completes
   useEffect(() => {
@@ -1859,7 +1859,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
       fetchDeploymentUnits();
       fetchExecutionEnvironments();
     }
-  }, [deviceID, isSupported, checkingSupport]);
+  }, [deviceID, isSupported, checkingSupport, fetchDeploymentUnits, fetchExecutionEnvironments]);
 
   // Auto-refresh deployment units list every 10 seconds
   useEffect(() => {
@@ -1873,7 +1873,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
     }, 10000); // Refresh every 10 seconds
 
     return () => clearInterval(interval);
-  }, [deviceID, loading, showInstallDialog, showUninstallDialog, showUpdateDialog, isSupported]);
+  }, [deviceID, loading, showInstallDialog, showUninstallDialog, showUpdateDialog, isSupported, fetchDeploymentUnits]);
 
   // Refresh UUID when dialog opens
   useEffect(() => {
@@ -1897,7 +1897,7 @@ export const DevicesLCM = ({ onStatusRefresh }) => {
       // Refresh ExecutionUnit data
       fetchExecutionUnitDetail(selectedExecUnitPath);
     }
-  }, [showExecUnitDetailDialog, selectedExecUnitPath]);
+  }, [showExecUnitDetailDialog, selectedExecUnitPath, interfaceOptions.length, fetchExecutionUnitDetail, fetchInterfaceAliases]);
 
   return (
     <>

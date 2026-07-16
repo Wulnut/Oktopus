@@ -70,7 +70,7 @@ const Page = () => {
     } finally {
       setScriptsLoading(false);
     }
-  }, []);
+  }, [apiPrefix, httpRequest]);
 
   const fetchJobs = useCallback(async () => {
     setJobsLoading(true);
@@ -82,7 +82,7 @@ const Page = () => {
     } finally {
       setJobsLoading(false);
     }
-  }, []);
+  }, [apiPrefix, httpRequest]);
 
   useEffect(() => {
     fetchScripts();
@@ -95,7 +95,7 @@ const Page = () => {
     if (!hasRunning) return;
     const interval = setInterval(fetchJobs, 5000);
     return () => clearInterval(interval);
-  }, [jobs]);
+  }, [fetchJobs, jobs]);
 
   const selectedScript = scripts.find((s) => s.id === selectedScriptId);
 
@@ -110,7 +110,7 @@ const Page = () => {
       vars[v.name] = v.default || '';
     }
     setVariables(vars);
-  }, [selectedScriptId]);
+  }, [selectedScript, selectedScriptId]);
 
   const handleSubmit = async () => {
     if (!selectedScript || selectedSNs.length === 0) return;

@@ -1,4 +1,4 @@
-# Oktopus CI — 8 test jobs; unit tests parallel, integration after unit (parallel).
+# Oktopus CI — 9 required test jobs; unit tests parallel, integration after unit (parallel).
 # Snapshot black-box API tests (test:snapshot:api / :load) are opt-in/manual and
 # never gate deploys.
 # Deploy: source pack + SSH + remote build (auto on telkomsel/ont-lock-dev and telkomsel/ont-lock).
@@ -65,7 +65,7 @@ stages:
   extends: .test_artifacts
 
 # ---------------------------------------------------------------------------
-# Unit tests — 5 jobs in parallel (stage: test-unit)
+# Unit tests — 6 jobs in parallel (stage: test-unit)
 # ---------------------------------------------------------------------------
 test:unit:controller:
   extends: .go_job
@@ -99,6 +99,12 @@ test:unit:infra:
   script:
     - go_test_report test-reports/test-infra.log "$JUNIT_REPORT" bash -c 'cd deploy/tests && PROJECT_ROOT="$CI_PROJECT_DIR" go test -v -count=1 ./...'
 
+test:unit:fixtures:
+  image: python:3.12-alpine
+  stage: test-unit
+  script:
+    - cd "$CI_PROJECT_DIR/scripts/test-data" && python -m unittest -v test_sanitize.py
+
 test:unit:frontend:
   extends: .node_job
   stage: test-unit
@@ -121,6 +127,7 @@ test:unit:frontend:
     - test:unit:acs
     - test:unit:adapter
     - test:unit:infra
+    - test:unit:fixtures
     - test:unit:frontend
 
 test:integration:db:
@@ -150,7 +157,7 @@ test:integration:bridge:
       command: ["--js"]
   script:
     - sleep 3
-    - go_test_report test-reports/test-bridge.log "$JUNIT_REPORT" bash -c "cd backend/services/controller && go test -v -count=1 -timeout=120s -run 'TestNatsUspInteraction_SingleRequest_Success|TestNatsUspInteraction_Timeout' ./internal/bridge/"
+    - go_test_report test-reports/test-bridge.log "$JUNIT_REPORT" bash -c "cd backend/services/controller && go test -v -count=1 -timeout=120s ./internal/bridge/"
 
 test:integration:handlers:
   extends:

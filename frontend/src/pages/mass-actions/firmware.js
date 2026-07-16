@@ -381,7 +381,7 @@ const CampaignLogs = ({ campaignId }) => {
     } finally {
       setLoading(false);
     }
-  }, [campaignId, page]);
+  }, [apiPrefix, campaignId, httpRequest, page]);
 
   useEffect(() => {
     fetchLogs();
@@ -516,7 +516,7 @@ const Page = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiPrefix, httpRequest, setAlert]);
 
   const fetchFirmware = useCallback(async () => {
     try {
@@ -527,7 +527,7 @@ const Page = () => {
     } catch {
       // ignore
     }
-  }, []);
+  }, [apiPrefix, httpRequest]);
 
   useEffect(() => {
     fetchCampaigns();

@@ -39,6 +39,7 @@ EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 # rewriting any string that contains a sanitized SN.
 
 SANITIZED_SN_RE = re.compile(r"^SN-DEV-\d+$")
+SERIAL_FIELD_KEYS = {"sn", "devicesn", "serialnumber"}
 
 
 def new_sn(seq: int) -> str:
@@ -143,6 +144,20 @@ class Sanitizer:
             return sn
         return self._map(self.sn_map, sn, new_sn)
 
+    @staticmethod
+    def _is_serial_field(key: str) -> bool:
+        normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+        return normalized in SERIAL_FIELD_KEYS
+
+    def rewrite_serial_value(self, value: str) -> str:
+        # Internal device IDs may prefix the actual CPE serial (for example,
+        # "proto::ABCD1234"). Preserve the namespace while mapping only the
+        # device-controlled identifier so embedded copies use the same token.
+        prefix, separator, serial = value.rpartition("::")
+        if separator:
+            return f"{prefix}{separator}{self.rewrite_sn(serial)}"
+        return self.rewrite_sn(value)
+
     def rewrite_string(self, s: str) -> str:
         if not isinstance(s, str) or not s:
             return s
@@ -192,7 +207,20 @@ class Sanitizer:
 
     def rewrite(self, obj: Any) -> Any:
         if isinstance(obj, dict):
-            return {self._rewrite_key(k): self.rewrite(v) for k, v in obj.items()}
+            # Register all explicit serial fields before rewriting any sibling
+            # values. This makes sanitization independent of key order and lets
+            # JSON-encoded payload strings reuse the same serial mapping.
+            for key, value in obj.items():
+                if isinstance(value, str) and self._is_serial_field(key):
+                    self.rewrite_serial_value(value)
+
+            rewritten: Dict[str, Any] = {}
+            for key, value in obj.items():
+                if isinstance(value, str) and self._is_serial_field(key):
+                    rewritten[self._rewrite_key(key)] = self.rewrite_serial_value(value)
+                else:
+                    rewritten[self._rewrite_key(key)] = self.rewrite(value)
+            return rewritten
         if isinstance(obj, list):
             return [self.rewrite(x) for x in obj]
         if isinstance(obj, str):

@@ -64,7 +64,7 @@ export const CredentialsTable = (props) => {
       }))
     })
     // console.log("showPassword: "+ showPassword)
-  },[])
+  },[items])
   
   return (
     <Card>

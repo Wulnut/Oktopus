@@ -1,13 +1,19 @@
 package bridge
 
 import (
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/leandrofars/oktopus/internal/usp/usp_msg"
+	"github.com/leandrofars/oktopus/internal/usp/usp_utils"
 	"github.com/nats-io/nats.go"
+	"google.golang.org/protobuf/proto"
 )
 
 // TestNatsUspInteraction_ConcurrentSameDevice verifies that two concurrent
@@ -51,7 +57,7 @@ func TestNatsUspInteraction_ConcurrentSameDevice(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			w := httptest.NewRecorder()
-			payload := []byte("request-" + string(rune('A'+idx)))
+			payload := uspRecordForTest(t, "request-"+string(rune('A'+idx)))
 			results[idx], errors[idx] = NatsUspInteraction(subSubj, pubSubj, payload, w, nc)
 		}(i)
 	}
@@ -125,6 +131,37 @@ func TestNatsCustomReq_DoesNotTimeout(t *testing.T) {
 }
 
 // TestNatsUspInteraction_SingleRequest_Success verifies the happy path.
+func TestNatsCustomReq_PublishFailureDoesNotWriteAfterReturn(t *testing.T) {
+	natsURL := natsTestURL()
+	if natsURL == "" {
+		t.Skip("NATS_URL not set -- skipping bridge integration test")
+	}
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to NATS: %v", err)
+	}
+	nc.Close()
+
+	w := &returnAwareWriter{ResponseRecorder: httptest.NewRecorder()}
+	_, err = natsCustomReq[*string](
+		"test.custom.publish-failure.sub",
+		"test.custom.publish-failure.pub",
+		[]byte("request"),
+		w,
+		nc,
+		25*time.Millisecond,
+	)
+	if err == nil {
+		t.Fatal("expected publish failure")
+	}
+	w.returned.Store(true)
+	time.Sleep(75 * time.Millisecond)
+	if got := w.writesAfterReturn.Load(); got != 0 {
+		t.Fatalf("response writer was used %d times after NatsCustomReq returned", got)
+	}
+}
+
 func TestNatsUspInteraction_SingleRequest_Success(t *testing.T) {
 	natsURL := natsTestURL()
 	if natsURL == "" {
@@ -139,7 +176,7 @@ func TestNatsUspInteraction_SingleRequest_Success(t *testing.T) {
 
 	subSubj := "test.usp.single.sub"
 	pubSubj := "test.usp.single.pub"
-	expected := []byte("hello-response")
+	expected := uspRecordForTest(t, "single-request")
 
 	responderSub, err := nc.Subscribe(pubSubj, func(msg *nats.Msg) {
 		nc.Publish(subSubj, expected)
@@ -150,7 +187,7 @@ func TestNatsUspInteraction_SingleRequest_Success(t *testing.T) {
 	defer responderSub.Unsubscribe()
 
 	w := httptest.NewRecorder()
-	result, err := NatsUspInteraction(subSubj, pubSubj, []byte("request"), w, nc)
+	result, err := NatsUspInteraction(subSubj, pubSubj, expected, w, nc)
 	if err != nil {
 		t.Fatalf("Expected success, got error: %v", err)
 	}
@@ -174,13 +211,93 @@ func TestNatsUspInteraction_Timeout(t *testing.T) {
 
 	// No responder -- should timeout
 	w := httptest.NewRecorder()
-	_, err = NatsUspInteraction("test.timeout.sub", "test.timeout.pub", []byte("req"), w, nc)
+	_, err = natsUspInteraction("test.timeout.sub", "test.timeout.pub", uspRecordForTest(t, "timeout-request"), w, nc, 50*time.Millisecond)
 	if err == nil {
 		t.Error("Expected timeout error, got nil")
 	}
 	if err != errNatsRequestTimeout {
 		t.Errorf("Expected errNatsRequestTimeout, got %v", err)
 	}
+}
+
+func TestNatsUspInteraction_InvalidRecordFailsBeforeNATS(t *testing.T) {
+	w := httptest.NewRecorder()
+
+	_, err := natsUspInteraction("unused.sub", "unused.pub", []byte("not-protobuf"), w, nil, time.Second)
+	if !errors.Is(err, errInvalidUSPRequest) {
+		t.Fatalf("expected errInvalidUSPRequest, got %v", err)
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestNatsUspInteraction_PublishFailureDoesNotWriteAfterReturn(t *testing.T) {
+	natsURL := natsTestURL()
+	if natsURL == "" {
+		t.Skip("NATS_URL not set -- skipping bridge integration test")
+	}
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("Failed to connect to NATS: %v", err)
+	}
+	nc.Close()
+
+	w := &returnAwareWriter{ResponseRecorder: httptest.NewRecorder()}
+	_, err = natsUspInteraction(
+		"test.publish-failure.sub",
+		"test.publish-failure.pub",
+		uspRecordForTest(t, "publish-failure"),
+		w,
+		nc,
+		25*time.Millisecond,
+	)
+	if err == nil {
+		t.Fatal("expected publish failure")
+	}
+	w.returned.Store(true)
+	time.Sleep(75 * time.Millisecond)
+	if got := w.writesAfterReturn.Load(); got != 0 {
+		t.Fatalf("response writer was used %d times after NatsUspInteraction returned", got)
+	}
+}
+
+type returnAwareWriter struct {
+	*httptest.ResponseRecorder
+	returned          atomic.Bool
+	writesAfterReturn atomic.Int32
+}
+
+func (w *returnAwareWriter) WriteHeader(statusCode int) {
+	if w.returned.Load() {
+		w.writesAfterReturn.Add(1)
+	}
+	w.ResponseRecorder.WriteHeader(statusCode)
+}
+
+func (w *returnAwareWriter) Write(data []byte) (int, error) {
+	if w.returned.Load() {
+		w.writesAfterReturn.Add(1)
+	}
+	return w.ResponseRecorder.Write(data)
+}
+
+func uspRecordForTest(t *testing.T, msgID string) []byte {
+	t.Helper()
+
+	msg := usp_utils.NewGetMsg(usp_msg.Get{ParamPaths: []string{"Device.DeviceInfo."}})
+	msg.Header.MsgId = msgID
+	payload, err := proto.Marshal(&msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := usp_utils.NewUspRecord(payload, "TEST-DEVICE-001")
+	body, err := proto.Marshal(&record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }
 
 func natsTestURL() string {

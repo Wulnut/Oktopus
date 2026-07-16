@@ -125,8 +125,10 @@ func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device e
 		return
 	}
 
+	retryCount := 0
 	existingLog, err := tdb.GetLatestUpgradeLog(ctx, device.SN, fw.ID)
 	if err == nil {
+		retryCount = existingLog.RetryCount + 1
 		switch existingLog.Status {
 		case "pending", "downloading":
 			if time.Since(existingLog.TriggeredAt) > 15*time.Minute {
@@ -138,7 +140,7 @@ func (a *Api) handleManualPolicy(ctx context.Context, tdb *db.TenantDB, device e
 		// failed or expired — create a new attempt
 	}
 
-	a.triggerUpgrade(ctx, tdb, device, fw, primitive.NilObjectID, "manual", tenantSlug)
+	a.triggerUpgrade(ctx, tdb, device, fw, primitive.NilObjectID, "manual", tenantSlug, retryCount)
 }
 
 func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug string) {
@@ -166,8 +168,10 @@ func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device
 		return
 	}
 
+	retryCount := 0
 	existingLog, err := tdb.GetLatestUpgradeLog(ctx, device.SN, fw.ID)
 	if err == nil {
+		retryCount = existingLog.RetryCount + 1
 		switch existingLog.Status {
 		case "pending", "downloading":
 			if time.Since(existingLog.TriggeredAt) <= 15*time.Minute {
@@ -182,10 +186,10 @@ func (a *Api) handleCampaignPolicy(ctx context.Context, tdb *db.TenantDB, device
 		// Create a new attempt
 	}
 
-	a.triggerUpgrade(ctx, tdb, device, fw, campaign.ID, "on_connect", tenantSlug)
+	a.triggerUpgrade(ctx, tdb, device, fw, campaign.ID, "on_connect", tenantSlug, retryCount)
 }
 
-func (a *Api) triggerUpgrade(ctx context.Context, tdb *db.TenantDB, device entity.Device, fw db.Firmware, campaignID primitive.ObjectID, triggerType, tenantSlug string) {
+func (a *Api) triggerUpgrade(ctx context.Context, tdb *db.TenantDB, device entity.Device, fw db.Firmware, campaignID primitive.ObjectID, triggerType, tenantSlug string, retryCount int) {
 	logEntry := db.FirmwareUpgradeLog{
 		DeviceSN:         device.SN,
 		DeviceAlias:      device.Alias,
@@ -195,6 +199,7 @@ func (a *Api) triggerUpgrade(ctx context.Context, tdb *db.TenantDB, device entit
 		PreviousVersion:  device.Version,
 		TriggerType:      triggerType,
 		Status:           "pending",
+		RetryCount:       retryCount,
 	}
 	if !campaignID.IsZero() {
 		logEntry.CampaignID = campaignID
@@ -300,7 +305,11 @@ func (a *Api) runCampaignBatchLocked(tdb *db.TenantDB, campaignID primitive.Obje
 	}
 	result := CampaignBatchResult{Matched: len(devices)}
 
-	var targets []entity.Device
+	type upgradeTarget struct {
+		device     entity.Device
+		retryCount int
+	}
+	var targets []upgradeTarget
 	for _, d := range devices {
 		policy, err := tdb.GetDeviceFWPolicy(ctx, d.SN)
 		if err != nil {
@@ -318,8 +327,10 @@ func (a *Api) runCampaignBatchLocked(tdb *db.TenantDB, campaignID primitive.Obje
 
 		// Do not skip solely because a past upgrade log is "success": the device may have
 		// been downgraded, the campaign target may have changed, or adapter version may be stale.
+		retryCount := 0
 		existingLog, err := tdb.GetLatestUpgradeLog(ctx, d.SN, fw.ID)
 		if err == nil {
+			retryCount = existingLog.RetryCount + 1
 			switch existingLog.Status {
 			case "pending", "downloading":
 				if time.Since(existingLog.TriggeredAt) <= 15*time.Minute {
@@ -334,7 +345,7 @@ func (a *Api) runCampaignBatchLocked(tdb *db.TenantDB, campaignID primitive.Obje
 			}
 		}
 
-		targets = append(targets, d)
+		targets = append(targets, upgradeTarget{device: d, retryCount: retryCount})
 	}
 
 	if len(targets) == 0 {
@@ -356,17 +367,17 @@ func (a *Api) runCampaignBatchLocked(tdb *db.TenantDB, campaignID primitive.Obje
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 
-	for _, d := range targets {
+	for _, target := range targets {
 		wg.Add(1)
 		sem <- struct{}{}
 
-		go func(device entity.Device) {
+		go func(target upgradeTarget) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			deviceCtx, deviceCancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer deviceCancel()
-			a.triggerUpgrade(deviceCtx, tdb, device, fw, campaign.ID, triggerType, tenantSlug)
-		}(d)
+			a.triggerUpgrade(deviceCtx, tdb, target.device, fw, campaign.ID, triggerType, tenantSlug, target.retryCount)
+		}(target)
 	}
 
 	wg.Wait()

@@ -139,7 +139,7 @@ export const DevicesPerformance = ({ sn, mtp, onStatusRefresh }) => {
     } finally {
       setLoading(false);
     }
-  }, [sn, mtp]);
+  }, [onStatusRefresh, sn, httpRequest, apiPrefix, mtp]);
 
   useEffect(() => {
     fetchAll();

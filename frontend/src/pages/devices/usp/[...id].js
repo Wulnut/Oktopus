@@ -37,7 +37,7 @@ const Page = () => {
         } catch {
             setDeviceOnline(false);
         }
-    }, [deviceID, apiPrefix]);
+    }, [httpRequest, apiPrefix, deviceID]);
 
     useEffect(() => {
         refreshStatus();

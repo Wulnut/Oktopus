@@ -44,7 +44,7 @@ const Page = () => {
             setUsers(result)
         })
         .catch(error => console.log('error', error));
-    },[])
+    },[apiPrefix])
 
     const renderUsers = () => {
         console.log("users: ", users)

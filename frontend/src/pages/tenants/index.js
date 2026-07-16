@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import Head from 'next/head';
 import PlusIcon from '@heroicons/react/24/solid/PlusIcon';
 import {
@@ -26,22 +26,17 @@ const Page = () => {
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
 
-  useEffect(() => {
-    if (!isSuperAdmin) {
-      router.push('/');
-      return;
+  const authToken = auth.user?.token;
+  const getHeaders = useCallback(() => {
+    const headers = new Headers();
+    headers.append('Content-Type', 'application/json');
+    if (authToken) {
+      headers.append('Authorization', authToken);
     }
-    fetchTenants();
-  }, [isSuperAdmin]);
+    return headers;
+  }, [authToken]);
 
-  const getHeaders = () => {
-    const h = new Headers();
-    h.append('Content-Type', 'application/json');
-    h.append('Authorization', auth.user.token);
-    return h;
-  };
-
-  const fetchTenants = async () => {
+  const fetchTenants = useCallback(async () => {
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ''}/api/tenants`,
@@ -65,7 +60,15 @@ const Page = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [getHeaders, router]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      router.push('/');
+      return;
+    }
+    fetchTenants();
+  }, [fetchTenants, isSuperAdmin, router]);
 
   const createTenant = async (formData) => {
     const res = await fetch(

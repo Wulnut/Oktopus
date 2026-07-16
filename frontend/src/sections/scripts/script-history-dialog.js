@@ -150,19 +150,20 @@ export const ScriptHistoryDialog = ({ open, onClose, script }) => {
   const { httpRequest, apiPrefix } = useBackendContext();
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const scriptId = script?.id;
 
   const fetchHistory = useCallback(async () => {
-    if (!script?.id) return;
+    if (!scriptId) return;
     setLoading(true);
     try {
-      const { status, result } = await httpRequest(`${apiPrefix}/scripts/${script.id}/executions`, 'GET');
+      const { status, result } = await httpRequest(`${apiPrefix}/scripts/${scriptId}/executions`, 'GET');
       if (status === 200 && Array.isArray(result)) {
         setExecutions(result);
       }
     } finally {
       setLoading(false);
     }
-  }, [script?.id]);
+  }, [apiPrefix, httpRequest, scriptId]);
 
   useEffect(() => {
     if (open) {

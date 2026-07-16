@@ -29,7 +29,6 @@ const (
 	lockTriggerIPChangeNotify = "ip_change_notify"
 )
 
-
 // lockCWMPRootPrefix returns the CWMP root for OntLock paths based on the
 // device's stored data model. TR-098 devices use "InternetGatewayDevice.";
 // TR-181 (and unknown) devices use "Device.".
@@ -289,14 +288,14 @@ func (a *Api) StartLockEngine() {
 		log.Printf("lock_engine: failed to subscribe to device.v1.*.online: %v", err)
 	} else {
 		log.Printf("lock_engine: subscribed to device.v1.*.online (sub=%s)", sub.Subject)
- 		// Re-evaluate all already-online devices so that devices that were
- 		// online before the controller (re)started are not missed (they will
- 		// not emit a new "online" event). Runs after a short delay to let NATS
- 		// subscriptions settle.
- 		go func() {
- 			time.Sleep(5 * time.Second)
- 			a.chaseLockOnStartup()
- 		}()
+		// Re-evaluate all already-online devices so that devices that were
+		// online before the controller (re)started are not missed (they will
+		// not emit a new "online" event). Runs after a short delay to let NATS
+		// subscriptions settle.
+		go func() {
+			time.Sleep(5 * time.Second)
+			a.chaseLockOnStartup()
+		}()
 	}
 }
 
@@ -378,36 +377,11 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		}
 	}
 
-	if reportedIP == "" {
-		reportedIP = normalizeReportedIP(a.lockReportedIP(ctx, device, tenantSlug))
-	}
-
-	policy, foundPolicy, err := lockCache.GetLockPolicy(ctx, tenantSlug, device.SN)
-	var policyPtr *db.LockPolicy
-	if err == nil && foundPolicy {
-		policyPtr = &policy
-	} else {
-		policy, err = tdb.GetLockPolicy(ctx, device.SN)
-		if err == nil {
-			policyPtr = &policy
-			_ = lockCache.PutLockPolicy(ctx, tenantSlug, policy)
-		} else if err != mongo.ErrNoDocuments {
-			log.Printf("lock_engine: get policy %s: %v", device.SN, err)
-		}
-	}
-
-	cfg, err := tdb.GetLockConfig(ctx)
+	decision, reportedIP, err := a.resolveCurrentLockDecision(ctx, tdb, device, tenantSlug, reportedIP)
 	if err != nil {
-		log.Printf("lock_engine: get config: %v", err)
+		log.Printf("lock_engine: resolve decision %s: %v", device.SN, err)
 		return
 	}
-
-	decision := EvaluateLockDecision(LockEvaluationInput{
-		SN:         device.SN,
-		ReportedIP: reportedIP,
-		Config:     cfg,
-		Policy:     policyPtr,
-	})
 
 	prev, found, err := lockStateStore.Get(ctx, tenantSlug, device.SN)
 	if err != nil {
@@ -528,6 +502,42 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	}
 }
 
+// resolveCurrentLockDecision reads the device's current WAN IP, policy and
+// global config. Retry paths use the same resolver so a historical command is
+// never replayed after policy or configuration changes.
+func (a *Api) resolveCurrentLockDecision(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, reportedIP string) (LockDecision, string, error) {
+	reportedIP = normalizeReportedIP(reportedIP)
+	if reportedIP == "" {
+		reportedIP = normalizeReportedIP(a.lockReportedIP(ctx, device, tenantSlug))
+	}
+
+	policy, foundPolicy, err := lockCache.GetLockPolicy(ctx, tenantSlug, device.SN)
+	var policyPtr *db.LockPolicy
+	if err == nil && foundPolicy {
+		policyPtr = &policy
+	} else {
+		policy, err = tdb.GetLockPolicy(ctx, device.SN)
+		if err == nil {
+			policyPtr = &policy
+			_ = lockCache.PutLockPolicy(ctx, tenantSlug, policy)
+		} else if err != mongo.ErrNoDocuments {
+			log.Printf("lock_engine: get policy %s: %v", device.SN, err)
+		}
+	}
+
+	cfg, err := tdb.GetLockConfig(ctx)
+	if err != nil {
+		return LockDecision{}, reportedIP, err
+	}
+
+	return EvaluateLockDecision(LockEvaluationInput{
+		SN:         device.SN,
+		ReportedIP: reportedIP,
+		Config:     cfg,
+		Policy:     policyPtr,
+	}), reportedIP, nil
+}
+
 // lockReportedIP fetches the WAN IP via the device's active transport protocol.
 // CWMP devices use GetParameterValues; USP devices (MQTT/WS/STOMP) use a USP
 // Get message. Returns empty string if the IP cannot be retrieved.
@@ -641,11 +651,12 @@ func isPermanentLockCommandError(err error) bool {
 }
 
 func (a *Api) recordLockAudit(ctx context.Context, tdb *db.TenantDB, tenantSlug string, logEntry db.LockAuditLog) {
-	if err := tdb.CreateLockAuditLog(ctx, logEntry); err != nil {
+	persisted, err := tdb.CreateLockAuditLog(ctx, logEntry)
+	if err != nil {
 		log.Printf("lock_engine: create audit log: %v", err)
 		return
 	}
-	if err := lockAuditSink.PublishLockAudit(ctx, tenantSlug, logEntry); err != nil {
+	if err := lockAuditSink.PublishLockAudit(ctx, tenantSlug, persisted); err != nil {
 		log.Printf("lock_engine: publish audit sink: %v", err)
 	}
 }

@@ -42,6 +42,7 @@ import { useAlertContext } from 'src/contexts/error-context';
 import { useBackendContext } from 'src/contexts/backend-context';
 import { OverviewKpis } from 'src/sections/ont-lock/overview-kpis';
 import { CommandsStatusChart } from 'src/sections/ont-lock/commands-status-chart';
+import { uploadWhitelistBatchCSV } from 'src/lib/ont-lock-api';
 
 const TAB_KEYS = ['overview', 'policies', 'exceptions', 'activity'];
 
@@ -458,25 +459,21 @@ const Page = () => {
 
   const uploadBatchCSV = async (file) => {
     if (!file) return;
-    const token = localStorage.getItem('token');
-    const response = await fetch(`${apiPrefix}/lock/whitelist/batch`, {
-      method: 'POST',
-      headers: {
-        Authorization: token,
-        'Content-Type': 'text/csv',
-      },
-      body: file,
-    });
-    const result = await response.json();
-    setBatchResult({ status: response.status, result });
-    if (response.ok || response.status === 207) {
-      setAlert({
-        severity: response.status === 207 ? 'warning' : 'success',
-        message: `Batch import: created ${result.created ?? 0}, errors ${result.errors?.length ?? 0}.`,
-      });
-      fetchStatic();
-    } else {
-      setAlert({ severity: 'error', message: result.error || 'Batch import failed.' });
+    try {
+      const { status, result } = await uploadWhitelistBatchCSV(httpRequest, apiPrefix, file);
+      setBatchResult({ status, result });
+      if (status >= 200 && status < 300) {
+        setAlert({
+          severity: status === 207 ? 'warning' : 'success',
+          message: `Batch import: created ${result?.created ?? 0}, errors ${result?.errors?.length ?? 0}.`,
+        });
+        fetchStatic();
+      } else {
+        setAlert({ severity: 'error', message: result?.error || 'Batch import failed.' });
+      }
+    } catch {
+      setBatchResult({ status: 0, result: null });
+      setAlert({ severity: 'error', message: 'Batch import failed because the API is unreachable.' });
     }
   };
 

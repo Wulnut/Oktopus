@@ -40,7 +40,7 @@ fi
 # we ignore.
 ssh -p "$GCP_SSH_PORT" "$GCP_SSH_HOST" \
   "curl -fsS -X POST http://localhost/api/tenants \
-     -H 'Authorization: Bearer ${TOKEN}' \
+     -H 'Authorization: ${TOKEN}' \
      -H 'Content-Type: application/json' \
      -d '{\"slug\":\"${TEST_TENANT}\",\"name\":\"Telkomsel Test (sanitized fixtures)\"}'" \
   || echo "(tenant may already exist; continuing)"

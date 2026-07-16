@@ -168,6 +168,40 @@ func TestCheckUpgradeCompletion_VersionMismatch_MarksFailed(t *testing.T) {
 
 // --- Retry logic ---
 
+func TestRetryLogic_NewAttemptIncrementsRetryCount(t *testing.T) {
+	ctx := context.Background()
+
+	fw, campaign := createTestFirmwareAndCampaign(t)
+	sn := fmt.Sprintf("SN-RETRY-INCREMENT-%d", time.Now().UnixNano())
+	if _, err := testTenantDB.CreateUpgradeLog(ctx, db.FirmwareUpgradeLog{
+		DeviceSN:         sn,
+		FirmwareID:       fw.ID,
+		FirmwareBuildVer: fw.BuildVersion,
+		Status:           "failed",
+		RetryCount:       1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	device := entity.Device{
+		SN:        sn,
+		Status:    entity.Online,
+		Vendor:    campaign.Vendor,
+		Model:     campaign.Model,
+		HWVersion: campaign.HWVersion,
+		Version:   "1.0.0",
+	}
+	testApi.checkCampaignUpgrade(ctx, testTenantDB, device, "test")
+
+	got, err := testTenantDB.GetLatestUpgradeLog(ctx, sn, fw.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RetryCount != 2 {
+		t.Fatalf("expected retry_count=2 on the new attempt, got %d", got.RetryCount)
+	}
+}
+
 func TestRetryLogic_MaxRetriesExhausted_NoMoreRetries(t *testing.T) {
 	ctx := context.Background()
 

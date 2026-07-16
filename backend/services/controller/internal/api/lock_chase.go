@@ -83,35 +83,34 @@ func (a *Api) chaseLockAfterConfigUpdate(tenantSlug string) {
 		}(device)
 	}
 }
- 
- // chaseLockOnStartup re-evaluates all currently online devices across all
- // active tenants after the controller starts. Without this, devices that were
- // online before the restart never receive a new "online" NATS event and thus
- // never get re-evaluated, leaving them absent from the unauthorized list.
- func (a *Api) chaseLockOnStartup() {
- 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
- 	defer cancel()
- 
- 	tenants, err := a.db.FindAllTenants(ctx)
- 	if err != nil {
- 		log.Printf("lock_engine: startup chase: list tenants: %v", err)
- 		return
- 	}
- 
- 	for _, tenant := range tenants {
- 		if tenant.Slug == "" || tenant.Status != db.TenantStatusActive {
- 			continue
- 		}
- 		tdb := a.db.ForTenant(tenant.Slug)
- 		cfg, err := tdb.GetLockConfig(ctx)
- 		if err != nil {
- 			log.Printf("lock_engine: startup chase: get config tenant %s: %v", tenant.Slug, err)
- 			continue
- 		}
- 		if !cfg.MasterEnabled {
- 			continue
- 		}
- 		log.Printf("lock_engine: startup chase tenant %s", tenant.Slug)
- 		a.chaseLockAfterConfigUpdate(tenant.Slug)
- 	}
- }
+
+// shouldChaseLockOnStartup intentionally depends only on tenant lifecycle. An
+// active tenant must be reconciled even when MasterEnabled is false because
+// the resulting UNLOCK decision removes locks left from an earlier config.
+func shouldChaseLockOnStartup(tenant db.Tenant) bool {
+	return tenant.Slug != "" && tenant.Status == db.TenantStatusActive
+}
+
+// chaseLockOnStartup re-evaluates all currently online devices across all
+// active tenants after the controller starts. Without this, devices that were
+// online before the restart never receive a new "online" NATS event and thus
+// never get re-evaluated. Reconciliation also runs when ONT Lock is disabled
+// so stale device-side locks converge to UNLOCK.
+func (a *Api) chaseLockOnStartup() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	tenants, err := a.db.FindAllTenants(ctx)
+	if err != nil {
+		log.Printf("lock_engine: startup chase: list tenants: %v", err)
+		return
+	}
+
+	for _, tenant := range tenants {
+		if !shouldChaseLockOnStartup(tenant) {
+			continue
+		}
+		log.Printf("lock_engine: startup chase tenant %s", tenant.Slug)
+		a.chaseLockAfterConfigUpdate(tenant.Slug)
+	}
+}

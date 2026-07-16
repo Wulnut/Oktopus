@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -37,24 +37,26 @@ export const MassActionDetail = ({ actionId, onCancel }) => {
   const [action, setAction] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchAction = async () => {
+  const fetchAction = useCallback(async () => {
     const { status, result } = await httpRequest(`${apiPrefix}/mass-actions/${actionId}`, 'GET');
     if (status === 200 && result) {
       setAction(result);
     }
     setLoading(false);
-  };
+  }, [actionId, apiPrefix, httpRequest]);
 
   useEffect(() => {
     fetchAction();
-  }, [actionId]);
+  }, [actionId, fetchAction]);
+
+  const actionStatus = action?.status;
 
   // Auto-refresh while running
   useEffect(() => {
-    if (!action || action.status !== 'running') return;
+    if (actionStatus !== 'running') return;
     const interval = setInterval(fetchAction, 5000);
     return () => clearInterval(interval);
-  }, [action?.status]);
+  }, [actionStatus, fetchAction]);
 
   if (loading) {
     return (

@@ -43,7 +43,7 @@ const Page = (props) => {
         })
 
         return(stopCamera)
-    },[])
+    },[callUser, myVideo, router.query.user, setStream])
 
     return (
         <Card>
