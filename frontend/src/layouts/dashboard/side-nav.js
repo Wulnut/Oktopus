@@ -136,10 +136,11 @@ export const SideNav = (props) => {
                   key={item.title}
                   path={item.path}
                   title={item.title}
-                  children={itemChildren}
                   padleft={2}
                   tooltip={item.tooltip}
-                />
+                >
+                  {itemChildren}
+                </SideNavItem>
               );
             })}
             <Collapse in={open} timeout="auto" unmountOnExit>

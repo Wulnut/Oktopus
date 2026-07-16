@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/leandrofars/oktopus/internal/db"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 const minLockRetrySchedulerInterval = 15 * time.Second
@@ -86,24 +88,71 @@ func (a *Api) retryLockCommand(tenantSlug string, command db.LockCommandAttempt)
 		return
 	}
 
-	decision := LockDecision{
-		Status:        command.TargetStatus,
-		ShouldCommand: true,
-		CommandValue:  command.CommandValue,
+	device, online := a.getOnlineDeviceNoWrite(ctx, tenantSlug, command.DeviceSN)
+	if !online {
+		return
+	}
+
+	unlock, ok, err := lockStateStore.TryLock(ctx, tenantSlug, command.DeviceSN, 0)
+	if err != nil {
+		log.Printf("lock_retry_scheduler: tenant %s try lock %s: %v", tenantSlug, command.DeviceSN, err)
+	}
+	if !ok {
+		return
+	}
+	defer unlock()
+
+	if !a.gateLockCapability(ctx, tdb, device, tenantSlug, lockTriggerChase) {
+		return
+	}
+
+	decision, reportedIP, err := a.resolveCurrentLockDecision(ctx, tdb, device, tenantSlug, "")
+	if err != nil {
+		log.Printf("lock_retry_scheduler: tenant %s resolve current decision %s: %v", tenantSlug, command.DeviceSN, err)
+		return
+	}
+	if !decision.ShouldCommand {
+		_ = tdb.UpdateLockCommandStatus(ctx, command.ID, db.LockCommandFailed, "retry superseded: current policy requires no command")
+		return
 	}
 	if a.suppressLockIfBreakerTripped(ctx, tdb, tenantSlug, command.DeviceSN, decision.Status) {
 		return
 	}
 
-	attempt, err := tdb.PrepareLockCommandResend(ctx, command.ID)
+	attempt, err := tdb.PrepareLockCommandResend(ctx, command.ID, command.UpdatedAt, reportedIP, decision.Status, decision.CommandValue)
 	if err != nil {
-		log.Printf("lock_retry_scheduler: tenant %s prepare retry %s: %v", tenantSlug, command.ID.Hex(), err)
+		// mongo.ErrNoDocuments means another controller already claimed it.
+		if err != mongo.ErrNoDocuments {
+			log.Printf("lock_retry_scheduler: tenant %s prepare retry %s: %v", tenantSlug, command.ID.Hex(), err)
+		}
 		return
 	}
-	decision.Status = attempt.TargetStatus
-	decision.CommandValue = attempt.CommandValue
+
+	a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+		SN:     attempt.DeviceSN,
+		Action: "retry_re_evaluated",
+		Status: decision.Status,
+		Details: bson.M{
+			"previous_status": command.TargetStatus,
+			"reported_ip":     reportedIP,
+			"attempt_count":   attempt.AttemptCount,
+		},
+	})
 
 	if err := a.deliverLockCommand(ctx, tdb, attempt, decision, tenantSlug); err != nil {
 		log.Printf("lock_retry_scheduler: tenant %s retry %s: %v", tenantSlug, attempt.DeviceSN, err)
+		return
+	}
+
+	state, found, stateErr := lockStateStore.Get(ctx, tenantSlug, attempt.DeviceSN)
+	if stateErr != nil || !found {
+		state = lockDeviceState{}
+	}
+	state.LastIP = reportedIP
+	state.LastStatus = decision.Status
+	state.LastCommand = decision.CommandValue
+	state.UpdatedAt = time.Now()
+	if err := lockStateStore.Put(ctx, tenantSlug, attempt.DeviceSN, state); err != nil {
+		log.Printf("lock_retry_scheduler: tenant %s put state %s: %v", tenantSlug, attempt.DeviceSN, err)
 	}
 }

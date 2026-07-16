@@ -12,7 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const defaultLockEvalTTL = 15 * time.Second
+const defaultLockEvalTTL = 2 * time.Minute
 
 // unlockEvalScript deletes the eval lock only when the token still matches,
 // so a TTL-expired unlock cannot remove another holder's key.

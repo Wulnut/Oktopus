@@ -26,6 +26,7 @@ const Page = () => {
   const auth = useAuth();
   const router = useRouter();
   const { apiPrefix } = useTenant();
+  const authToken = auth.user?.token;
 
   const [page, setPage] = useState(0);
   const [devices, setDevices] = useState({});
@@ -43,7 +44,7 @@ const Page = () => {
 
     var myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
+    if (authToken) myHeaders.append("Authorization", authToken);
 
     var requestOptions = {
       method: 'DELETE',
@@ -72,7 +73,7 @@ const Page = () => {
   const createCredential = async (data) => {
     var myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
+    if (authToken) myHeaders.append("Authorization", authToken);
 
     var raw = JSON.stringify(data);
 
@@ -127,11 +128,11 @@ const Page = () => {
     setCreatingNewCredential(false)
   }
 
-  const fetchCredentials = async (id) => {
+  const fetchCredentials = useCallback(async (id) => {
     console.log("fetching credentials data...")
     var myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
+    if (authToken) myHeaders.append("Authorization", authToken);
 
     var requestOptions = {
       method: 'GET',
@@ -153,7 +154,6 @@ const Page = () => {
         }else if (response.status === 404) {
           setLoading(false)
           setCredentialNotFound(true)
-          console.log("credential not found: ", credentialNotFound)
           return 
         }
         return response.json()
@@ -172,11 +172,11 @@ const Page = () => {
         setCredentialNotFound(false)
         return console.error('Error:', error)
       });
-  }
+  }, [apiPrefix, authToken, router]);
 
   useEffect(() => {
     fetchCredentials()
-  }, []);
+  }, [fetchCredentials]);
 
   return (
     <>

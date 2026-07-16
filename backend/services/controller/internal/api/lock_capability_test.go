@@ -3,6 +3,8 @@ package api
 import (
 	"fmt"
 	"testing"
+
+	"github.com/leandrofars/oktopus/internal/cwmp"
 )
 
 func TestClassifyLockProbeError(t *testing.T) {
@@ -85,5 +87,45 @@ func TestShouldProbeOntLockCapability(t *testing.T) {
 					tc.trigger, tc.hasRow, tc.optOut, got, tc.wantProbe)
 			}
 		})
+	}
+}
+
+func TestProbeOntLockCapabilityCWMPTriesAlternateRootAfterPartialFirstRoot(t *testing.T) {
+	calls := 0
+	getter := func(_ string, names []string, _ string) (cwmp.GetParameterValuesResponse, error) {
+		calls++
+		if calls == 1 {
+			return cwmp.GetParameterValuesResponse{ParameterList: []cwmp.ParameterValueStruct{
+				{Name: names[0], Value: "0"},
+			}}, nil
+		}
+		return cwmp.GetParameterValuesResponse{ParameterList: []cwmp.ParameterValueStruct{
+			{Name: names[0], Value: "0"},
+			{Name: names[1], Value: "203.0.113.10"},
+		}}, nil
+	}
+
+	result, detail := probeOntLockCapabilityCWMPWithGetter("SN-1", cwmpDataModelTR098, "tenant-a", getter)
+	if result != lockProbeOK || detail != "" {
+		t.Fatalf("result=%v detail=%q, want OK", result, detail)
+	}
+	if calls != 2 {
+		t.Fatalf("getter calls=%d, want 2 roots", calls)
+	}
+}
+
+func TestProbeOntLockCapabilityCWMPDoesNotMarkUnsupportedWhenEitherRootIsTransient(t *testing.T) {
+	calls := 0
+	getter := func(_ string, _ []string, _ string) (cwmp.GetParameterValuesResponse, error) {
+		calls++
+		if calls == 1 {
+			return cwmp.GetParameterValuesResponse{}, fmt.Errorf("cwmp request timeout")
+		}
+		return cwmp.GetParameterValuesResponse{}, fmt.Errorf("path does not exist in the schema")
+	}
+
+	result, _ := probeOntLockCapabilityCWMPWithGetter("SN-1", cwmpDataModelTR098, "tenant-a", getter)
+	if result != lockProbeTransient {
+		t.Fatalf("result=%v, want transient when one root could not be checked", result)
 	}
 }

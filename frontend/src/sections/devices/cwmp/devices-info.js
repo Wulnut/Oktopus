@@ -59,7 +59,7 @@ export const DevicesInfo = ({ sn, deviceOnline, onStatusRefresh }) => {
     } finally {
       setLoading(false);
     }
-  }, [sn, apiPrefix, onStatusRefresh]);
+  }, [sn, onStatusRefresh, httpRequest, apiPrefix]);
 
   useEffect(() => {
     fetchInfo();

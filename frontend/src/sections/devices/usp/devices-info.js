@@ -111,11 +111,11 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
     } catch {
       // ignore
     }
-  }, [sn]);
+  }, [sn, apiPrefix, httpRequest]);
 
-  const fetchCachedInfo = useCallback(async () => {
-    onStatusRefresh?.();
-    if (!sn) return;
+  const fetchCachedInfo = useCallback(async ({ refreshStatus = true } = {}) => {
+    if (refreshStatus) onStatusRefresh?.();
+    if (!sn) return false;
     setLoading(true);
     fetchUpgradeLogs();
     try {
@@ -125,12 +125,15 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
         setIsCached(true);
         setCachedAt(result.updated_at);
         setFetchError(null);
+        return true;
       }
     } catch {
-      // ignore
+      // The caller retains the live-request error when no cache is available.
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [sn, fetchUpgradeLogs]);
+    return false;
+  }, [sn, fetchUpgradeLogs, onStatusRefresh, apiPrefix, httpRequest]);
 
   const fetchLiveInfo = useCallback(async () => {
     onStatusRefresh?.();
@@ -139,6 +142,8 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
     setIsCached(false);
     setFetchError(null);
     fetchUpgradeLogs();
+
+    let liveError = null;
     try {
       const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/info`, 'GET', null, null);
       if (status === 200 && result) {
@@ -151,30 +156,32 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
           if (onOnlineChange) onOnlineChange(true);
           return;
         }
-        setFetchError('Device returned an empty response. Click Refresh to try again.');
-        setInfo(null);
-        setLoading(false);
-        return;
-      }
-      if (status === 504) {
-        setFetchError('Device response timed out. The device may be busy or reconnecting — click Refresh to try again.');
+        liveError = 'Device returned an empty response. Click Refresh to try again.';
+      } else if (status === 504) {
+        liveError = 'Device response timed out. The device may be busy or reconnecting — click Refresh to try again.';
       } else {
-        setFetchError(`Failed to fetch device information (HTTP ${status}).`);
+        liveError = `Failed to fetch device information (HTTP ${status}).`;
       }
     } catch {
-      setFetchError('Failed to reach the platform API.');
+      liveError = 'Failed to reach the platform API.';
     }
-    setInfo(null);
-    setLoading(false);
-  }, [sn, mtp, fetchUpgradeLogs, onOnlineChange, onStatusRefresh, apiPrefix, httpRequest]);
+
+    const loadedCache = await fetchCachedInfo({ refreshStatus: false });
+    if (!loadedCache) {
+      setFetchError(liveError);
+      setInfo(null);
+      setLoading(false);
+    }
+  }, [sn, mtp, fetchUpgradeLogs, fetchCachedInfo, onOnlineChange, onStatusRefresh, apiPrefix, httpRequest]);
 
   useEffect(() => {
+    if (deviceOnline === null || deviceOnline === undefined) return;
     if (deviceOnline === false) {
       fetchCachedInfo();
     } else {
       fetchLiveInfo();
     }
-  }, [sn]);
+  }, [deviceOnline, fetchCachedInfo, fetchLiveInfo]);
 
   // Fetch firmware policy and available firmware on mount
   useEffect(() => {
@@ -207,7 +214,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
     fetchPolicy();
     fetchFwList();
     fetchUpgradeLogs();
-  }, [sn]);
+  }, [apiPrefix, fetchUpgradeLogs, httpRequest, sn]);
 
   // Check if campaign exists for this device's hardware when policy is "campaign"
   useEffect(() => {
@@ -248,7 +255,7 @@ export const DevicesInfo = ({ sn, mtp, deviceOnline, onOnlineChange, onStatusRef
       }
     };
     checkCampaign();
-  }, [fwPolicy, info]);
+  }, [apiPrefix, fwPolicy, httpRequest, info, sn]);
 
   const handleFwPolicyChange = async (e) => {
     const value = e.target.value;

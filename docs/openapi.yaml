@@ -707,16 +707,95 @@ components:
         offline_count: { type: integer }
 
     # --- ONT Lock ---
+    LockPolicyInput:
+      type: object
+      required: [sn]
+      properties:
+        sn:
+          type: string
+          description: Device serial number; normalized to uppercase
+        allowed_ip_range:
+          type: string
+          description: Comma-separated IPv4 and/or IPv6 CIDRs accepted for the device
+          example: 192.0.2.10/32,2001:db8::10/128
+        description: { type: string }
+
+    LockPolicy:
+      allOf:
+        - $ref: '#/components/schemas/LockPolicyInput'
+        - type: object
+          required: [id, policy_type, status, created_at, updated_at]
+          properties:
+            id: { type: string }
+            policy_type:
+              type: string
+              enum: [WHITELIST]
+            operator_id: { type: string }
+            status: { type: boolean }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    LockConfig:
+      type: object
+      required: [id, master_enabled, auto_lock_enabled, updated_at]
+      properties:
+        id: { type: string, example: global }
+        master_enabled: { type: boolean }
+        auto_lock_enabled: { type: boolean }
+        updated_by: { type: string }
+        updated_at: { type: string, format: date-time }
+
+    LockConfigUpdate:
+      type: object
+      required: [master_enabled, auto_lock_enabled]
+      properties:
+        master_enabled: { type: boolean }
+        auto_lock_enabled: { type: boolean }
+
+    LockUnauthorizedDevice:
+      type: object
+      required: [id, sn, reported_ip, reason, status, first_seen, last_seen]
+      properties:
+        id: { type: string }
+        sn: { type: string }
+        reported_ip: { type: string }
+        reason:
+          type: string
+          enum: [MASTER_DISABLED, AUTHORIZED, UNAUTHORIZED, INVALID_IP]
+        status:
+          type: string
+          enum: [LOCKED, UNLOCKED, PENDING]
+        first_seen: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time }
+
+    LockUnsupportedDevice:
+      type: object
+      required: [sn, reason, opt_out, last_checked_at, created_at, updated_at]
+      properties:
+        sn: { type: string }
+        reason:
+          type: string
+          enum: [unsupported_path]
+        detail: { type: string }
+        opt_out: { type: boolean }
+        last_checked_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        operator_id: { type: string }
+
     LockCommandAttempt:
       type: object
       properties:
         id: { type: string }
         command_id: { type: string }
         device_sn: { type: string }
+        reported_ip: { type: string }
         status:
           type: string
           enum: [pending, success, failed, retry]
-        target_status: { type: string }
+        target_status:
+          type: string
+          enum: [LOCKED, UNLOCKED, PENDING]
         command_value: { type: string }
         attempt_count: { type: integer }
         error: { type: string }
@@ -729,11 +808,81 @@ components:
         id: { type: string }
         sn: { type: string }
         action: { type: string }
-        policy_type: { type: string }
+        policy_type:
+          type: string
+          enum: [WHITELIST]
+        status:
+          type: string
+          enum: [LOCKED, UNLOCKED, PENDING]
         operator_id: { type: string }
         description: { type: string }
         details: { type: object, additionalProperties: true }
         created_at: { type: string, format: date-time }
+
+    LockPolicyBatchRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LockPolicyInput'
+
+    LockSNBatchRequest:
+      type: object
+      required: [sns]
+      properties:
+        sns:
+          type: array
+          minItems: 1
+          items: { type: string }
+
+    LockUnauthorizedWhitelistItem:
+      allOf:
+        - $ref: '#/components/schemas/LockPolicyInput'
+        - type: object
+          properties:
+            reported_ip:
+              type: string
+              description: Used to derive a host CIDR when allowed_ip_range is empty
+
+    LockUnauthorizedWhitelistRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LockUnauthorizedWhitelistItem'
+        remove_from_unauthorized:
+          type: boolean
+          default: false
+
+    LockBatchResult:
+      type: object
+      required: [created, errors]
+      properties:
+        created: { type: integer }
+        errors:
+          type: array
+          nullable: true
+          description: Null when the batch completed without row-level errors.
+          items: { type: string }
+
+    LockBatchDeleteResult:
+      type: object
+      required: [deleted, errors]
+      properties:
+        deleted:
+          type: integer
+          format: int64
+        errors:
+          type: array
+          nullable: true
+          description: Null when the batch completed without row-level errors.
+          items: { type: string }
 
     LockPaginatedCommands:
       type: object
@@ -767,7 +916,6 @@ components:
           type: integer
           format: int64
           description: Number of documents deleted
-
   parameters:
     TenantSlug:
       name: slug
@@ -2593,6 +2741,324 @@ paths:
   # =========================================================================
   # ONT Lock
   # =========================================================================
+  /api/tenants/{slug}/lock/policies:
+    get:
+      tags: [ONT Lock]
+      summary: List device lock policies
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [WHITELIST]
+          description: Optional policy type filter
+      responses:
+        '200':
+          description: Lock policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LockPolicy'
+        '500': { description: Database error }
+
+  /api/tenants/{slug}/lock/whitelist:
+    post:
+      tags: [ONT Lock]
+      summary: Create or update a whitelist policy
+      description: Requires SuperAdmin or TenantAdmin. The serial number is normalized and the device is re-evaluated after the policy is saved.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockPolicyInput'
+      responses:
+        '200':
+          description: Saved whitelist policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockPolicy'
+        '400': { description: Invalid body, serial number, or CIDR }
+        '403': { description: TenantAdmin privilege required }
+
+  /api/tenants/{slug}/lock/whitelist/batch:
+    post:
+      tags: [ONT Lock]
+      summary: Batch import whitelist policies
+      description: Requires SuperAdmin or TenantAdmin. Accepts JSON or CSV with `sn`, `allowed_ip_range`, and `description` headers.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockPolicyBatchRequest'
+          text/csv:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '202':
+          description: Batch accepted with no row errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchResult'
+        '207':
+          description: Batch completed with one or more row errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchResult'
+        '400': { description: Invalid JSON or CSV batch }
+        '403': { description: TenantAdmin privilege required }
+
+  /api/tenants/{slug}/lock/policies/batch-delete:
+    post:
+      tags: [ONT Lock]
+      summary: Delete multiple lock policies
+      description: Requires SuperAdmin or TenantAdmin. The listed devices are re-evaluated after deletion.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockSNBatchRequest'
+      responses:
+        '200':
+          description: Policies deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchDeleteResult'
+        '207':
+          description: Delete completed with errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchDeleteResult'
+        '400': { description: Missing or invalid serial number list }
+        '403': { description: TenantAdmin privilege required }
+
+  /api/tenants/{slug}/lock/policies/{sn}:
+    delete:
+      tags: [ONT Lock]
+      summary: Delete a device lock policy
+      description: Requires SuperAdmin or TenantAdmin. The device is re-evaluated after deletion.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '204': { description: Policy deleted }
+        '400': { description: Serial number is required }
+        '403': { description: TenantAdmin privilege required }
+        '500': { description: Database error }
+
+  /api/tenants/{slug}/lock/config:
+    get:
+      tags: [ONT Lock]
+      summary: Get tenant ONT Lock configuration
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: ONT Lock configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockConfig'
+        '500': { description: Database error }
+    put:
+      tags: [ONT Lock]
+      summary: Update tenant ONT Lock configuration
+      description: Requires SuperAdmin or TenantAdmin. Updating the configuration triggers fleet convergence; disabling the master switch converges devices to UNLOCKED.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockConfigUpdate'
+      responses:
+        '200':
+          description: Saved ONT Lock configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockConfig'
+        '400': { description: Invalid body }
+        '403': { description: TenantAdmin privilege required }
+        '500': { description: Database error }
+
+  /api/tenants/{slug}/lock/unauthorized:
+    get:
+      tags: [ONT Lock]
+      summary: List unauthorized devices
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Unauthorized devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LockUnauthorizedDevice'
+        '500': { description: Database error }
+
+  /api/tenants/{slug}/lock/unauthorized/batch-whitelist:
+    post:
+      tags: [ONT Lock]
+      summary: Whitelist selected unauthorized devices
+      description: Requires SuperAdmin or TenantAdmin. When no CIDR is supplied, the reported IP is converted to a host CIDR. Existing IPv4/IPv6 policy families are preserved.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockUnauthorizedWhitelistRequest'
+      responses:
+        '202':
+          description: Batch accepted with no row errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchResult'
+        '207':
+          description: Batch completed with one or more row errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchResult'
+        '400': { description: Invalid or empty batch }
+        '403': { description: TenantAdmin privilege required }
+
+  /api/tenants/{slug}/lock/unauthorized/batch-delete:
+    post:
+      tags: [ONT Lock]
+      summary: Dismiss selected unauthorized rows
+      description: Requires SuperAdmin or TenantAdmin. This does not create policies; devices that reconnect while unauthorized can reappear.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockSNBatchRequest'
+      responses:
+        '200':
+          description: Unauthorized rows deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchDeleteResult'
+        '207':
+          description: Delete completed with errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchDeleteResult'
+        '400': { description: Missing or invalid serial number list }
+        '403': { description: TenantAdmin privilege required }
+
+  /api/tenants/{slug}/lock/unsupported:
+    get:
+      tags: [ONT Lock]
+      summary: List devices that do not expose supported OntLock paths
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      responses:
+        '200':
+          description: Unsupported devices; an empty result is returned as `[]`
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LockUnsupportedDevice'
+        '500': { description: Database error }
+
+  /api/tenants/{slug}/lock/unsupported/{sn}/opt-out:
+    post:
+      tags: [ONT Lock]
+      summary: Opt an unsupported device out of future capability probes
+      description: Requires SuperAdmin or TenantAdmin.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: Updated unsupported device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockUnsupportedDevice'
+        '400': { description: Serial number is required }
+        '403': { description: TenantAdmin privilege required }
+        '404': { description: Unsupported device row not found }
+        '500': { description: Database error }
+    delete:
+      tags: [ONT Lock]
+      summary: Clear capability-probe opt-out for an unsupported device
+      description: Requires SuperAdmin or TenantAdmin. The device can be probed again on a later online event.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+        - $ref: '#/components/parameters/DeviceSN'
+      responses:
+        '200':
+          description: Updated unsupported device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockUnsupportedDevice'
+        '400': { description: Serial number is required }
+        '403': { description: TenantAdmin privilege required }
+        '404': { description: Unsupported device row not found }
+        '500': { description: Database error }
+
+  /api/tenants/{slug}/lock/unsupported/batch-delete:
+    post:
+      tags: [ONT Lock]
+      summary: Delete opted-out unsupported rows
+      description: Requires SuperAdmin or TenantAdmin. Deletion is atomic with the `opt_out=true` condition; requested rows that are not opted out are retained.
+      parameters:
+        - $ref: '#/components/parameters/TenantSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockSNBatchRequest'
+      responses:
+        '200':
+          description: Opted-out rows deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchDeleteResult'
+        '207':
+          description: Delete completed with errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockBatchDeleteResult'
+        '400': { description: Missing or invalid serial number list }
+        '403': { description: TenantAdmin privilege required }
+
   /api/tenants/{slug}/lock/commands:
     get:
       tags: [ONT Lock]

@@ -14,11 +14,11 @@ import (
 
 // TenantCACert represents a CA certificate attached to a tenant for device authentication.
 type TenantCACert struct {
-	ID      primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Label   string             `bson:"label"         json:"label"`
-	PEM     string             `bson:"pem"           json:"pem"`
-	NotAfter time.Time         `bson:"not_after"     json:"not_after"`
-	AddedAt  time.Time         `bson:"added_at"      json:"added_at"`
+	ID       primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Label    string             `bson:"label"         json:"label"`
+	PEM      string             `bson:"pem"           json:"pem"`
+	NotAfter time.Time          `bson:"not_after"     json:"not_after"`
+	AddedAt  time.Time          `bson:"added_at"      json:"added_at"`
 }
 
 // TenantAuthPolicy defines the authentication requirements for a tenant.
@@ -232,10 +232,16 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 		return fmt.Errorf("mass_actions indexes: %w", err)
 	}
 
-	// device_info: unique device_sn
-	_, err = tdb.DeviceInfo().Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys:    bson.D{{Key: "device_sn", Value: 1}},
-		Options: options.Index().SetUnique(true),
+	// device_info: one bounded cache entry per device, retained for 90 days since refresh.
+	_, err = tdb.DeviceInfo().Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "device_sn", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "updated_at", Value: 1}},
+			Options: options.Index().SetName("device_info_updated_at_ttl").SetExpireAfterSeconds(7776000),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("device_info index: %w", err)
@@ -281,6 +287,10 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "firmware_id", Value: 1}},
 		},
 		{
+			Keys:    bson.D{{Key: "active_attempt_key", Value: 1}},
+			Options: options.Index().SetName("upgrade_logs_active_attempt_unique").SetUnique(true).SetSparse(true),
+		},
+		{
 			Keys: bson.D{{Key: "device_sn", Value: 1}, {Key: "status", Value: 1}},
 		},
 		{
@@ -290,6 +300,9 @@ func (d *Database) ProvisionTenantDBs(ctx context.Context, slug string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("upgrade_logs indexes: %w", err)
+	}
+	if err := migrateActiveUpgradeAttempts(ctx, tdb.UpgradeLogs()); err != nil {
+		return fmt.Errorf("upgrade_logs active-attempt migration: %w", err)
 	}
 
 	// ONT lock policies: SN is the primary mutual-exclusion key for blacklist/whitelist.

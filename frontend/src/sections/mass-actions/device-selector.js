@@ -32,7 +32,7 @@ export const DeviceSelector = ({ vendor, model, selectedSNs, onChange }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiPrefix, httpRequest]);
 
   useEffect(() => {
     fetchDevices();

@@ -1,6 +1,7 @@
 package infra_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -233,6 +234,41 @@ func TestNginx_AllEndpointsHaveRateLimiting(t *testing.T) {
 	}
 }
 
+// --- Dockerfiles: consistent FROM/AS casing ---
+
+func TestDockerfiles_FromAsCasing(t *testing.T) {
+	err := filepath.WalkDir(projectRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasPrefix(entry.Name(), "Dockerfile") {
+			return nil
+		}
+
+		for lineNumber, line := range strings.Split(readFile(t, path), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 4 || fields[0] != "FROM" {
+				continue
+			}
+			for _, field := range fields[1:] {
+				if strings.EqualFold(field, "AS") && field != "AS" {
+					t.Errorf("Dockerfile %s:%d uses %q; FROM and AS keywords must use consistent uppercase casing", path, lineNumber+1, field)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk Dockerfiles: %v", err)
+	}
+}
+
 // --- Dockerfiles: USER directive ---
 
 func TestDockerfiles_HaveUserDirective(t *testing.T) {
@@ -304,4 +340,108 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// --- Source deploy safety gates ---
+
+func TestCISourceDeploy_MigratesMissingControllerLockDefaults(t *testing.T) {
+	content := readFile(t, filepath.Join(composeDir, "ci-source-deploy.sh"))
+	want := `merge_missing_env_defaults "$SCRIPT_DIR/.env.controller.example" "$SCRIPT_DIR/.env.controller" "LOCK_"`
+	if !strings.Contains(content, want) {
+		t.Fatalf("ci-source-deploy.sh must merge missing LOCK_* defaults into an existing .env.controller; missing %q", want)
+	}
+}
+
+func TestGenerateSecrets_ControllerLockDefaultsMatchExample(t *testing.T) {
+	example := readFile(t, filepath.Join(composeDir, ".env.controller.example"))
+	generator := readFile(t, filepath.Join(composeDir, "generate-secrets.sh"))
+	keyPattern := regexp.MustCompile(`(?m)^(LOCK_[A-Z0-9_]+)=`)
+
+	generatedKeys := make(map[string]bool)
+	for _, match := range keyPattern.FindAllStringSubmatch(generator, -1) {
+		generatedKeys[match[1]] = true
+	}
+	for _, match := range keyPattern.FindAllStringSubmatch(example, -1) {
+		if !generatedKeys[match[1]] {
+			t.Errorf("generate-secrets.sh omits controller default %s from .env.controller.example", match[1])
+		}
+	}
+}
+
+func TestCISourceDeploy_InfrastructureBuildFailureIsFatal(t *testing.T) {
+	content := readFile(t, filepath.Join(composeDir, "ci-source-deploy.sh"))
+	if strings.Contains(content, "local infra build skipped") {
+		t.Fatal("ci-source-deploy.sh ignores local infrastructure build failures before starting with --no-build")
+	}
+}
+
+func TestCISourceDeploy_WaitsForHealthyStackBeforeCleanup(t *testing.T) {
+	content := readFile(t, filepath.Join(composeDir, "ci-source-deploy.sh"))
+	waitIndex := strings.Index(content, `--wait --wait-timeout "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}"`)
+	cleanupIndex := strings.LastIndex(content, "cleanup_deploy_source")
+	if waitIndex == -1 {
+		t.Fatal("ci-source-deploy.sh must wait for compose services to become running/healthy")
+	}
+	if cleanupIndex == -1 || waitIndex > cleanupIndex {
+		t.Fatal("health wait must complete before source cleanup")
+	}
+}
+
+func TestOpenAPI_DocumentsEveryONTLockRoute(t *testing.T) {
+	routes := readFile(t, filepath.Join(projectRoot, "backend", "services", "controller", "internal", "api", "api.go"))
+	openapi := readFile(t, filepath.Join(projectRoot, "docs", "openapi.yaml"))
+	routePattern := regexp.MustCompile(`(?m)lock\.Handle(?:Func)?\("([^"]+)".*?\.Methods\("([A-Z]+)"\)`)
+
+	for _, match := range routePattern.FindAllStringSubmatch(routes, -1) {
+		path := "/api/tenants/{slug}/lock" + match[1]
+		pathMarker := "  " + path + ":"
+		pathIndex := strings.Index(openapi, pathMarker)
+		if pathIndex == -1 {
+			t.Errorf("docs/openapi.yaml is missing ONT Lock route %s", path)
+			continue
+		}
+		rest := openapi[pathIndex+len(pathMarker):]
+		nextPath := strings.Index(rest, "\n  /api/")
+		pathBlock := rest
+		if nextPath != -1 {
+			pathBlock = rest[:nextPath]
+		}
+		method := strings.ToLower(match[2])
+		if !strings.Contains(pathBlock, "\n    "+method+":") {
+			t.Errorf("docs/openapi.yaml is missing %s operation for %s", match[2], path)
+		}
+	}
+}
+
+func TestSnapshotProfile_IncludesRequiredDependencies(t *testing.T) {
+	content := readFile(t, filepath.Join(composeDir, "docker-compose.test.yaml"))
+	for _, service := range []string{"mongo_test", "nats_test"} {
+		servicePattern := regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(service) + `:`)
+		location := servicePattern.FindStringIndex(content)
+		if location == nil {
+			t.Fatalf("service %s not found in docker-compose.test.yaml", service)
+		}
+		rest := content[location[1]:]
+		nextService := regexp.MustCompile(`(?m)^  [A-Za-z0-9_-]+:`).FindStringIndex(rest)
+		block := rest
+		if nextService != nil {
+			block = rest[:nextService[0]]
+		}
+		if !regexp.MustCompile(`profiles:\s*\[[^\]]*snapshot`).MatchString(block) {
+			t.Errorf("service %s must be enabled by the snapshot profile", service)
+		}
+	}
+}
+
+func TestCIAndCompose_RunFullBridgeRegressionSuite(t *testing.T) {
+	ci := readFile(t, filepath.Join(projectRoot, ".gitlab-ci.yml"))
+	compose := readFile(t, filepath.Join(composeDir, "docker-compose.test.yaml"))
+	fullCommand := "go test -v -count=1 -timeout=120s ./internal/bridge/"
+
+	if !strings.Contains(ci, fullCommand) {
+		t.Errorf("GitLab bridge job must run the full bridge package so concurrency and late-write regressions cannot be filtered out")
+	}
+	if !strings.Contains(compose, fullCommand) {
+		t.Errorf("Docker test-bridge service must run the same full bridge package as CI")
+	}
 }

@@ -341,7 +341,7 @@ export const DevicesHistory = () => {
     if (query.from) setFromDate(query.from);
     if (query.to) setToDate(query.to);
     hasReadURLParams.current = true;
-  }, [deviceID, router.isReady]);
+  }, [deviceID, router.isReady, router.query]);
   
   // Reset URL params read flag when device changes
   useEffect(() => {
@@ -537,7 +537,7 @@ export const DevicesHistory = () => {
     } finally {
       setLoading(false);
     }
-  }, [deviceID, limit, fromDate, toDate, filters, httpRequest]);
+  }, [limit, fromDate, toDate, filters.messageTypes, filters.sources, filters.mtps, filters.messageId, filters.messageIdExact, httpRequest, apiPrefix, deviceID]);
 
   // Track last fetch params to avoid unnecessary refetches
   const lastFetchParamsRef = useRef(null);
@@ -963,7 +963,7 @@ export const DevicesHistory = () => {
     return reordered;
   };
 
-  const formatMessageForDisplay = (message) => {
+  const formatMessageForDisplay = useCallback((message) => {
     if (!message) return { error: 'No message data' };
     try {
       const result = {
@@ -983,7 +983,7 @@ export const DevicesHistory = () => {
     } catch (err) {
       return { error: 'Failed to parse message', error_message: err.message, raw: message };
     }
-  };
+  }, []);
 
   const toggleExpanded = (path) => {
     setExpandedKeys(prev => {
@@ -1287,7 +1287,7 @@ export const DevicesHistory = () => {
   // Memoize formatted message to avoid repeated processing
   const formattedMessage = useMemo(
     () => selectedMessage ? formatMessageForDisplay(selectedMessage) : null,
-    [selectedMessage]
+    [formatMessageForDisplay, selectedMessage]
   );
   const jsonString = useMemo(
     () => formattedMessage?.full_record ? JSON.stringify(formattedMessage.full_record, null, 2) : '',

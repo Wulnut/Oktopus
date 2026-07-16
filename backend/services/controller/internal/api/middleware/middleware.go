@@ -41,6 +41,22 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// RequireMaxLevel permits only authenticated users whose numeric privilege
+// level is at or above the requested role (lower values are more privileged).
+// Missing or malformed level claims are denied rather than treated as level 0.
+func RequireMaxLevel(maxLevel int) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			level, ok := r.Context().Value(CtxLevel).(int)
+			if !ok || level > maxLevel {
+				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func TenantMiddleware(findTenant func(slug string) (interface{}, error)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

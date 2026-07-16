@@ -109,7 +109,7 @@ for route in "${HTTP_ROUTES[@]}"; do
   fname=$(echo "$route" | tr / _)
   echo "    - GET /api/tenants/${SOURCE_TENANT}/${route}"
   ssh -p "$GCP_SSH_PORT" "$GCP_SSH_HOST" \
-    "curl -fsS -H 'Authorization: Bearer ${TOKEN}' \
+    "curl -fsS -H 'Authorization: ${TOKEN}' \
        'http://localhost/api/tenants/${SOURCE_TENANT}/${route}?page_number=0&page_size=20'" \
     > "$RAW_DIR/http_${fname}.json" || echo "    (warn: ${route} fetch failed; skipping)"
 done

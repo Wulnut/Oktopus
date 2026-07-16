@@ -285,7 +285,7 @@ const handleOpen = async () => {
 
 }
 
-const fetchMessages = async () => {
+const fetchMessages = useCallback(async () => {
   let {result, status} = await httpRequest(
     `${apiPrefix}/device/message?type=usp`,
     "GET", 
@@ -297,7 +297,7 @@ const fetchMessages = async () => {
     setValue(result ? result[0].value : "")
     return result
   }
-}
+}, [apiPrefix, httpRequest]);
 
   const handleChangeRPC = (event) => {
     setAge(event.target.value);
@@ -320,7 +320,7 @@ const fetchMessages = async () => {
 
   useEffect(() => {
     fetchMessages();
-  },[]);
+  },[fetchMessages]);
 
   return (
     <form onSubmit={handleSubmit}>
@@ -351,7 +351,7 @@ const fetchMessages = async () => {
                   onChange={(event)=>{handleChangeMessage(event)}}
               > 
                 {message && message.map((msg, index) => {
-                  return  <MenuItem value={index}>{msg.name}</MenuItem>
+                  return  <MenuItem key={`${msg.name}-${index}`} value={index}>{msg.name}</MenuItem>
                 })}
               </Select>
             </FormControl>

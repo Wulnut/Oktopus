@@ -175,11 +175,12 @@ export const SideNavItem = (props) => {
                       key={child.title}
                       path={child.path}
                       title={child.title}
-                      children={child?.children}
                       padleft={padleft + 2}
                       tooltip={child.tooltip}
                       nested
-                    />
+                    >
+                      {child?.children}
+                    </SideNavItem>
                   );
                 })
               )

@@ -371,31 +371,61 @@ func (t *TenantDB) MarkLockCommandForRetry(ctx context.Context, id primitive.Obj
 	return err
 }
 
-func (t *TenantDB) PrepareLockCommandResend(ctx context.Context, id primitive.ObjectID) (LockCommandAttempt, error) {
+func lockCommandResendClaimFilter(id primitive.ObjectID, observedUpdatedAt time.Time) bson.M {
+	return bson.M{
+		"_id": id,
+		"status": bson.M{"$in": []LockCommandStatus{
+			LockCommandRetry,
+			LockCommandPending,
+		}},
+		"updated_at": bson.M{"$lte": observedUpdatedAt},
+	}
+}
+
+func lockCommandResendUpdate(reportedIP string, targetStatus DeviceLockStatus, commandValue string) bson.M {
+	return bson.M{
+		"$inc": bson.M{"attempt_count": 1},
+		"$set": bson.M{
+			"reported_ip":   reportedIP,
+			"target_status": targetStatus,
+			"command_value": commandValue,
+			"status":        LockCommandPending,
+			"error":         "",
+			"updated_at":    time.Now(),
+		},
+	}
+}
+
+// PrepareLockCommandResend atomically claims a stale retry/pending row and
+// refreshes its target from the current policy evaluation. The observed
+// timestamp predicate prevents two controller instances from resending the
+// same command concurrently while allowing a crashed pending attempt to be
+// recovered after the command timeout.
+func (t *TenantDB) PrepareLockCommandResend(ctx context.Context, id primitive.ObjectID, observedUpdatedAt time.Time, reportedIP string, targetStatus DeviceLockStatus, commandValue string) (LockCommandAttempt, error) {
 	var attempt LockCommandAttempt
 	err := t.LockCommands().FindOneAndUpdate(ctx,
-		bson.M{"_id": id},
-		bson.M{
-			"$inc": bson.M{"attempt_count": 1},
-			"$set": bson.M{
-				"status":     LockCommandPending,
-				"error":      "",
-				"updated_at": time.Now(),
-			},
-		},
+		lockCommandResendClaimFilter(id, observedUpdatedAt),
+		lockCommandResendUpdate(reportedIP, targetStatus, commandValue),
 		options.FindOneAndUpdate().SetReturnDocument(options.After),
 	).Decode(&attempt)
 	return attempt, err
 }
 
-func (t *TenantDB) ListRetryableLockCommands(ctx context.Context, retryAfter time.Time, limit int64) ([]LockCommandAttempt, error) {
+func lockRetryableCommandFilter(retryBefore time.Time) bson.M {
+	return bson.M{
+		"status": bson.M{"$in": []LockCommandStatus{
+			LockCommandRetry,
+			LockCommandPending,
+		}},
+		"updated_at": bson.M{"$lte": retryBefore},
+	}
+}
+
+func (t *TenantDB) ListRetryableLockCommands(ctx context.Context, retryBefore time.Time, limit int64) ([]LockCommandAttempt, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	filter := bson.M{
-		"status":     LockCommandRetry,
-		"updated_at": bson.M{"$lte": retryAfter},
-	}
+	filter := lockRetryableCommandFilter(retryBefore)
 	cursor, err := t.LockCommands().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: 1}}).SetLimit(limit))
 	if err != nil {
 		return nil, err
@@ -486,24 +516,29 @@ func (t *TenantDB) DeleteUnsupportedLockDevice(ctx context.Context, sn string) e
 	_, err := t.UnsupportedLockDevices().DeleteOne(ctx, bson.M{"sn": NormalizeSN(sn)})
 	return err
 }
- 
- // DeleteUnsupportedLockDevices removes multiple unsupported-device rows.
- // Only rows with opt_out=true should be passed by callers (UI enforces),
- // but no filter is applied here so the data layer stays generic.
- func (t *TenantDB) DeleteUnsupportedLockDevices(ctx context.Context, sns []string) (int64, error) {
- 	if len(sns) == 0 {
- 		return 0, nil
- 	}
- 	normalized := make([]string, 0, len(sns))
- 	for _, sn := range sns {
- 		normalized = append(normalized, NormalizeSN(sn))
- 	}
- 	res, err := t.UnsupportedLockDevices().DeleteMany(ctx, bson.M{"sn": bson.M{"$in": normalized}})
- 	if err != nil {
- 		return 0, err
- 	}
- 	return res.DeletedCount, nil
- }
+
+func unsupportedOptOutDeleteFilter(sns []string) bson.M {
+	normalized := make([]string, 0, len(sns))
+	for _, sn := range sns {
+		if normalizedSN := NormalizeSN(sn); normalizedSN != "" {
+			normalized = append(normalized, normalizedSN)
+		}
+	}
+	return bson.M{"sn": bson.M{"$in": normalized}, "opt_out": true}
+}
+
+// DeleteUnsupportedLockDevices atomically enforces the product rule that only
+// rows still marked opt_out=true may be removed.
+func (t *TenantDB) DeleteUnsupportedLockDevices(ctx context.Context, sns []string) (int64, error) {
+	if len(sns) == 0 {
+		return 0, nil
+	}
+	res, err := t.UnsupportedLockDevices().DeleteMany(ctx, unsupportedOptOutDeleteFilter(sns))
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
 
 func (t *TenantDB) DeleteUnauthorizedDevices(ctx context.Context, sns []string) (int64, error) {
 	if len(sns) == 0 {
@@ -557,12 +592,21 @@ func (t *TenantDB) ListLockCommands(ctx context.Context, sn string, pageNumber, 
 	return commands, total, err
 }
 
-func (t *TenantDB) CreateLockAuditLog(ctx context.Context, l LockAuditLog) error {
-	l.ID = primitive.NewObjectID()
+func prepareLockAuditLog(l LockAuditLog) LockAuditLog {
+	if l.ID.IsZero() {
+		l.ID = primitive.NewObjectID()
+	}
 	l.SN = NormalizeSN(l.SN)
-	l.CreatedAt = time.Now()
+	if l.CreatedAt.IsZero() {
+		l.CreatedAt = time.Now()
+	}
+	return l
+}
+
+func (t *TenantDB) CreateLockAuditLog(ctx context.Context, l LockAuditLog) (LockAuditLog, error) {
+	l = prepareLockAuditLog(l)
 	_, err := t.LockAuditLogs().InsertOne(ctx, l)
-	return err
+	return l, err
 }
 
 // ListLockAuditLogs returns a page of lock audit logs.

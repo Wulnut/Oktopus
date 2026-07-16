@@ -1,4 +1,4 @@
-FROM node:22-alpine as builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN npm install
 
 RUN npm run build
 
-FROM node:22-alpine as runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 

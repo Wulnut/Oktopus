@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -185,11 +186,11 @@ func TestLockPolicyUpsert_MutualExclusionBySN(t *testing.T) {
 	}
 
 	_, err = testTDB.UpsertLockPolicy(ctx, LockPolicy{
-		SN:          sn,
-		PolicyType:  LockPolicyWhitelist,
+		SN:             sn,
+		PolicyType:     LockPolicyWhitelist,
 		AllowedIPRange: "10.20.0.0/16",
-		Description: "updated policy",
-		Status:      true,
+		Description:    "updated policy",
+		Status:         true,
 	})
 	if err != nil {
 		t.Fatalf("replace whitelist policy: %v", err)
@@ -240,11 +241,11 @@ func TestLockPolicyTenantIsolation_AllowsSameSNInDifferentTenants(t *testing.T) 
 	}
 
 	_, err = otherTDB.UpsertLockPolicy(ctx, LockPolicy{
-		SN:          sn,
+		SN:             sn,
 		PolicyType:     LockPolicyWhitelist,
 		AllowedIPRange: "10.30.0.0/16",
 		Description:    "second tenant policy",
-		Status:      true,
+		Status:         true,
 	})
 	if err != nil {
 		t.Fatalf("create policy in second tenant: %v", err)
@@ -381,17 +382,104 @@ func TestCreateUpgradeLog_And_UpdateStatus(t *testing.T) {
 	}
 }
 
-func TestUpgradeLogUniqueIndex(t *testing.T) {
-	t.Skip("upgrade_logs has no unique index on (device_sn, firmware_id) yet — duplicate inserts are currently allowed")
+func TestUpgradeLogOnlyOneActiveAttemptPerDeviceFirmware(t *testing.T) {
+	ctx := context.Background()
 	fwID := primitive.NewObjectID()
-	sn := fmt.Sprintf("SN-UNIQUE-%d", time.Now().UnixNano())
-	log1 := FirmwareUpgradeLog{DeviceSN: sn, FirmwareID: fwID, Status: "pending", TriggeredAt: time.Now()}
-	if _, err := testTDB.CreateUpgradeLog(context.Background(), log1); err != nil {
+	sn := fmt.Sprintf("SN-ACTIVE-UNIQUE-%d", time.Now().UnixNano())
+	log1 := FirmwareUpgradeLog{DeviceSN: sn, FirmwareID: fwID, Status: "pending"}
+	created, err := testTDB.CreateUpgradeLog(ctx, log1)
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, err := testTDB.CreateUpgradeLog(context.Background(), log1)
-	if err == nil {
-		t.Error("Expected duplicate key error for same device_sn + firmware_id")
+
+	if _, err := testTDB.CreateUpgradeLog(ctx, log1); err == nil {
+		t.Fatal("expected a duplicate-key error for a second active attempt")
+	}
+
+	if err := testTDB.UpdateUpgradeLogStatus(ctx, created.ID, "failed", "test failure"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testTDB.CreateUpgradeLog(ctx, log1); err != nil {
+		t.Fatalf("terminal history must not block a later retry: %v", err)
+	}
+}
+
+func TestUpgradeLogConcurrentCreateClaimsSingleActiveAttempt(t *testing.T) {
+	ctx := context.Background()
+	fwID := primitive.NewObjectID()
+	sn := fmt.Sprintf("SN-ACTIVE-RACE-%d", time.Now().UnixNano())
+	const workers = 12
+
+	results := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			_, err := testTDB.CreateUpgradeLog(ctx, FirmwareUpgradeLog{
+				DeviceSN:   sn,
+				FirmwareID: fwID,
+				Status:     "pending",
+			})
+			results <- err
+		}()
+	}
+
+	succeeded := 0
+	for i := 0; i < workers; i++ {
+		if err := <-results; err == nil {
+			succeeded++
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("expected exactly one active attempt, got %d successful inserts", succeeded)
+	}
+}
+
+func TestMigrateActiveUpgradeAttemptsKeepsNewestLegacyAttempt(t *testing.T) {
+	ctx := context.Background()
+	fwID := primitive.NewObjectID()
+	sn := fmt.Sprintf("SN-ACTIVE-MIGRATE-%d", time.Now().UnixNano())
+	olderID := primitive.NewObjectID()
+	newerID := primitive.NewObjectID()
+	_, err := testTDB.UpgradeLogs().InsertMany(ctx, []interface{}{
+		bson.M{
+			"_id": olderID, "device_sn": sn, "firmware_id": fwID,
+			"status": "pending", "triggered_at": time.Now().Add(-time.Minute),
+		},
+		bson.M{
+			"_id": newerID, "device_sn": sn, "firmware_id": fwID,
+			"status": "downloading", "triggered_at": time.Now(),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateActiveUpgradeAttempts(ctx, testTDB.UpgradeLogs()); err != nil {
+		t.Fatal(err)
+	}
+
+	activeCount, err := testTDB.UpgradeLogs().CountDocuments(ctx, bson.M{
+		"device_sn": sn,
+		"status":    bson.M{"$in": []string{"pending", "downloading"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activeCount != 1 {
+		t.Fatalf("expected one migrated active attempt, got %d", activeCount)
+	}
+	var newer FirmwareUpgradeLog
+	if err := testTDB.UpgradeLogs().FindOne(ctx, bson.M{"_id": newerID}).Decode(&newer); err != nil {
+		t.Fatal(err)
+	}
+	if newer.ActiveAttemptKey == "" {
+		t.Fatal("newest legacy attempt did not receive the active key")
+	}
+	var older FirmwareUpgradeLog
+	if err := testTDB.UpgradeLogs().FindOne(ctx, bson.M{"_id": olderID}).Decode(&older); err != nil {
+		t.Fatal(err)
+	}
+	if older.Status != "failed" || older.CompletedAt.IsZero() {
+		t.Fatalf("older duplicate was not terminalized: status=%q completed_at=%v", older.Status, older.CompletedAt)
 	}
 }
 
@@ -532,25 +620,26 @@ func TestAddAndFindTemplate(t *testing.T) {
 	}
 }
 
-// --- device_info has no TTL (documenting the issue) ---
+// --- device_info cache retention ---
 
-func TestDeviceInfo_NoTTL(t *testing.T) {
-	// This test documents that device_info has no TTL index.
-	// After fix, this test should be updated to verify TTL exists.
+func TestDeviceInfoHasUpdatedAtTTL(t *testing.T) {
 	ctx := context.Background()
 	cursor, err := testTDB.DeviceInfo().Indexes().List(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var indexes []map[string]interface{}
+	var indexes []bson.M
 	if err := cursor.All(ctx, &indexes); err != nil {
 		t.Fatal(err)
 	}
 	for _, idx := range indexes {
-		if _, hasTTL := idx["expireAfterSeconds"]; hasTTL {
-			// If this passes after fix, the TTL was added
+		key, _ := idx["key"].(bson.M)
+		if _, ok := key["updated_at"]; ok {
+			if _, hasTTL := idx["expireAfterSeconds"]; !hasTTL {
+				t.Fatalf("updated_at index is not a TTL index: %#v", idx)
+			}
 			return
 		}
 	}
-	t.Log("INFO: device_info collection has no TTL index -- cached data grows unboundedly")
+	t.Fatal("device_info must have a TTL index on updated_at")
 }

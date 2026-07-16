@@ -55,7 +55,7 @@ const Page = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiPrefix, httpRequest]);
 
   useEffect(() => {
     fetchScripts();

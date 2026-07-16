@@ -184,3 +184,10 @@ func TestNoopLockDeviceStateStoreSoftMiss(t *testing.T) {
 	}
 	unlock()
 }
+
+func TestDefaultLockEvalTTLSpansWorstCaseEvaluation(t *testing.T) {
+	// Capability probing and command delivery may each consume a request timeout.
+	if defaultLockEvalTTL < 4*REQUEST_TIMEOUT {
+		t.Fatalf("default eval lock TTL %s is shorter than worst-case evaluation window %s", defaultLockEvalTTL, 4*REQUEST_TIMEOUT)
+	}
+}

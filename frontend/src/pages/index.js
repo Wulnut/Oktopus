@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Avatar,
   Box,
@@ -81,7 +81,7 @@ const Page = () => {
   const [vendorLabels, setVendorLabels] = useState(['-']);
   const [vendorValues, setVendorValues] = useState([0]);
 
-  const fetchGeneralInfo = async () => {
+  const fetchGeneralInfo = useCallback(async () => {
     var myHeaders = new Headers();
     myHeaders.append('Content-Type', 'application/json');
     myHeaders.append('Authorization', localStorage.getItem('token'));
@@ -178,11 +178,11 @@ const Page = () => {
 
       setGeneralInfo(content);
     }
-  };
+  }, [apiPrefix, router]);
 
   useEffect(() => {
     fetchGeneralInfo();
-  }, []);
+  }, [fetchGeneralInfo]);
 
   return generalInfo ? (
     <>

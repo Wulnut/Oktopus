@@ -67,47 +67,39 @@ const Page = () => {
     [auth, router]
   );
 
-  const [adminExists, setAdminExists] = useState(true)
-
-  const initialize = async () => {
-    await adminUserExists()
-  }
-
-  const adminUserExists = async () => {
-    var myHeaders = new Headers();
-    myHeaders.append("Content-Type", "application/json");
-
-    var requestOptions = {
-        method: 'GET',
-        headers: myHeaders,
-        redirect: 'follow',
-    };
+  const adminUserExists = useCallback(async () => {
+    const headers = new Headers();
+    headers.append('Content-Type', 'application/json');
 
     try {
-      let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/auth/admin/exists`, requestOptions)
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_REST_ENDPOINT || ''}/api/auth/admin/exists`,
+        { method: 'GET', headers, redirect: 'follow' }
+      );
+      const responseForText = response.clone();
       let content;
+
       try {
-        content = await result.json();
+        content = await response.json();
       } catch {
-        console.error("Failed to parse response:", await result.text());
+        console.error('Failed to parse response:', await responseForText.text());
         return;
       }
-      console.log("content: ", content)
-      if (result.status != 200) {
-          throw new Error(typeof content === 'object' ? JSON.stringify(content) : content);
-      } else {
-          if (!content) {
-            router.push("/auth/register")
-          }
+
+      if (response.status !== 200) {
+        throw new Error(typeof content === 'object' ? JSON.stringify(content) : content);
+      }
+      if (!content) {
+        router.push('/auth/register');
       }
     } catch (err) {
-      console.error("adminUserExists error:", err);
+      console.error('adminUserExists error:', err);
     }
-}
+  }, [router]);
 
-  useEffect(()=>{
-    initialize()
-  },[])
+  useEffect(() => {
+    adminUserExists();
+  }, [adminUserExists]);
 
   return (
     <>

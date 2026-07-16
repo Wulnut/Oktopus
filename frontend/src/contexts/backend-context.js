@@ -23,18 +23,17 @@ export const BackendProvider = (props) => {
             requestOptions.body = body;
         }
 
-        if (headers) {
-            requestOptions.headers = headers;
-        } else {
-            // Read token fresh per request (not cached at init)
-            const h = new Headers();
-            h.append("Content-Type", "application/json");
-            const token = localStorage.getItem("token");
-            if (token) {
-                h.append("Authorization", token);
-            }
-            requestOptions.headers = h;
+        const h = new Headers(headers || undefined);
+        if (!headers && !h.has("Content-Type")) {
+            h.set("Content-Type", "application/json");
         }
+        // Read token fresh per request and merge it with caller-supplied headers.
+        // Uploads may override Content-Type, but must not bypass authentication.
+        const token = localStorage.getItem("token");
+        if (token && !h.has("Authorization")) {
+            h.set("Authorization", token);
+        }
+        requestOptions.headers = h;
 
         // Abort the request after a timeout so loading states always resolve.
         // Without this, a hung backend (controller/adapter down) leaves the

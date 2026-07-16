@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
- 	"encoding/json"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/leandrofars/oktopus/internal/api/middleware"
+	"github.com/leandrofars/oktopus/internal/cwmp"
 	"github.com/leandrofars/oktopus/internal/db"
 	"github.com/leandrofars/oktopus/internal/entity"
 	"go.mongodb.org/mongo-driver/bson"
@@ -65,18 +66,29 @@ func (a *Api) probeOntLockCapabilityUSP(sn, mtp, tenantSlug string) (lockProbeRe
 	return lockProbeOK, ""
 }
 
+type cwmpLockProbeGetter func(sn string, names []string, tenantSlug string) (cwmp.GetParameterValuesResponse, error)
+
 func (a *Api) probeOntLockCapabilityCWMP(sn, dataModel, tenantSlug string) (lockProbeResult, string) {
-	// Try the datamodel-native root first, then the alternate root.
-	// Some TR-098 devices expose vendor extensions under Device. (TR-181)
-	// and vice versa, so probing both roots avoids misclassification.
+	return probeOntLockCapabilityCWMPWithGetter(sn, dataModel, tenantSlug, func(sn string, names []string, tenantSlug string) (cwmp.GetParameterValuesResponse, error) {
+		return cwmpGetValues(sn, names, a.nc, tenantSlug)
+	})
+}
+
+func probeOntLockCapabilityCWMPWithGetter(sn, dataModel, tenantSlug string, get cwmpLockProbeGetter) (lockProbeResult, string) {
+	// Try the datamodel-native root first, then the alternate root. A partial
+	// response under one root must not prevent a complete alternate-root match.
 	roots := []string{dataModel, lockOppositeDataModel(dataModel)}
-	var lastErr error
+	var details []string
+	hasTransientFailure := false
 	for _, dm := range roots {
 		lockPath := lockParamPathCWMP(dm)
 		wanPath := lockWanIPPathCWMP(dm)
-		resp, err := cwmpGetValues(sn, []string{lockPath, wanPath}, a.nc, tenantSlug)
+		resp, err := get(sn, []string{lockPath, wanPath}, tenantSlug)
 		if err != nil {
-			lastErr = err
+			if classifyLockProbeError(err) == lockProbeTransient {
+				hasTransientFailure = true
+			}
+			details = append(details, err.Error())
 			continue
 		}
 		foundLock, foundWan := false, false
@@ -91,14 +103,16 @@ func (a *Api) probeOntLockCapabilityCWMP(sn, dataModel, tenantSlug string) (lock
 		if foundLock && foundWan {
 			return lockProbeOK, ""
 		}
-		if foundLock {
-			return lockProbeUnsupported, fmt.Sprintf("parameter %s not found in CWMP response", wanPath)
-		}
+		details = append(details, fmt.Sprintf("OntLock parameters incomplete under %s", lockCWMPRootPrefix(dm)))
 	}
-	if lastErr != nil {
-		return classifyLockProbeError(lastErr), lastErr.Error()
+	detail := strings.Join(details, "; ")
+	if hasTransientFailure {
+		return lockProbeTransient, detail
 	}
-	return lockProbeUnsupported, "OntLock parameters not found in CWMP response under either root"
+	if detail == "" {
+		detail = "OntLock parameters not found in CWMP response under either root"
+	}
+	return lockProbeUnsupported, detail
 }
 
 // shouldProbeOntLockCapability decides whether to run an OntLock capability probe.
@@ -219,61 +233,40 @@ func (a *Api) optOutUnsupportedLockDevice(w http.ResponseWriter, r *http.Request
 	})
 	writeJSON(w, http.StatusOK, out)
 }
- 
- // batchDeleteUnsupportedLockDevices removes entries from the unsupported list
- // only when the operator has opted them out (Stop detecting). This is a list
- // cleanup operation: deleted devices will be re-probed on next online and
- // re-added if still unsupported.
- func (a *Api) batchDeleteUnsupportedLockDevices(w http.ResponseWriter, r *http.Request) {
- 	var req lockBatchDeleteRequest
- 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
- 		http.Error(w, "invalid body", http.StatusBadRequest)
- 		return
- 	}
- 	if len(req.SNs) == 0 {
- 		http.Error(w, "sns is required", http.StatusBadRequest)
- 		return
- 	}
- 	tenantSlug := middleware.GetTenantSlug(r)
- 	operator := middleware.GetEmail(r)
- 
- 	// Filter to only opt_out=true rows. Non-opted-out devices must not be
- 	// silently removed — they are still actively probing.
- 	eligible := make([]string, 0, len(req.SNs))
- 	tdb := a.tenantDB(r)
- 	for _, sn := range req.SNs {
- 		row, err := tdb.GetUnsupportedLockDevice(r.Context(), sn)
- 		if err == mongo.ErrNoDocuments {
- 			continue
- 		}
- 		if err != nil {
- 			http.Error(w, err.Error(), http.StatusInternalServerError)
- 			return
- 		}
- 		if row.OptOut {
- 			eligible = append(eligible, row.SN)
- 		}
- 	}
- 	if len(eligible) == 0 {
- 		writeJSON(w, http.StatusOK, lockBatchDeleteResult{Deleted: 0})
- 		return
- 	}
- 	deleted, err := tdb.DeleteUnsupportedLockDevices(r.Context(), eligible)
- 	result := lockBatchDeleteResult{Deleted: deleted}
- 	if err != nil {
- 		result.Errors = append(result.Errors, err.Error())
- 		writeJSON(w, http.StatusMultiStatus, result)
- 		return
- 	}
- 	for _, sn := range eligible {
- 		a.recordLockAudit(r.Context(), tdb, tenantSlug, db.LockAuditLog{
- 			SN:         sn,
- 			Action:     "unsupported_batch_delete",
- 			OperatorID: operator,
- 		})
- 	}
- 	writeJSON(w, http.StatusOK, result)
- }
+
+// batchDeleteUnsupportedLockDevices removes entries from the unsupported list
+// only while the database row is still opt_out=true. The condition is part of
+// the DeleteMany filter, eliminating the check/delete race with opt-out changes.
+func (a *Api) batchDeleteUnsupportedLockDevices(w http.ResponseWriter, r *http.Request) {
+	var req lockBatchDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if len(req.SNs) == 0 {
+		http.Error(w, "sns is required", http.StatusBadRequest)
+		return
+	}
+	tenantSlug := middleware.GetTenantSlug(r)
+	operator := middleware.GetEmail(r)
+	tdb := a.tenantDB(r)
+	deleted, err := tdb.DeleteUnsupportedLockDevices(r.Context(), req.SNs)
+	result := lockBatchDeleteResult{Deleted: deleted}
+	if err != nil {
+		result.Errors = append(result.Errors, err.Error())
+		writeJSON(w, http.StatusMultiStatus, result)
+		return
+	}
+	a.recordLockAudit(r.Context(), tdb, tenantSlug, db.LockAuditLog{
+		Action:     "unsupported_batch_delete",
+		OperatorID: operator,
+		Details: bson.M{
+			"requested_sns": req.SNs,
+			"deleted":       deleted,
+		},
+	})
+	writeJSON(w, http.StatusOK, result)
+}
 
 func (a *Api) clearOptOutUnsupportedLockDevice(w http.ResponseWriter, r *http.Request) {
 	sn := mux.Vars(r)["sn"]

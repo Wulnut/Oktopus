@@ -166,7 +166,7 @@ export const DevicesBridging = ({ sn, mtp, onStatusRefresh }) => {
     const body = JSON.stringify({ param_paths: paramPaths, max_depth: maxDepth });
     const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/get`, 'PUT', body);
     return status === 200 ? result : null;
-  }, [sn, mtp]);
+  }, [httpRequest, apiPrefix, sn, mtp]);
 
   const uspSet = useCallback(async (objPath, paramSettings) => {
     const body = JSON.stringify({
@@ -175,7 +175,7 @@ export const DevicesBridging = ({ sn, mtp, onStatusRefresh }) => {
     });
     const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/set`, 'PUT', body);
     return status === 200 ? result : null;
-  }, [sn, mtp]);
+  }, [httpRequest, apiPrefix, sn, mtp]);
 
   const uspAdd = useCallback(async (objPath, paramSettings) => {
     const body = JSON.stringify({
@@ -184,7 +184,7 @@ export const DevicesBridging = ({ sn, mtp, onStatusRefresh }) => {
     });
     const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/add`, 'PUT', body);
     return status === 200 ? result : null;
-  }, [sn, mtp]);
+  }, [httpRequest, apiPrefix, sn, mtp]);
 
   const uspDel = useCallback(async (objPaths) => {
     const body = JSON.stringify({
@@ -193,7 +193,7 @@ export const DevicesBridging = ({ sn, mtp, onStatusRefresh }) => {
     });
     const { status, result } = await httpRequest(`${apiPrefix}/device/${sn}/${mtp}/del`, 'PUT', body);
     return status === 200 ? result : null;
-  }, [sn, mtp]);
+  }, [httpRequest, apiPrefix, sn, mtp]);
 
   const fetchAll = useCallback(async () => {
     onStatusRefresh?.();

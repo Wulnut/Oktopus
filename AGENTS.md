@@ -81,6 +81,7 @@ npm run lint-fix   # Auto-fix ESLint issues
 ```
 
 - Docker 模式下 `node_modules` 和 `.next` 缓存位于容器内，不在本地目录
+- ESLint uses the ESLint 9 flat configuration in `frontend/eslint.config.mjs`; lint commands fail on warnings (`--max-warnings=0`)
 - 修改 `frontend/src/` 文件自动热重载，无需重建镜像
 - 需要后端 API 时，至少启动 nginx + controller
 
@@ -251,7 +252,7 @@ fetch(`${apiPrefix}/devices`, { headers: { Authorization: token } });
 - **Portainer** (port 9443) — container management UI
 - **container-upload** (port 8005) — custom Node.js service for uploading containers to the local registry; prefixes images with tenant slug from JWT
 
-Environment variables: `.env.<service>.example` templates are tracked in git; `generate-secrets.sh` creates actual `.env.<service>` files with generated secrets on first run. See README for details. Existing `.env.controller` is **not** auto-migrated — operators must add new `LOCK_*` keys (or regenerate from the example) when new vars appear.
+Environment variables: `.env.<service>.example` templates are tracked in git; `generate-secrets.sh` creates actual `.env.<service>` files with generated secrets on first run. See README for details. Source deployments automatically append newly introduced `LOCK_*` defaults from `.env.controller.example` to an existing `.env.controller` without overwriting operator-provided values. Other service environment files remain first-run generated and are not generally auto-migrated.
 
 #### ONT Lock controller env
 
@@ -286,7 +287,8 @@ Container images are prefixed with the tenant slug: `<tenant_slug>/<name>:<tag>`
 - **entity.Device** has NO json tags — all JSON output uses PascalCase field names (`SN`, `Status`, `Vendor`, `Model`, `Alias`, `TenantID`)
 - **entity.Status** is `uint8` with iota: `Offline=0`, `Associating=1`, `Online=2`
 - **User levels**: `SuperAdmin=0`, `TenantAdmin=1`, `Operator=2` (in `db.UserLevels`)
-- **Device info caching**: `deviceInfoGet` caches raw JSON in `device_info` collection; `deviceCachedInfoGet` serves it when device is offline. Raw JSON is stored as a string to avoid MongoDB BSON `primitive.D` serialization issues.
+- **Device info caching**: `deviceInfoGet` caches raw JSON in `device_info` collection; `deviceCachedInfoGet` serves it when device is offline. Raw JSON is stored as a string to avoid MongoDB BSON `primitive.D` serialization issues. Cache documents expire after 90 days through a TTL index on `updated_at`.
+- **Firmware upgrade attempt uniqueness**: `upgrade_logs.active_attempt_key` has a sparse unique index so a device can have at most one active (`pending`/`in_progress`) upgrade attempt per tenant. Startup migration deduplicates legacy active attempts before creating the index; terminal updates unset the key, and retries carry the incremented retry count into the replacement attempt.
 - **Offline device access**: The Info tab falls back to cached data when the device is offline, skipping USP queries entirely. Other device tabs show a "Device is Offline" banner.
 - **Tenant deletion** performs full cleanup: firmware files, registry containers, adapter devices, users, databases, KV buckets.
 
@@ -303,7 +305,7 @@ All scripts are in `deploy/compose/`:
 | `package.sh`      | Create offline deployment archive (`oktopus-deploy.tar.gz`)                  |
 | `image-deploy.sh` | Build, verify, save, scp, and deploy individual service images               |
 | `ci-pack-source.sh` | Pack repo source for CI deploy (excludes data dirs, secrets, macOS `._*` / `.DS_Store`) |
-| `ci-source-deploy.sh` | Remote build from source + restart stack (`staging` or `prod`). Pins `COMPOSE_PROJECT_NAME=oktopus` and tears down a legacy `compose` project if it still owns `172.16.235.0/24`. |
+| `ci-source-deploy.sh` | Remote build from source + restart stack (`staging` or `prod`). Pins `COMPOSE_PROJECT_NAME=oktopus`, tears down a legacy `compose` project if it still owns `172.16.235.0/24`, treats every image build failure as fatal, and waits for Compose services to be running/healthy before success. |
 | `prod-migrate-layout.sh` | One-time GCP migration from flat prod-deploy layout to repo layout      |
 | `ci-build.sh` / `ci-deploy.sh` | Legacy registry build/pull (not used by CI; kept for manual use) |
 | `prod-export.sh`  | Export images + config from registry to `oktopus-prod.tar.gz` for production |
@@ -322,7 +324,7 @@ Runner tag: `oktopus-docker`. Stages: `test-unit` → `test-integration` → `de
 | `telkomsel/ont-lock-dev` | `deploy:staging` (auto) | Test server `/root/oktopus` |
 | `telkomsel/ont-lock` | `deploy:production` (auto) | GCP `/home/sei/oktopus` |
 
-**Flow:** integration tests pass → `ci-pack-source.sh` creates tarball → SCP to server → extract → `ci-source-deploy.sh staging|prod` builds images on the server, restarts compose, then deletes `backend/`, `frontend/`, and other source (keeps only `deploy/compose/`). Set `SKIP_SOURCE_CLEANUP=1` on the server to skip cleanup for debugging.
+**Flow:** integration tests pass → `ci-pack-source.sh` creates tarball → SCP to server → extract → `ci-source-deploy.sh staging|prod` builds images on the server, restarts compose and waits for the stack to be running/healthy, then deletes `backend/`, `frontend/`, and other source (keeps only `deploy/compose/`). Set `SKIP_SOURCE_CLEANUP=1` on the server to skip cleanup for debugging.
 
 **CI/CD variables:**
 
@@ -339,3 +341,6 @@ Deploy jobs use `timeout: 2h` and `resource_group` to prevent concurrent deploys
 - **Build all**: `sg docker -c "cd deploy/compose && ./build.sh"`
 - **Build specific service**: `sg docker -c "cd deploy/compose && ./build.sh controller"`
 - **Run tests**: `cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm <service>` (see README for full list)
+- `deploy/tests/infra_test.go` validates repository-level deployment conventions, including consistent uppercase Dockerfile `FROM ... AS ...` stage aliases
+- `test-fixtures` runs `scripts/test-data/test_sanitize.py` in Python 3.12 to prevent real numeric or alphanumeric device serials from entering committed fixtures
+- The bridge integration job and `test-bridge` Compose service run the entire `internal/bridge` package; do not narrow them with `-run`, because concurrency, timeout, invalid-record, and post-return writer regressions must all remain covered

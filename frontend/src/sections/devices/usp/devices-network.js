@@ -215,7 +215,7 @@ export const DevicesNetwork = ({ sn, mtp, onStatusRefresh }) => {
     } finally {
       setWifiLoading(false);
     }
-  }, [sn, mtp]);
+  }, [sn, httpRequest, apiPrefix, mtp]);
 
   const fetchInterfaces = useCallback(async () => {
     if (!sn) return;
@@ -226,7 +226,7 @@ export const DevicesNetwork = ({ sn, mtp, onStatusRefresh }) => {
     } finally {
       setIfaceLoading(false);
     }
-  }, [sn, mtp]);
+  }, [sn, httpRequest, apiPrefix, mtp]);
 
   const handleRefresh = useCallback(async () => {
     onStatusRefresh?.();

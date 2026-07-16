@@ -49,7 +49,7 @@ export const DevicesWiFi = () => {
     const [errorModal, setErrorModal] = useState(false)
     const [errorModalText, setErrorModalText] = useState("")
 
-    const fetchWifiData = async () => {
+    const fetchWifiData = useCallback(async () => {
 
         var myHeaders = new Headers();
         myHeaders.append("Content-Type", "application/json");
@@ -80,11 +80,11 @@ export const DevicesWiFi = () => {
                 setContent(result)
             })
             .catch(error => console.log('error', error));
-    };
+    }, [apiPrefix, router]);
 
     useEffect(() => {
         fetchWifiData()
-    }, [])
+    }, [fetchWifiData])
 
     return (<div>
         <Stack

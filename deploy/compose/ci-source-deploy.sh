@@ -81,6 +81,42 @@ migrate_legacy_compose_project() {
   fi
 }
 
+merge_missing_env_defaults() {
+  local example_file="$1"
+  local target_file="$2"
+  local key_prefix="${3:-}"
+  local line key appended=0
+
+  [ -f "$example_file" ] || die "Missing environment template: ${example_file}"
+  [ -f "$target_file" ] || die "Missing environment file: ${target_file}"
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*) continue ;;
+    esac
+    case "$line" in
+      *=*) ;;
+      *) continue ;;
+    esac
+
+    key="${line%%=*}"
+    case "$key" in
+      "${key_prefix}"*) ;;
+      *) continue ;;
+    esac
+
+    if ! grep -q "^${key}=" "$target_file"; then
+      printf '\n%s\n' "$line" >> "$target_file"
+      log "Added missing ${key} default to $(basename "$target_file")"
+      appended=$((appended + 1))
+    fi
+  done < "$example_file"
+
+  if [ "$appended" -eq 0 ]; then
+    log "Environment defaults already current: $(basename "$target_file") (${key_prefix}*)"
+  fi
+}
+
 remove_legacy_path() {
   local path="$1"
   [ -e "$path" ] || return 0
@@ -169,6 +205,10 @@ else
   log "Secrets already present, skipping generate-secrets.sh"
 fi
 
+# Existing deployments keep their secrets, but receive newly introduced LOCK_*
+# defaults without overwriting operator-provided values.
+merge_missing_env_defaults "$SCRIPT_DIR/.env.controller.example" "$SCRIPT_DIR/.env.controller" "LOCK_"
+
 mkdir -p firmwares
 chown 1000:1000 firmwares 2>/dev/null || chmod 1777 firmwares
 
@@ -229,8 +269,7 @@ done
 # ---------------------------------------------------------------------------
 log "Building local infrastructure services"
 COMPOSE_PROFILES="$STAGING_PROFILES" \
-  docker compose -f docker-compose.yaml build container-upload registry-certs-generator \
-  || log "WARN: local infra build skipped (may be cached)"
+  docker compose -f docker-compose.yaml build container-upload registry-certs-generator
 
 # ---------------------------------------------------------------------------
 # Restart stack (--no-build: use images built above)
@@ -240,7 +279,8 @@ if [ "$ENV" = "prod" ]; then
   log "Starting production stack (profiles: ${PROD_PROFILES})"
   COMPOSE_PROFILES="$PROD_PROFILES" \
     docker compose -f docker-compose.yaml -f docker-compose.prod.yaml \
-    up -d --no-build --force-recreate --remove-orphans
+    up -d --no-build --force-recreate --remove-orphans \
+    --wait --wait-timeout "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}"
   PS_FILES="-f docker-compose.yaml -f docker-compose.prod.yaml"
   PS_PROFILES="$PROD_PROFILES"
 else
@@ -248,7 +288,8 @@ else
   log "Starting staging stack (profiles: ${STAGING_PROFILES})"
   COMPOSE_PROFILES="$STAGING_PROFILES" \
     docker compose -f docker-compose.yaml -f docker-compose.dev.yaml \
-    up -d --no-build --force-recreate --remove-orphans
+    up -d --no-build --force-recreate --remove-orphans \
+    --wait --wait-timeout "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}"
   PS_FILES="-f docker-compose.yaml -f docker-compose.dev.yaml"
   PS_PROFILES="$STAGING_PROFILES"
 fi

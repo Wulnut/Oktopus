@@ -129,7 +129,7 @@ export const AuthProvider = (props) => {
     () => {
       initialize();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     []
   );
 
@@ -171,7 +171,7 @@ export const AuthProvider = (props) => {
     };
 
     let result = await fetch(`${process.env.NEXT_PUBLIC_REST_ENDPOINT || ""}/api/auth/login`, requestOptions)
-    
+
     if (result.status != 200) {
       throw new Error('Please check your email and password');
     }

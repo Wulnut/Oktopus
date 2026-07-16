@@ -25,6 +25,7 @@ const Page = () => {
   const auth = useAuth();
   const router = useRouter();
   const { apiPrefix } = useTenant();
+  const authToken = auth.user?.token;
 
   const validateEmail = (email) => {
     return email.match(
@@ -49,7 +50,7 @@ const Page = () => {
 
     var myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
+    if (authToken) myHeaders.append("Authorization", authToken);
 
     var requestOptions = {
       method: 'DELETE',
@@ -72,11 +73,16 @@ const Page = () => {
   }
 
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
+    if (!authToken) {
+      setLoading(false);
+      return;
+    }
+
     console.log("fetching users data...")
     var myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
+    if (authToken) myHeaders.append("Authorization", authToken);
 
     var requestOptions = {
       method: 'GET',
@@ -104,7 +110,7 @@ const Page = () => {
       .catch(error => {
         return console.error('Error:', error)
       });
-  }
+  }, [apiPrefix, authToken, router]);
 
   useEffect(() => {
     // if (auth.user.token) {
@@ -114,7 +120,7 @@ const Page = () => {
     // }
     //console.log("auth.user.token =", auth.user.token)
     fetchUsers()
-  }, []);
+  }, [fetchUsers]);
 
   // const handlePageChange = useCallback(
   //   (event, value) => {
@@ -133,7 +139,7 @@ const Page = () => {
   const createUser = async (data) => {
     var myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/json");
-    myHeaders.append("Authorization", auth.user.token);
+    if (authToken) myHeaders.append("Authorization", authToken);
 
     var raw = JSON.stringify(data);
 
