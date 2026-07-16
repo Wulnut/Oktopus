@@ -589,17 +589,18 @@ func (a *Api) sendLockCommand(ctx context.Context, tdb *db.TenantDB, sn, reporte
 	return attempt, nil
 }
 
-// deliverLockCommand dispatches the lock/unlock command via the device's
-// active MTP protocol. It delegates to deliverLockCommandByMTP which
-// auto-detects CWMP vs USP. On failure, the command is marked for retry
-// or failure based on attempt count.
+// deliverLockCommand dispatches the lock/unlock command via the device's active
+// MTP protocol, then records the per-device failure backoff (on retryable
+// failure) or clears all device backoff (on success). It is the single command
+// outcome boundary used by both fresh commands and retries.
 func (a *Api) deliverLockCommand(ctx context.Context, tdb *db.TenantDB, attempt db.LockCommandAttempt, decision LockDecision, tenantSlug string) error {
 	if err := a.deliverLockCommandByMTP(attempt, decision, tenantSlug); err != nil {
-		a.markLockCommandOutcome(ctx, tdb, attempt, err)
+		a.handleLockCommandFailure(ctx, tdb, attempt, decision.Status, err, tenantSlug)
 		return err
 	}
 
 	_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandSuccess, "")
+	a.handleLockCommandSuccess(ctx, tdb, attempt.DeviceSN, decision.Status, tenantSlug)
 	if decision.Status == db.LockStatusLocked && a.lockCircuitBreaker != nil {
 		a.lockCircuitBreaker.recordLock(tenantSlug)
 	}
@@ -625,9 +626,30 @@ func (a *Api) suppressLockIfBreakerTripped(ctx context.Context, tdb *db.TenantDB
 	return true
 }
 
-func (a *Api) markLockCommandOutcome(ctx context.Context, tdb *db.TenantDB, attempt db.LockCommandAttempt, err error) {
+// handleLockCommandFailure records a delivery failure. Permanent schema/path
+// errors keep the existing failed-status behavior and do NOT count toward
+// backoff. Retryable errors record the per-device backoff transition in Redis;
+// when the target threshold is reached the Mongo row is marked failed (leaving
+// the retry queue) with the cooldown deadline in its error text. Below the
+// threshold, the legacy retry/fail behavior is preserved. When backoff is
+// disabled, this is equivalent to the former markLockCommandOutcome.
+func (a *Api) handleLockCommandFailure(ctx context.Context, tdb *db.TenantDB, attempt db.LockCommandAttempt, target db.DeviceLockStatus, err error, tenantSlug string) {
 	if isPermanentLockCommandError(err) {
-		_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed, err.Error())
+		if tdb != nil {
+			_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed, err.Error())
+		}
+		return
+	}
+	cooledDown := false
+	deadline := time.Time{}
+	if a.lockBackoff.Enabled {
+		cooledDown, deadline = a.recordDeviceBackoffFailure(ctx, tdb, tenantSlug, attempt.DeviceSN, target, err)
+	}
+	if cooledDown {
+		if tdb != nil {
+			_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed,
+				fmt.Sprintf("%s (device backoff until %s)", truncateBackoffError(err.Error()), deadline.Format(time.RFC3339)))
+		}
 		return
 	}
 	maxAttempts := a.lockMaxAttempts
@@ -635,10 +657,99 @@ func (a *Api) markLockCommandOutcome(ctx context.Context, tdb *db.TenantDB, atte
 		maxAttempts = db.DefaultLockCommandMaxAttempts
 	}
 	if shouldMarkLockCommandForRetry(attempt.AttemptCount, maxAttempts) {
-		_ = tdb.MarkLockCommandForRetry(ctx, attempt.ID, err.Error())
+		if tdb != nil {
+			_ = tdb.MarkLockCommandForRetry(ctx, attempt.ID, err.Error())
+		}
 		return
 	}
-	_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed, err.Error())
+	if tdb != nil {
+		_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed, err.Error())
+	}
+}
+
+// recordDeviceBackoffFailure records one retryable failure in the device's Redis
+// state (read-modify-write preserving LastIP/LastStatus). Returns cooled=true and
+// the deadline when this failure reached/re-extended the cooldown threshold, and
+// emits the device_command_backoff_started transition log + audit. Redis errors
+// are logged and never block.
+func (a *Api) recordDeviceBackoffFailure(ctx context.Context, tdb *db.TenantDB, tenantSlug, sn string, target db.DeviceLockStatus, err error) (bool, time.Time) {
+	state, found, errGet := lockStateStore.Get(ctx, tenantSlug, sn)
+	if errGet != nil {
+		log.Printf("lock_backoff: get state %s: %v", sn, errGet)
+		return false, time.Time{}
+	}
+	var prev map[db.DeviceLockStatus]*lockCommandBackoff
+	if found {
+		prev = state.CommandBackoffs
+	}
+	now := time.Now()
+	next, cooled := applyBackoffFailure(prev, target, now, a.lockBackoff.Threshold, a.lockBackoff.Cooldown, err.Error())
+	state.CommandBackoffs = next
+	state.UpdatedAt = now
+	if errPut := lockStateStore.Put(ctx, tenantSlug, sn, state); errPut != nil {
+		log.Printf("lock_backoff: put state %s: %v", sn, errPut)
+	}
+	if !cooled {
+		return false, time.Time{}
+	}
+	b := next[target]
+	log.Printf("lock_command_backoff: tenant=%s sn=%s target=%s failures=%d until=%s error=%s",
+		tenantSlug, sn, target, b.ConsecutiveFailures, b.CooldownUntil.Format(time.RFC3339), truncateBackoffError(err.Error()))
+	if tdb != nil {
+		a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+			SN:     sn,
+			Action: "device_command_backoff_started",
+			Status: target,
+			Details: bson.M{
+				"target_status":        target,
+				"consecutive_failures": b.ConsecutiveFailures,
+				"cooldown_until":       b.CooldownUntil,
+				"last_error":           truncateBackoffError(err.Error()),
+			},
+		})
+	}
+	return true, b.CooldownUntil
+}
+
+// handleLockCommandSuccess clears all per-device backoff after a successful
+// delivery and emits device_command_backoff_recovered when backoff was active.
+// Redis errors are logged and never block; success is never converted to failure.
+func (a *Api) handleLockCommandSuccess(ctx context.Context, tdb *db.TenantDB, sn string, target db.DeviceLockStatus, tenantSlug string) {
+	if !a.lockBackoff.Enabled {
+		return
+	}
+	state, found, err := lockStateStore.Get(ctx, tenantSlug, sn)
+	if err != nil {
+		log.Printf("lock_backoff: get state on success %s: %v", sn, err)
+		return
+	}
+	if !found || len(state.CommandBackoffs) == 0 {
+		return
+	}
+	prevMax := maxBackoffFailures(state.CommandBackoffs)
+	cleared := make([]string, 0, len(state.CommandBackoffs))
+	for k := range state.CommandBackoffs {
+		cleared = append(cleared, string(k))
+	}
+	state.CommandBackoffs = nil
+	state.UpdatedAt = time.Now()
+	if errPut := lockStateStore.Put(ctx, tenantSlug, sn, state); errPut != nil {
+		log.Printf("lock_backoff: put state on success %s: %v", sn, errPut)
+	}
+	log.Printf("lock_command_backoff: recovered tenant=%s sn=%s successful_target=%s previous_failures=%d",
+		tenantSlug, sn, target, prevMax)
+	if tdb != nil {
+		a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+			SN:     sn,
+			Action: "device_command_backoff_recovered",
+			Status: target,
+			Details: bson.M{
+				"successful_target_status": target,
+				"cleared_targets":          cleared,
+				"previous_max_failures":    prevMax,
+			},
+		})
+	}
 }
 
 func isPermanentLockCommandError(err error) bool {
