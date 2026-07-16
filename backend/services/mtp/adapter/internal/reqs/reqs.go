@@ -114,6 +114,26 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 			propertiesFilter = append(propertiesFilter, bson.E{Key: "status", Value: statusFilter})
 		}
 
+		// Internal callers (lock IP poller/chase via getDevicesNoHTTP) send a bare
+		// filter without status_order/skip/limit. Default them so the pipeline
+		// below doesn't emit $sort:{status:null} (Mongo rejects it). Omit $limit
+		// when unset so non-paginated callers receive all matches.
+		statusOrder := criteria["status_order"]
+		if statusOrder == nil {
+			statusOrder = 1
+		}
+		skipVal := criteria["skip"]
+		if skipVal == nil {
+			skipVal = 0
+		}
+		documentsStage := bson.A{
+			bson.D{{"$sort", bson.D{{"status", statusOrder}}}},
+			bson.D{{"$skip", skipVal}},
+		}
+		if limitVal := criteria["limit"]; limitVal != nil {
+			documentsStage = append(documentsStage, bson.D{{"$limit", limitVal}})
+		}
+
 		filter := bson.A{
 			bson.D{
 				{"$match",
@@ -128,13 +148,7 @@ func StartRequestsListener(ctx context.Context, nc *nats.Conn, db db.Database) {
 								bson.D{{"$count", "count"}},
 							},
 						},
-						{"documents",
-							bson.A{
-								bson.D{{"$sort", bson.D{{"status", criteria["status_order"]}}}},
-								bson.D{{"$skip", criteria["skip"]}},
-								bson.D{{"$limit", criteria["limit"]}},
-							},
-						},
+						{"documents", documentsStage},
 					},
 				},
 			},

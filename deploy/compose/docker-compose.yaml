@@ -32,6 +32,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 10s
   #/* -------------------------------------------------------------------------- */
 
   #/* ------------------------ API REST / USP Controller ----------------------- */
@@ -60,6 +61,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 60s
   #/* -------------------------------------------------------------------------- */
 
   #/* ---------------------------- Databases / Cache --------------------------- */
@@ -78,6 +80,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   # ONT Lock scale adapters: policy/device-state cache (AOF) + audit stream (KRaft single-node).
   # Reachable only on usp_network as redis:6379 and kafka:9092 (no host ports).
@@ -99,6 +102,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   kafka-volume-init:
     # apache/kafka runs as appuser (uid 1000), but a fresh named volume is owned
@@ -339,6 +343,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 60s
     # Validate config on startup
     command: >
       sh -c "nginx -t && nginx -g 'daemon off;'"
