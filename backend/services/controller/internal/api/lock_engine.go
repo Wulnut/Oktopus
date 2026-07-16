@@ -648,7 +648,7 @@ func (a *Api) handleLockCommandFailure(ctx context.Context, tdb *db.TenantDB, at
 	if cooledDown {
 		if tdb != nil {
 			_ = tdb.UpdateLockCommandStatus(ctx, attempt.ID, db.LockCommandFailed,
-				fmt.Sprintf("%s (device backoff until %s)", truncateBackoffError(err.Error()), deadline.Format(time.RFC3339)))
+				formatBackoffCommandError(err.Error(), deadline))
 		}
 		return
 	}
@@ -668,10 +668,10 @@ func (a *Api) handleLockCommandFailure(ctx context.Context, tdb *db.TenantDB, at
 }
 
 // recordDeviceBackoffFailure records one retryable failure in the device's Redis
-// state (read-modify-write preserving LastIP/LastStatus). Returns cooled=true and
-// the deadline when this failure reached/re-extended the cooldown threshold, and
-// emits the device_command_backoff_started transition log + audit. Redis errors
-// are logged and never block.
+// state (read-modify-write preserving existing device fields). Returns cooled=true
+// and the deadline when this failure enters or re-enters cooldown, and emits the
+// device_command_backoff_started transition log + audit. Redis errors are logged
+// and never block.
 func (a *Api) recordDeviceBackoffFailure(ctx context.Context, tdb *db.TenantDB, tenantSlug, sn string, target db.DeviceLockStatus, err error) (bool, time.Time) {
 	state, found, errGet := lockStateStore.Get(ctx, tenantSlug, sn)
 	if errGet != nil {
@@ -688,6 +688,7 @@ func (a *Api) recordDeviceBackoffFailure(ctx context.Context, tdb *db.TenantDB, 
 	state.UpdatedAt = now
 	if errPut := lockStateStore.Put(ctx, tenantSlug, sn, state); errPut != nil {
 		log.Printf("lock_backoff: put state %s: %v", sn, errPut)
+		return false, time.Time{}
 	}
 	if !cooled {
 		return false, time.Time{}
@@ -715,9 +716,6 @@ func (a *Api) recordDeviceBackoffFailure(ctx context.Context, tdb *db.TenantDB, 
 // delivery and emits device_command_backoff_recovered when backoff was active.
 // Redis errors are logged and never block; success is never converted to failure.
 func (a *Api) handleLockCommandSuccess(ctx context.Context, tdb *db.TenantDB, sn string, target db.DeviceLockStatus, tenantSlug string) {
-	if !a.lockBackoff.Enabled {
-		return
-	}
 	state, found, err := lockStateStore.Get(ctx, tenantSlug, sn)
 	if err != nil {
 		log.Printf("lock_backoff: get state on success %s: %v", sn, err)
@@ -735,6 +733,7 @@ func (a *Api) handleLockCommandSuccess(ctx context.Context, tdb *db.TenantDB, sn
 	state.UpdatedAt = time.Now()
 	if errPut := lockStateStore.Put(ctx, tenantSlug, sn, state); errPut != nil {
 		log.Printf("lock_backoff: put state on success %s: %v", sn, errPut)
+		return
 	}
 	log.Printf("lock_command_backoff: recovered tenant=%s sn=%s successful_target=%s previous_failures=%d",
 		tenantSlug, sn, target, prevMax)

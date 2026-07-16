@@ -59,6 +59,21 @@ func truncateBackoffError(s string) string {
 	return string(r[:maxLockBackoffErrorLen])
 }
 
+// formatBackoffCommandError reserves space for the cooldown deadline suffix so
+// the complete Mongo error remains within maxLockBackoffErrorLen runes.
+func formatBackoffCommandError(errMsg string, deadline time.Time) string {
+	suffix := " (device backoff until " + deadline.Format(time.RFC3339) + ")"
+	remaining := maxLockBackoffErrorLen - len([]rune(suffix))
+	if remaining < 0 {
+		remaining = 0
+	}
+	errRunes := []rune(errMsg)
+	if len(errRunes) > remaining {
+		errRunes = errRunes[:remaining]
+	}
+	return string(errRunes) + suffix
+}
+
 func backoffFor(m map[db.DeviceLockStatus]*lockCommandBackoff, status db.DeviceLockStatus) *lockCommandBackoff {
 	if m == nil {
 		return nil
@@ -75,8 +90,9 @@ func isBackoffCoolingDown(m map[db.DeviceLockStatus]*lockCommandBackoff, status 
 // applyBackoffFailure returns a NEW map with one retryable failure recorded for
 // status. It does not mutate prev. The failure count is never reset on cooldown
 // expiry, so the first post-cooldown failure (count already >= threshold)
-// immediately starts a new cooldown. Returns the new map and cooled=true when the
-// threshold was reached (cooldown now active for status).
+// immediately starts a new cooldown. Returns transitioned=true only when this
+// failure enters or re-enters cooldown; failures during active cooldown preserve
+// its deadline and do not emit another transition.
 func applyBackoffFailure(
 	prev map[db.DeviceLockStatus]*lockCommandBackoff,
 	status db.DeviceLockStatus,
@@ -99,15 +115,16 @@ func applyBackoffFailure(
 		b = &lockCommandBackoff{}
 		next[status] = b
 	}
+	wasCoolingDown := now.Before(b.CooldownUntil)
 	b.ConsecutiveFailures++
 	b.LastFailureAt = now
 	b.LastError = truncateBackoffError(lastErr)
-	cooled := false
-	if threshold > 0 && b.ConsecutiveFailures >= threshold {
+	transitioned := false
+	if threshold > 0 && b.ConsecutiveFailures >= threshold && !wasCoolingDown {
 		b.CooldownUntil = now.Add(cooldown)
-		cooled = true
+		transitioned = true
 	}
-	return next, cooled
+	return next, transitioned
 }
 
 // maxBackoffFailures returns the highest ConsecutiveFailures across all targets.
