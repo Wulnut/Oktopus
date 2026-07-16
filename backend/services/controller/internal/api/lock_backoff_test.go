@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,5 +159,56 @@ func TestMaxBackoffFailures(t *testing.T) {
 	}
 	if maxBackoffFailures(nil) != 0 {
 		t.Fatal("nil map max should be 0")
+	}
+}
+
+func TestLockDeviceState_DecodesOldJSONWithoutBackoff(t *testing.T) {
+	old := `{"last_ip":"10.0.0.1","last_status":"LOCKED","last_command":"1","updated_at":"2026-07-16T12:00:00Z"}`
+	var st lockDeviceState
+	if err := json.Unmarshal([]byte(old), &st); err != nil {
+		t.Fatalf("old json must decode: %v", err)
+	}
+	if st.LastIP != "10.0.0.1" || st.LastStatus != db.LockStatusLocked || st.LastCommand != "1" {
+		t.Fatalf("fields mismatch: %+v", st)
+	}
+	if st.CommandBackoffs != nil {
+		t.Fatal("old json must leave backoff nil")
+	}
+}
+
+func TestLockDeviceState_OmitsEmptyBackoff(t *testing.T) {
+	st := lockDeviceState{LastIP: "10.0.0.1", LastStatus: db.LockStatusLocked, UpdatedAt: fixedNow()}
+	b, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "command_backoffs") {
+		t.Fatalf("empty backoff must be omitted: %s", b)
+	}
+}
+
+func TestLockDeviceState_RoundTripsBackoff(t *testing.T) {
+	st := lockDeviceState{
+		LastIP:      "10.0.0.1",
+		LastStatus:  db.LockStatusLocked,
+		LastCommand: "1",
+		UpdatedAt:   fixedNow(),
+		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
+			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: fixedNow().Add(10 * time.Minute), LastError: "x"},
+		},
+	}
+	b, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out lockDeviceState
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.LastIP != st.LastIP || out.LastCommand != st.LastCommand || out.LastStatus != st.LastStatus {
+		t.Fatalf("roundtrip lost core fields: %+v", out)
+	}
+	if len(out.CommandBackoffs) != 1 || out.CommandBackoffs[db.LockStatusLocked].ConsecutiveFailures != 3 {
+		t.Fatalf("roundtrip lost backoff: %+v", out.CommandBackoffs)
 	}
 }

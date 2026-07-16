@@ -24,11 +24,12 @@ return 0
 `)
 
 type lockDeviceState struct {
-	LastIP      string              `json:"last_ip"`
-	LastStatus  db.DeviceLockStatus `json:"last_status"`
-	LastCommand string              `json:"last_command,omitempty"`
-	NotifyOKAt  time.Time           `json:"notify_ok_at,omitempty"`
-	UpdatedAt   time.Time           `json:"updated_at"`
+	LastIP          string                                      `json:"last_ip"`
+	LastStatus      db.DeviceLockStatus                         `json:"last_status"`
+	LastCommand     string                                      `json:"last_command,omitempty"`
+	NotifyOKAt      time.Time                                   `json:"notify_ok_at,omitempty"`
+	UpdatedAt       time.Time                                   `json:"updated_at"`
+	CommandBackoffs map[db.DeviceLockStatus]*lockCommandBackoff `json:"command_backoffs,omitempty"`
 }
 
 type lockDeviceStateStore interface {
