@@ -96,6 +96,24 @@ func DeleteTenantKVBucket(js jetstream.JetStream, slug string) error {
 	return js.DeleteKeyValue(context.Background(), "devices-auth-"+slug)
 }
 
+// EnsureTenantKVBuckets recreates missing per-tenant JetStream KV buckets after
+// a NATS restart or data loss. Existing buckets are left unchanged.
+func EnsureTenantKVBuckets(ctx context.Context, js jetstream.JetStream, slugs []string) {
+	for _, slug := range slugs {
+		if slug == "" {
+			continue
+		}
+		if _, err := CreateTenantKVBucket(js, slug); err != nil {
+			log.Printf("EnsureTenantKVBuckets: devices-auth-%s: %v", slug, err)
+			continue
+		}
+		log.Printf("EnsureTenantKVBuckets: ensured devices-auth-%s", slug)
+		if _, err := CreateTenantCwmpConnRqBucket(js, slug); err != nil {
+			log.Printf("EnsureTenantKVBuckets: cwmp-conn-rq-%s: %v", slug, err)
+		}
+	}
+}
+
 // CreateTenantCwmpConnRqBucket creates or updates the per-tenant KV bucket
 // that the ACS uses to persist HTTP Digest credentials it has provisioned to
 // each CPE for Connection Request authentication. Key = SN, value = JSON.

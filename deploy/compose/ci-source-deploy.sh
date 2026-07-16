@@ -117,6 +117,57 @@ merge_missing_env_defaults() {
   fi
 }
 
+remove_legacy_path() {
+  local path="$1"
+  [ -e "$path" ] || return 0
+  if find "$path" -user root 2>/dev/null | head -1 | grep -q .; then
+    docker run --rm -v "$path:/data" alpine sh -c 'find /data -depth -delete 2>/dev/null || true'
+  else
+    find "$path" -depth -delete 2>/dev/null || true
+  fi
+}
+
+# Flat prod layout kept data at ~/oktopus/{mongo_data,...}; compose expects ./ under deploy/compose/.
+migrate_legacy_flat_layout() {
+  local root="$REPO_ROOT"
+  local compose="$SCRIPT_DIR"
+
+  if [ -d "$root/mongo_data" ] && [ ! -d "$compose/mongo_data" ]; then
+    log "Migrating mongo_data from repo root"
+    mv "$root/mongo_data" "$compose/mongo_data"
+  elif [ -d "$root/mongo_data" ] && [ -d "$compose/mongo_data" ]; then
+    local root_kb compose_kb
+    root_kb="$(du -sk "$root/mongo_data" | cut -f1)"
+    compose_kb="$(du -sk "$compose/mongo_data" | cut -f1)"
+    if [ "$root_kb" -gt "$compose_kb" ] && [ "$compose_kb" -lt 1024 ]; then
+      log "Replacing compose mongo_data (${compose_kb}K) with legacy root data (${root_kb}K)"
+      mv "$compose/mongo_data" "$compose/mongo_data.ci-replaced-$(date +%Y%m%d)"
+      mv "$root/mongo_data" "$compose/mongo_data"
+    fi
+  fi
+
+  for item in portainer_data nats_data nats_config firmwares images; do
+    if [ -e "$root/$item" ] && [ ! -e "$compose/$item" ]; then
+      log "Migrating ${item} from repo root"
+      mv "$root/$item" "$compose/$item"
+    fi
+  done
+
+  if [ -f "$root/images/logo.png" ] && [ ! -f "$compose/images/logo.png" ]; then
+    log "Copying images/logo.png to deploy/compose/images/"
+    mkdir -p "$compose/images"
+    cp "$root/images/logo.png" "$compose/images/" 2>/dev/null || \
+      docker run --rm -v "$root/images:/src" -v "$compose/images:/dst" alpine cp /src/logo.png /dst/
+  fi
+
+  for item in container-upload-service firmwares images nats_config nats_data portainer_data registry-certs-generator mongo_data; do
+    if [ -e "$root/$item" ]; then
+      log "Removing legacy ${item}/ from repo root"
+      remove_legacy_path "$root/$item"
+    fi
+  done
+}
+
 build_makefile_service() {
   local svc="$1"
   local rel_build_dir="$2"
@@ -141,6 +192,7 @@ esac
 cd "$SCRIPT_DIR"
 setup_docker_cli
 setup_compose_project
+migrate_legacy_flat_layout
 
 # ---------------------------------------------------------------------------
 # Bootstrap secrets and data dirs (idempotent; does not overwrite real secrets)

@@ -31,6 +31,19 @@ func main() {
 	// (e.g. case-insensitive collation on the campaigns unique index).
 	database.MigrateAllTenantIndexes(c.Mongo.Ctx)
 
+	// Recreate missing per-tenant NATS KV buckets (device auth, CWMP conn-rq).
+	if tenants, err := database.FindAllTenants(c.Mongo.Ctx); err != nil {
+		log.Printf("EnsureTenantKVBuckets: list tenants: %v", err)
+	} else {
+		var slugs []string
+		for _, t := range tenants {
+			if t.Slug != "" && t.Status == db.TenantStatusActive {
+				slugs = append(slugs, t.Slug)
+			}
+		}
+		nats.EnsureTenantKVBuckets(c.Mongo.Ctx, js, slugs)
+	}
+
 	// Start message interceptor — resolves tenant DB dynamically from NATS subject
 	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, &database, c.Controller.ControllerId)
 
