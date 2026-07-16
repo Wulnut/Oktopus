@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leandrofars/oktopus/internal/bridge"
+	"github.com/leandrofars/oktopus/internal/config"
 	"github.com/leandrofars/oktopus/internal/db"
 )
 
@@ -210,5 +212,23 @@ func TestLockDeviceState_RoundTripsBackoff(t *testing.T) {
 	}
 	if len(out.CommandBackoffs) != 1 || out.CommandBackoffs[db.LockStatusLocked].ConsecutiveFailures != 3 {
 		t.Fatalf("roundtrip lost backoff: %+v", out.CommandBackoffs)
+	}
+}
+
+func TestNewApi_NormalizesBackoffConfig(t *testing.T) {
+	// NewApi must normalize threshold/cooldown via normalizeLockBackoffConfig.
+	api := NewApi(&config.Config{
+		LockDeviceFailureBackoff: config.LockDeviceFailureBackoff{
+			Enabled: true, Threshold: 0, Cooldown: 5 * time.Second,
+		},
+	}, nil, nil, bridge.Bridge{}, db.Database{})
+	if !api.lockBackoff.Enabled {
+		t.Fatal("enabled must be preserved")
+	}
+	if api.lockBackoff.Threshold != 3 {
+		t.Fatalf("threshold must normalize to 3, got %d", api.lockBackoff.Threshold)
+	}
+	if api.lockBackoff.Cooldown != 60*time.Second {
+		t.Fatalf("cooldown must clamp to 60s, got %v", api.lockBackoff.Cooldown)
 	}
 }
