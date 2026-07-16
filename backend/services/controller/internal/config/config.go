@@ -56,10 +56,10 @@ type LockScale struct {
 }
 
 type LockRetryScheduler struct {
-	Enabled       bool
-	Interval      time.Duration
+	Enabled        bool
+	Interval       time.Duration
 	CommandTimeout time.Duration
-	MaxAttempts   int
+	MaxAttempts    int
 }
 
 type LockCircuitBreaker struct {
@@ -68,15 +68,22 @@ type LockCircuitBreaker struct {
 	WindowSec int
 }
 
+type LockDeviceFailureBackoff struct {
+	Enabled   bool
+	Threshold int
+	Cooldown  time.Duration
+}
+
 type Config struct {
-	RestApi            RestApi
-	Nats               Nats
-	Mongo              Mongo
-	Controller         Controller
-	CampaignScheduler  CampaignScheduler
-	LockScale          LockScale
-	LockRetryScheduler LockRetryScheduler
-	LockCircuitBreaker LockCircuitBreaker
+	RestApi                  RestApi
+	Nats                     Nats
+	Mongo                    Mongo
+	Controller               Controller
+	CampaignScheduler        CampaignScheduler
+	LockScale                LockScale
+	LockRetryScheduler       LockRetryScheduler
+	LockCircuitBreaker       LockCircuitBreaker
+	LockDeviceFailureBackoff LockDeviceFailureBackoff
 }
 
 type Tls struct {
@@ -188,6 +195,7 @@ func NewConfig() *Config {
 			Threshold: *lockCircuitBreakerThreshold,
 			WindowSec: *lockCircuitBreakerWindowSec,
 		},
+		LockDeviceFailureBackoff: parseLockDeviceFailureBackoff(),
 	}
 }
 
@@ -234,4 +242,16 @@ func lookupEnvOrInt(key string, defaultVal int) int {
 		return v
 	}
 	return defaultVal
+}
+
+// parseLockDeviceFailureBackoff reads the per-device failure-backoff env vars.
+// Code defaults keep the feature OFF and use threshold=3 / cooldown=600s; compose
+// sets LOCK_DEVICE_FAILURE_BACKOFF_ENABLED=true. Validation (threshold<1->3,
+// cooldown<60s->60s) is applied in the api package when building the runtime policy.
+func parseLockDeviceFailureBackoff() LockDeviceFailureBackoff {
+	return LockDeviceFailureBackoff{
+		Enabled:   lookupEnvOrBool("LOCK_DEVICE_FAILURE_BACKOFF_ENABLED", false),
+		Threshold: lookupEnvOrInt("LOCK_DEVICE_FAILURE_THRESHOLD", 3),
+		Cooldown:  time.Duration(lookupEnvOrInt("LOCK_DEVICE_FAILURE_COOLDOWN_SEC", 600)) * time.Second,
+	}
 }
