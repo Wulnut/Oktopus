@@ -48,7 +48,7 @@ func main() {
 	usp.StartMessageInterceptor(c.Mongo.Ctx, nc, &database, c.Controller.ControllerId)
 
 	a := api.NewApi(c, js, nc, bridge, database)
-	api.InitLockScaleAdapters(c.LockScale)
+	api.InitLockScaleAdapters(c.LockScale, c.LockDeviceFailureBackoff.Enabled)
 	a.StartApi()
 	a.InitLockEngine(c.LockCircuitBreaker)
 	a.StartLockEngine()

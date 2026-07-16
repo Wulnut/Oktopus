@@ -38,9 +38,20 @@ type lockDeviceStateStore interface {
 	TryLock(ctx context.Context, tenant, sn string, ttl time.Duration) (unlock func(), ok bool, err error)
 }
 
+type lockBackoffStoreAvailability interface {
+	SupportsPersistentBackoff() bool
+}
+
+func supportsPersistentLockBackoff(store lockDeviceStateStore) bool {
+	availability, ok := store.(lockBackoffStoreAvailability)
+	return !ok || availability.SupportsPersistentBackoff()
+}
+
 var lockStateStore lockDeviceStateStore = noopLockDeviceStateStore{}
 
 type noopLockDeviceStateStore struct{}
+
+func (noopLockDeviceStateStore) SupportsPersistentBackoff() bool { return false }
 
 func (noopLockDeviceStateStore) Get(context.Context, string, string) (lockDeviceState, bool, error) {
 	return lockDeviceState{}, false, nil
@@ -86,6 +97,8 @@ func (s *redisLockBackend) Put(ctx context.Context, tenant, sn string, st lockDe
 	// No TTL on state keys — last known IP/status should persist across restarts.
 	return s.client.Set(ctx, lockDeviceStateKey(tenant, sn), raw, 0).Err()
 }
+
+func (*redisLockBackend) SupportsPersistentBackoff() bool { return true }
 
 // TryLock acquires a per-SN eval lock via SET NX EX with a unique token.
 // Unlock is compare-and-del so TTL expiry cannot delete another holder's key.

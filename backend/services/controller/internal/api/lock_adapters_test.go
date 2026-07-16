@@ -1,12 +1,16 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/leandrofars/oktopus/internal/config"
 	"github.com/leandrofars/oktopus/internal/db"
 )
 
@@ -102,5 +106,20 @@ func TestNoopLockAdaptersDoNotPanic(t *testing.T) {
 	}
 	if err := lockAuditSink.PublishLockAudit(ctx, "tenant", db.LockAuditLog{Action: "noop"}); err != nil {
 		t.Fatalf("noop sink: %v", err)
+	}
+}
+
+func TestInitLockScaleAdapters_LogsBackoffSoftDegradeWithoutRedis(t *testing.T) {
+	resetLockAdaptersForTest()
+	defer resetLockAdaptersForTest()
+
+	var logs bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(previousWriter)
+
+	InitLockScaleAdapters(config.LockScale{RedisEnabled: false}, true)
+	if !strings.Contains(logs.String(), "lock_backoff: enabled but Redis state is unavailable; soft-degrading") {
+		t.Fatalf("missing backoff soft-degrade startup log: %s", logs.String())
 	}
 }

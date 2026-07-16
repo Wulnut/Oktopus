@@ -264,8 +264,9 @@ Compose `.env.controller.example` defaults these to `true`; code defaults to `fa
 | `LOCK_IP_POLL_ENABLED` / `LOCK_IP_POLL_INTERVAL_SEC` | WAN IP re-eval poller; interval min 30s, default 60s |
 | `LOCK_NOTIFY_ENABLED` / `LOCK_NOTIFY_HEALTH_SEC` | USP ValueChange notify path; health window default 120s |
 | `LOCK_GREENPLUM_*` | Optional audit sink; remains off by default |
+| `LOCK_DEVICE_FAILURE_BACKOFF_ENABLED` / `LOCK_DEVICE_FAILURE_THRESHOLD` / `LOCK_DEVICE_FAILURE_COOLDOWN_SEC` | Per-device + per-target retryable-failure backoff (threshold 3, 10-min cooldown, post-cooldown probe, clears on any success). Code default disabled; compose true |
 
-**Behavior:** Online/chase force-converge Set when `ShouldCommand`. Poll/notify skip Set when Redis `last_status` is unchanged; poll early-exits on same `last_ip`. Unsupported OntLock devices are listed in the UI; opt-out stops probing; re-probe on device online.
+**Behavior:** Online/chase force-converge Set when `ShouldCommand`. Poll/notify skip Set when Redis `last_status` is unchanged; poll early-exits on same `last_ip`. Unsupported OntLock devices are listed in the UI; opt-out stops probing; re-probe on device online. Per-device failure backoff stops the same target after 3 retryable delivery failures for 10 minutes; the opposite target and a post-cooldown probe remain allowed, and any successful command clears all device backoff. State lives in the existing `lockDeviceState` Redis JSON and soft-degrades when Redis is unavailable.
 
 ### MongoDB Databases
 

@@ -28,7 +28,7 @@ services:
       - ../../backend/services/controller:/app
     environment:
       - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
-    command: go test -v -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/
+    command: go test -v -count=1 ./internal/cwmp/ ./internal/usp/usp_utils/ ./internal/api/ ./internal/config/
     networks:
       - test_network
     profiles: [unit]

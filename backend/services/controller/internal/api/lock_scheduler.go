@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -17,6 +18,28 @@ func shouldMarkLockCommandForRetry(attemptCount, maxAttempts int) bool {
 		maxAttempts = db.DefaultLockCommandMaxAttempts
 	}
 	return attemptCount < maxAttempts
+}
+
+// retryCooldownMessage returns an explanatory failure message when a retry for
+// target must be drained without being claimed. Redis failures soft-degrade to
+// the existing retry behavior.
+func (a *Api) retryCooldownMessage(ctx context.Context, tenantSlug, sn string, target db.DeviceLockStatus) (string, bool) {
+	if !a.lockBackoff.Enabled {
+		return "", false
+	}
+	state, found, err := lockStateStore.Get(ctx, tenantSlug, sn)
+	if err != nil {
+		log.Printf("lock_backoff: get state before retry %s: %v", sn, err)
+		return "", false
+	}
+	if !found {
+		return "", false
+	}
+	b := backoffFor(state.CommandBackoffs, target)
+	if b == nil || !time.Now().Before(b.CooldownUntil) {
+		return "", false
+	}
+	return fmt.Sprintf("suppressed by device cooldown until %s", b.CooldownUntil.Format(time.RFC3339)), true
 }
 
 // StartLockRetryScheduler retries lock commands marked for retry after command timeout.
@@ -118,6 +141,10 @@ func (a *Api) retryLockCommand(tenantSlug string, command db.LockCommandAttempt)
 	if a.suppressLockIfBreakerTripped(ctx, tdb, tenantSlug, command.DeviceSN, decision.Status) {
 		return
 	}
+	if msg, suppress := a.retryCooldownMessage(ctx, tenantSlug, command.DeviceSN, decision.Status); suppress {
+		_ = tdb.UpdateLockCommandStatus(ctx, command.ID, db.LockCommandFailed, msg)
+		return
+	}
 
 	attempt, err := tdb.PrepareLockCommandResend(ctx, command.ID, command.UpdatedAt, reportedIP, decision.Status, decision.CommandValue)
 	if err != nil {
@@ -148,10 +175,7 @@ func (a *Api) retryLockCommand(tenantSlug string, command db.LockCommandAttempt)
 	if stateErr != nil || !found {
 		state = lockDeviceState{}
 	}
-	state.LastIP = reportedIP
-	state.LastStatus = decision.Status
-	state.LastCommand = decision.CommandValue
-	state.UpdatedAt = time.Now()
+	state = successfulLockDeviceState(state, reportedIP, decision.Status, decision.CommandValue, time.Now())
 	if err := lockStateStore.Put(ctx, tenantSlug, attempt.DeviceSN, state); err != nil {
 		log.Printf("lock_retry_scheduler: tenant %s put state %s: %v", tenantSlug, attempt.DeviceSN, err)
 	}

@@ -114,16 +114,16 @@ func newKafkaLockEventSink(brokers, topic string) (*kafkaLockEventSink, error) {
 }
 
 type lockAuditKafkaMessage struct {
-	TenantSlug  string             `json:"tenant_slug"`
-	ID          string             `json:"id"`
-	SN          string             `json:"sn,omitempty"`
-	Action      string             `json:"action"`
-	PolicyType  db.LockPolicyType  `json:"policy_type,omitempty"`
-	Status      db.DeviceLockStatus `json:"status,omitempty"`
-	OperatorID  string             `json:"operator_id,omitempty"`
-	Description string             `json:"description,omitempty"`
+	TenantSlug  string                 `json:"tenant_slug"`
+	ID          string                 `json:"id"`
+	SN          string                 `json:"sn,omitempty"`
+	Action      string                 `json:"action"`
+	PolicyType  db.LockPolicyType      `json:"policy_type,omitempty"`
+	Status      db.DeviceLockStatus    `json:"status,omitempty"`
+	OperatorID  string                 `json:"operator_id,omitempty"`
+	Description string                 `json:"description,omitempty"`
 	Details     map[string]interface{} `json:"details,omitempty"`
-	CreatedAt   time.Time          `json:"created_at"`
+	CreatedAt   time.Time              `json:"created_at"`
 }
 
 func lockAuditToKafkaMessage(tenantSlug string, entry db.LockAuditLog) lockAuditKafkaMessage {
@@ -218,7 +218,7 @@ ON CONFLICT (id) DO NOTHING`,
 
 // InitLockScaleAdapters wires optional Redis/Kafka/Greenplum adapters from config.
 // Core lock features continue to work when adapters are disabled.
-func InitLockScaleAdapters(cfg config.LockScale) {
+func InitLockScaleAdapters(cfg config.LockScale, backoffEnabled bool) {
 	if cfg.RedisEnabled {
 		if cfg.RedisURL == "" {
 			log.Printf("lock_adapters: LOCK_REDIS_ENABLED=true but LOCK_REDIS_URL is empty, using noop cache")
@@ -229,6 +229,9 @@ func InitLockScaleAdapters(cfg config.LockScale) {
 			lockStateStore = backend
 			log.Printf("lock_adapters: redis policy cache and device state store enabled")
 		}
+	}
+	if backoffEnabled && !supportsPersistentLockBackoff(lockStateStore) {
+		log.Printf("lock_backoff: enabled but Redis state is unavailable; soft-degrading (no persistent backoff state)")
 	}
 
 	var sinks []lockEventSink

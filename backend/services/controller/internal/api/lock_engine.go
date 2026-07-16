@@ -340,6 +340,53 @@ func shouldSkipLockCommand(trigger string, found bool, prevStatus, decisionStatu
 	return found && prevStatus == decisionStatus
 }
 
+// shouldSkipFreshLockCommand keeps the legacy same-status optimization unless
+// a recorded failure shows that the target may not actually be converged. That
+// failure must be allowed to probe again after its cooldown expires.
+func (a *Api) shouldSkipFreshLockCommand(trigger string, found bool, prev lockDeviceState, decisionStatus db.DeviceLockStatus, shouldCommand bool) bool {
+	if a.lockBackoff.Enabled && backoffFor(prev.CommandBackoffs, decisionStatus) != nil {
+		return false
+	}
+	return shouldSkipLockCommand(trigger, found, prev.LastStatus, decisionStatus, shouldCommand)
+}
+
+func nextLockEvaluationState(prev lockDeviceState, found bool, reportedIP string, status db.DeviceLockStatus, now time.Time) lockDeviceState {
+	next := lockDeviceState{
+		LastIP:     reportedIP,
+		LastStatus: status,
+		UpdatedAt:  now,
+	}
+	if found {
+		next.LastCommand = prev.LastCommand
+		next.NotifyOKAt = prev.NotifyOKAt
+		next.CommandBackoffs = prev.CommandBackoffs
+	}
+	return next
+}
+
+func successfulLockDeviceState(state lockDeviceState, reportedIP string, status db.DeviceLockStatus, commandValue string, now time.Time) lockDeviceState {
+	state.LastIP = reportedIP
+	state.LastStatus = status
+	state.LastCommand = commandValue
+	state.UpdatedAt = now
+	state.CommandBackoffs = nil
+	return state
+}
+
+// evaluateFreshCooldown reports whether a fresh command for target is blocked
+// by an active per-device cooldown. Redis failures soft-degrade to allow.
+func (a *Api) evaluateFreshCooldown(ctx context.Context, tenantSlug, sn string, target db.DeviceLockStatus) bool {
+	if !a.lockBackoff.Enabled {
+		return false
+	}
+	state, found, err := lockStateStore.Get(ctx, tenantSlug, sn)
+	if err != nil {
+		log.Printf("lock_backoff: get state before fresh command %s: %v", sn, err)
+		return false
+	}
+	return found && isBackoffCoolingDown(state.CommandBackoffs, target, time.Now())
+}
+
 // evaluateAndMaybeCommand is the shared ONT Lock evaluate pipeline.
 // online/chase force-send when ShouldCommand; poll/notify skip when Redis
 // last_status matches the new decision. reportedIP empty → fetch via USP/CWMP.
@@ -432,15 +479,7 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	}
 
 	now := time.Now()
-	nextState := lockDeviceState{
-		LastIP:     reportedIP,
-		LastStatus: decision.Status,
-		UpdatedAt:  now,
-	}
-	if found {
-		nextState.LastCommand = prev.LastCommand
-		nextState.NotifyOKAt = prev.NotifyOKAt
-	}
+	nextState := nextLockEvaluationState(prev, found, reportedIP, decision.Status, now)
 	if trigger == lockTriggerIPChangeNotify {
 		nextState.NotifyOKAt = now
 	}
@@ -458,7 +497,11 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		return
 	}
 
-	if shouldSkipLockCommand(trigger, found, prev.LastStatus, decision.Status, decision.ShouldCommand) {
+	if a.evaluateFreshCooldown(ctx, tenantSlug, device.SN, decision.Status) {
+		return
+	}
+
+	if a.shouldSkipFreshLockCommand(trigger, found, prev, decision.Status, decision.ShouldCommand) {
 		details["command_skipped"] = true
 		a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
 			SN:      device.SN,
@@ -496,7 +539,7 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		return
 	}
 
-	nextState.LastCommand = decision.CommandValue
+	nextState = successfulLockDeviceState(nextState, reportedIP, decision.Status, decision.CommandValue, now)
 	if err := lockStateStore.Put(ctx, tenantSlug, device.SN, nextState); err != nil {
 		log.Printf("lock_engine: put device state %s: %v", device.SN, err)
 	}
@@ -673,6 +716,9 @@ func (a *Api) handleLockCommandFailure(ctx context.Context, tdb *db.TenantDB, at
 // device_command_backoff_started transition log + audit. Redis errors are logged
 // and never block.
 func (a *Api) recordDeviceBackoffFailure(ctx context.Context, tdb *db.TenantDB, tenantSlug, sn string, target db.DeviceLockStatus, err error) (bool, time.Time) {
+	if !supportsPersistentLockBackoff(lockStateStore) {
+		return false, time.Time{}
+	}
 	state, found, errGet := lockStateStore.Get(ctx, tenantSlug, sn)
 	if errGet != nil {
 		log.Printf("lock_backoff: get state %s: %v", sn, errGet)

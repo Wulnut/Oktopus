@@ -280,3 +280,166 @@ func TestHandleLockCommandFailure_DisabledKeepsLegacyRetry(t *testing.T) {
 		t.Fatal("disabled backoff must not write backoff state")
 	}
 }
+
+func TestEvaluateFreshCooldown_SuppressesSameTargetAndAllowsOpposite(t *testing.T) {
+	resetLockAdaptersForTest()
+	store := newFakeLockStateStore()
+	setLockStateStoreForTest(store)
+	defer setLockStateStoreForTest(noopLockDeviceStateStore{})
+
+	deadline := time.Now().Add(5 * time.Minute)
+	store.states[keyOf("t", "081074000666")] = lockDeviceState{
+		LastIP:     "10.0.0.1",
+		LastStatus: db.LockStatusUnlocked,
+		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
+			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: deadline},
+		},
+	}
+
+	a := &Api{lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{Enabled: true, Threshold: 3, Cooldown: 10 * time.Minute})}
+	if !a.evaluateFreshCooldown(context.Background(), "t", "081074000666", db.LockStatusLocked) {
+		t.Fatal("same-target fresh command must be suppressed during cooldown")
+	}
+	if a.evaluateFreshCooldown(context.Background(), "t", "081074000666", db.LockStatusUnlocked) {
+		t.Fatal("opposite target must remain allowed")
+	}
+
+	got := store.snapshot("t", "081074000666")
+	if got.LastIP != "10.0.0.1" || got.LastStatus != db.LockStatusUnlocked {
+		t.Fatalf("cooldown check must not advance device state, got %+v", got)
+	}
+	if !got.CommandBackoffs[db.LockStatusLocked].CooldownUntil.Equal(deadline) {
+		t.Fatal("cooldown check must not mutate stored backoff")
+	}
+}
+
+func TestEvaluateFreshCooldown_RedisErrorAllowsCommand(t *testing.T) {
+	resetLockAdaptersForTest()
+	store := newFakeLockStateStore()
+	store.getErr = errors.New("redis unavailable")
+	setLockStateStoreForTest(store)
+	defer setLockStateStoreForTest(noopLockDeviceStateStore{})
+
+	a := &Api{lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{Enabled: true, Threshold: 3, Cooldown: 10 * time.Minute})}
+	if a.evaluateFreshCooldown(context.Background(), "t", "081074000666", db.LockStatusLocked) {
+		t.Fatal("Redis read failure must soft-degrade and allow the command")
+	}
+}
+
+func TestNextLockEvaluationState_PreservesExistingBackoff(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 1, 0, 0, 0, time.UTC)
+	notifyAt := now.Add(-time.Minute)
+	deadline := now.Add(5 * time.Minute)
+	prev := lockDeviceState{
+		LastIP:      "10.0.0.1",
+		LastStatus:  db.LockStatusUnlocked,
+		LastCommand: "0",
+		NotifyOKAt:  notifyAt,
+		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
+			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: deadline},
+		},
+	}
+
+	got := nextLockEvaluationState(prev, true, "10.0.0.2", db.LockStatusLocked, now)
+	if got.LastIP != "10.0.0.2" || got.LastStatus != db.LockStatusLocked || !got.UpdatedAt.Equal(now) {
+		t.Fatalf("next evaluation fields mismatch: %+v", got)
+	}
+	if got.LastCommand != "0" || !got.NotifyOKAt.Equal(notifyAt) {
+		t.Fatalf("existing command/notify state must be preserved: %+v", got)
+	}
+	if got.CommandBackoffs[db.LockStatusLocked] == nil || !got.CommandBackoffs[db.LockStatusLocked].CooldownUntil.Equal(deadline) {
+		t.Fatalf("existing backoff must be preserved: %+v", got.CommandBackoffs)
+	}
+}
+
+func TestShouldSkipFreshLockCommand_BackoffForcesRecoveryProbe(t *testing.T) {
+	prev := lockDeviceState{
+		LastStatus: db.LockStatusLocked,
+		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
+			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: time.Now().Add(-time.Minute)},
+		},
+	}
+
+	enabled := &Api{lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{Enabled: true, Threshold: 3, Cooldown: 10 * time.Minute})}
+	if enabled.shouldSkipFreshLockCommand(lockTriggerIPChangePoll, true, prev, db.LockStatusLocked, true) {
+		t.Fatal("recorded same-target failure must bypass same-status skip for the recovery probe")
+	}
+
+	disabled := &Api{lockBackoff: defaultLockBackoffConfig()}
+	if !disabled.shouldSkipFreshLockCommand(lockTriggerIPChangePoll, true, prev, db.LockStatusLocked, true) {
+		t.Fatal("disabled backoff must preserve legacy same-status skip behavior")
+	}
+}
+
+func TestRetryCooldownMessage_SuppressesSameTargetAndAllowsOpposite(t *testing.T) {
+	resetLockAdaptersForTest()
+	store := newFakeLockStateStore()
+	setLockStateStoreForTest(store)
+	defer setLockStateStoreForTest(noopLockDeviceStateStore{})
+
+	deadline := time.Now().Add(5 * time.Minute)
+	store.states[keyOf("t", "081074000666")] = lockDeviceState{
+		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
+			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: deadline},
+		},
+	}
+
+	a := &Api{lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{Enabled: true, Threshold: 3, Cooldown: 10 * time.Minute})}
+	msg, suppress := a.retryCooldownMessage(context.Background(), "t", "081074000666", db.LockStatusLocked)
+	if !suppress {
+		t.Fatal("same-target retry must be suppressed during cooldown")
+	}
+	if !strings.Contains(msg, "suppressed by device cooldown") || !strings.Contains(msg, deadline.Format(time.RFC3339)) {
+		t.Fatalf("suppression message must include the deadline, got %q", msg)
+	}
+	if _, suppress := a.retryCooldownMessage(context.Background(), "t", "081074000666", db.LockStatusUnlocked); suppress {
+		t.Fatal("opposite-target retry must remain allowed")
+	}
+}
+
+func TestRetryCooldownMessage_RedisErrorAllowsRetry(t *testing.T) {
+	resetLockAdaptersForTest()
+	store := newFakeLockStateStore()
+	store.getErr = errors.New("redis unavailable")
+	setLockStateStoreForTest(store)
+	defer setLockStateStoreForTest(noopLockDeviceStateStore{})
+
+	a := &Api{lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{Enabled: true, Threshold: 3, Cooldown: 10 * time.Minute})}
+	if _, suppress := a.retryCooldownMessage(context.Background(), "t", "081074000666", db.LockStatusLocked); suppress {
+		t.Fatal("Redis read failure must soft-degrade and allow the retry")
+	}
+}
+
+func TestRecordDeviceBackoffFailure_NoopStoreNeverStartsCooldown(t *testing.T) {
+	resetLockAdaptersForTest()
+	setLockStateStoreForTest(noopLockDeviceStateStore{})
+	defer setLockStateStoreForTest(noopLockDeviceStateStore{})
+
+	a := &Api{lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{Enabled: true, Threshold: 1, Cooldown: 10 * time.Minute})}
+	cooled, deadline := a.recordDeviceBackoffFailure(context.Background(), nil, "t", "081074000666", db.LockStatusLocked, errors.New("delivery failed"))
+	if cooled || !deadline.IsZero() {
+		t.Fatalf("noop store cannot persist cooldown and must retain legacy behavior, got cooled=%v deadline=%s", cooled, deadline)
+	}
+}
+
+func TestSuccessfulLockDeviceState_ClearsBackoffAndPreservesNotify(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 2, 0, 0, 0, time.UTC)
+	notifyAt := now.Add(-time.Minute)
+	state := lockDeviceState{
+		NotifyOKAt: notifyAt,
+		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
+			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: now.Add(time.Minute)},
+		},
+	}
+
+	got := successfulLockDeviceState(state, "10.0.0.2", db.LockStatusUnlocked, "0", now)
+	if got.LastIP != "10.0.0.2" || got.LastStatus != db.LockStatusUnlocked || got.LastCommand != "0" || !got.UpdatedAt.Equal(now) {
+		t.Fatalf("successful state fields mismatch: %+v", got)
+	}
+	if !got.NotifyOKAt.Equal(notifyAt) {
+		t.Fatal("successful state update must preserve notify health")
+	}
+	if len(got.CommandBackoffs) != 0 {
+		t.Fatalf("successful state update must clear all backoff, got %+v", got.CommandBackoffs)
+	}
+}

@@ -28,13 +28,18 @@ func shouldSkipIPPollForSameIP(lastIP, currentIP string) bool {
 	return currentIP != "" && lastIP == currentIP
 }
 
+func hasPendingLockBackoff(enabled bool, state lockDeviceState) bool {
+	return enabled && len(state.CommandBackoffs) > 0
+}
+
 // shouldSkipIPPollForUnsupported skips any SN with a lock_unsupported_devices
 // row (unsupported or opt_out) so those devices never enter evaluate from poll.
 func shouldSkipIPPollForUnsupported(hasRow, _ bool) bool {
 	return hasRow
 }
 
-// StartLockIPPoller periodically re-evaluates online devices when WAN IP changes.
+// StartLockIPPoller periodically re-evaluates online devices when WAN IP changes
+// or when a recorded command failure needs a cooldown/recovery probe.
 // Disabled unless LOCK_IP_POLL_ENABLED is true. Interval is floored at 30s.
 //
 // Same-IP skip requires Redis LastIP. With noopLockDeviceStateStore (Redis off),
@@ -135,7 +140,8 @@ func (a *Api) pollLockIPForDevice(tdb *db.TenantDB, device entity.Device, tenant
 		// Soft-degrade: continue without NotifyHealth / LastIP skip.
 		state = lockDeviceState{}
 	}
-	if shouldSkipIPPollForNotifyHealth(state.NotifyOKAt, time.Now(), notifyHealth) {
+	hasBackoff := hasPendingLockBackoff(a.lockBackoff.Enabled, state)
+	if !hasBackoff && shouldSkipIPPollForNotifyHealth(state.NotifyOKAt, time.Now(), notifyHealth) {
 		return
 	}
 
@@ -146,7 +152,7 @@ func (a *Api) pollLockIPForDevice(tdb *db.TenantDB, device entity.Device, tenant
 	if ip == "" {
 		return
 	}
-	if shouldSkipIPPollForSameIP(state.LastIP, ip) {
+	if !hasBackoff && shouldSkipIPPollForSameIP(state.LastIP, ip) {
 		return
 	}
 
