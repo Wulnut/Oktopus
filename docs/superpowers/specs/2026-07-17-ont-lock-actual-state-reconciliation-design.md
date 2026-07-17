@@ -148,4 +148,3 @@ final verification.
 6. Through Electerm, verify the controller reports Redis state enabled, Redis
    contains ONT Lock device-state keys, and stable devices produce no new Recent
    Commands over at least two IP-poll intervals.
-
