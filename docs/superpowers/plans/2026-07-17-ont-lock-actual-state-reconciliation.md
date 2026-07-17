@@ -33,7 +33,7 @@
 - Produces: `probeOntLockCapabilityCWMPWithGetter(...) lockCapabilitySnapshot`
 - Produces: `gateLockCapability(...) (lockCapabilitySnapshot, bool)`
 
-- [ ] **Step 1: Write normalization and snapshot extraction tests**
+- [x] **Step 1: Write normalization and snapshot extraction tests**
 
 Add table tests that require all supported boolean representations to map to
 `db.LockStatusLocked` or `db.LockStatusUnlocked`, while empty/unknown values
@@ -62,7 +62,7 @@ func TestProbeOntLockCapabilityUSPRetainsValues(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused controller test and verify RED**
+- [x] **Step 2: Run the focused controller test and verify RED**
 
 Run:
 
@@ -72,7 +72,7 @@ cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit r
 
 Expected: FAIL because the snapshot type, normalization function, and USP getter seam do not exist, and the CWMP helper still returns `(result, detail)`.
 
-- [ ] **Step 3: Implement snapshot-producing probes**
+- [x] **Step 3: Implement snapshot-producing probes**
 
 Add:
 
@@ -102,7 +102,7 @@ return `lockProbeTransient` with a bounded detail. Change
 `probeOntLockCapability`, its transport helpers, and `gateLockCapability` to
 return the snapshot. Preserve existing unsupported-row and opt-out behavior.
 
-- [ ] **Step 4: Run focused and complete API tests and verify GREEN**
+- [x] **Step 4: Run focused and complete API tests and verify GREEN**
 
 Run the focused command from Step 2, then:
 
@@ -112,7 +112,7 @@ cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit r
 
 Expected: PASS with no controller unit failures.
 
-- [ ] **Step 5: Commit the snapshot change**
+- [x] **Step 5: Commit the snapshot change**
 
 ```bash
 git add backend/services/controller/internal/api/lock_capability.go backend/services/controller/internal/api/lock_capability_test.go
@@ -136,7 +136,7 @@ git commit -m "fix(lock): retain actual device state during probing"
 - Produces: `lockDecisionAlreadyConverged(actual db.DeviceLockStatus, decision LockDecision) bool`.
 - Produces audit detail `command_skipped=true`, `skip_reason=actual_state_match`, and `actual_status`.
 
-- [ ] **Step 1: Replace force-converge expectations with actual-state tests**
+- [x] **Step 1: Replace force-converge expectations with actual-state tests**
 
 Remove tests tied to `shouldSkipLockCommand(trigger, RedisStatus, ...)` and add:
 
@@ -166,7 +166,7 @@ func TestLockDecisionAlreadyConverged(t *testing.T) {
 Add scheduler tests for a pure retry convergence predicate using the same
 helper, covering matching and mismatching refreshed targets.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 ```bash
 cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm test-controller-unit sh -c 'go test -count=1 ./internal/api -run "TestLockDecisionAlreadyConverged|TestRetry.*Converged"'
@@ -175,7 +175,7 @@ cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit r
 Expected: FAIL because the convergence helper is absent and the old trigger
 force-send implementation remains.
 
-- [ ] **Step 3: Apply actual-state reconciliation to fresh evaluation**
+- [x] **Step 3: Apply actual-state reconciliation to fresh evaluation**
 
 In `evaluateAndMaybeCommand`:
 
@@ -202,7 +202,7 @@ Record the skip details, clear stale command backoffs in the next persisted
 state, and do not call `sendLockCommand`. Remove trigger-based force Set and the
 Redis desired-status helper. Preserve the poller's earlier LastIP optimization.
 
-- [ ] **Step 4: Apply convergence to retries**
+- [x] **Step 4: Apply convergence to retries**
 
 Capture the capability snapshot in `retryLockCommand`. Resolve policy using the
 snapshot WAN IP. If the refreshed decision is already converged:
@@ -220,7 +220,7 @@ a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
 Clear stale device backoff state using the existing successful-state helper and
 return before `PrepareLockCommandResend`.
 
-- [ ] **Step 5: Run controller tests and verify GREEN**
+- [x] **Step 5: Run controller tests and verify GREEN**
 
 Run the focused command from Step 2, then:
 
@@ -230,7 +230,7 @@ cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit r
 
 Expected: PASS, including failure-backoff and IP-poller regression tests.
 
-- [ ] **Step 6: Commit reconciliation behavior**
+- [x] **Step 6: Commit reconciliation behavior**
 
 ```bash
 git add backend/services/controller/internal/api/lock_engine.go backend/services/controller/internal/api/lock_engine_test.go backend/services/controller/internal/api/lock_scheduler.go backend/services/controller/internal/api/lock_scheduler_test.go
@@ -252,7 +252,7 @@ git commit -m "fix(lock): skip commands for converged devices"
 - Consumes: `.env.controller` after `merge_missing_env_defaults`.
 - Produces retained marker: `deploy/compose/.env.migrations` (already ignored by `deploy/compose/.env.*`).
 
-- [ ] **Step 1: Add failing executable migration tests**
+- [x] **Step 1: Add failing executable migration tests**
 
 Import `os/exec` in `deploy/tests/infra_test.go`. Add a helper that invokes Bash,
 sources `env-migrations.sh`, and calls `migrate_env_default_once` against
@@ -268,7 +268,7 @@ The first expects exact `false` to become `true` and the marker id to appear.
 The third runs migration once, rewrites the value to `false`, runs it again, and
 expects `false` to remain.
 
-- [ ] **Step 2: Run infra tests and verify RED**
+- [x] **Step 2: Run infra tests and verify RED**
 
 ```bash
 cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm test-infra
@@ -276,7 +276,7 @@ cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit r
 
 Expected: FAIL because `env-migrations.sh` and its function do not exist.
 
-- [ ] **Step 3: Implement the one-time migration helper**
+- [x] **Step 3: Implement the one-time migration helper**
 
 Create an ASCII Bash library guarded against direct side effects. The function
 must validate non-empty arguments, return immediately when the exact migration
@@ -297,13 +297,13 @@ migrate_env_default_once \
   "true"
 ```
 
-- [ ] **Step 4: Update project infrastructure documentation**
+- [x] **Step 4: Update project infrastructure documentation**
 
 Update `AGENTS.md` to state that source deployment performs a one-time migration
 of the original ONT Lock Redis default from false to true, records the migration
 locally, and preserves later operator overrides.
 
-- [ ] **Step 5: Run infra tests and verify GREEN**
+- [x] **Step 5: Run infra tests and verify GREEN**
 
 ```bash
 cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm test-infra
@@ -311,7 +311,7 @@ cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit r
 
 Expected: PASS with all migration and existing infrastructure conventions.
 
-- [ ] **Step 6: Commit deployment migration**
+- [x] **Step 6: Commit deployment migration**
 
 ```bash
 git add deploy/compose/env-migrations.sh deploy/compose/ci-source-deploy.sh deploy/tests/infra_test.go AGENTS.md
@@ -330,7 +330,7 @@ git commit -m "fix(deploy): migrate legacy ONT Lock Redis default"
 - Consumes the complete implementation.
 - Produces a verified `telkomsel/ont-lock-dev` commit set ready for staging CI.
 
-- [ ] **Step 1: Run complete controller and infra tests**
+- [x] **Step 1: Run complete controller and infra tests**
 
 ```bash
 cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm test-controller-unit
@@ -339,15 +339,15 @@ cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit r
 
 Expected: both services exit 0 with no test failures.
 
-- [ ] **Step 2: Run race verification**
+- [x] **Step 2: Run race verification**
 
 ```bash
-cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm test-controller-race
+cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm test-controller-unit sh -c 'go test -race -count=1 ./...'
 ```
 
 Expected: exit 0 with no race reports.
 
-- [ ] **Step 3: Build the controller image**
+- [x] **Step 3: Build the controller image**
 
 ```bash
 cd deploy/compose && docker compose -f docker-compose.yaml -f docker-compose.dev.yaml build controller
@@ -355,7 +355,7 @@ cd deploy/compose && docker compose -f docker-compose.yaml -f docker-compose.dev
 
 Expected: controller image builds successfully.
 
-- [ ] **Step 4: Review the complete diff and repository state**
+- [x] **Step 4: Review the complete diff and repository state**
 
 ```bash
 git diff origin/telkomsel/ont-lock-dev...HEAD --check
@@ -382,4 +382,3 @@ Compare branches, merge `telkomsel/ont-lock-dev` into `telkomsel/ont-lock`
 without force-pushing, push, and wait for the production pipeline to succeed.
 Then use Electerm MCP to verify Redis enabled/state keys and two stable poll
 intervals without new redundant command attempts.
-
