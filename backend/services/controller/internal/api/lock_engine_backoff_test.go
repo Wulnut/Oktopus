@@ -352,25 +352,6 @@ func TestNextLockEvaluationState_PreservesExistingBackoff(t *testing.T) {
 	}
 }
 
-func TestShouldSkipFreshLockCommand_BackoffForcesRecoveryProbe(t *testing.T) {
-	prev := lockDeviceState{
-		LastStatus: db.LockStatusLocked,
-		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
-			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: time.Now().Add(-time.Minute)},
-		},
-	}
-
-	enabled := &Api{lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{Enabled: true, Threshold: 3, Cooldown: 10 * time.Minute})}
-	if enabled.shouldSkipFreshLockCommand(lockTriggerIPChangePoll, true, prev, db.LockStatusLocked, true) {
-		t.Fatal("recorded same-target failure must bypass same-status skip for the recovery probe")
-	}
-
-	disabled := &Api{lockBackoff: defaultLockBackoffConfig()}
-	if !disabled.shouldSkipFreshLockCommand(lockTriggerIPChangePoll, true, prev, db.LockStatusLocked, true) {
-		t.Fatal("disabled backoff must preserve legacy same-status skip behavior")
-	}
-}
-
 func TestRetryCooldownMessage_SuppressesSameTargetAndAllowsOpposite(t *testing.T) {
 	resetLockAdaptersForTest()
 	store := newFakeLockStateStore()

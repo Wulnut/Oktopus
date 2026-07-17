@@ -252,7 +252,7 @@ fetch(`${apiPrefix}/devices`, { headers: { Authorization: token } });
 - **Portainer** (port 9443) — container management UI
 - **container-upload** (port 8005) — custom Node.js service for uploading containers to the local registry; prefixes images with tenant slug from JWT
 
-Environment variables: `.env.<service>.example` templates are tracked in git; `generate-secrets.sh` creates actual `.env.<service>` files with generated secrets on first run. See README for details. Source deployments automatically append newly introduced `LOCK_*` defaults from `.env.controller.example` to an existing `.env.controller` without overwriting operator-provided values. Other service environment files remain first-run generated and are not generally auto-migrated.
+Environment variables: `.env.<service>.example` templates are tracked in git; `generate-secrets.sh` creates actual `.env.<service>` files with generated secrets on first run. See README for details. Source deployments automatically append newly introduced `LOCK_*` defaults from `.env.controller.example` to an existing `.env.controller` without overwriting operator-provided values. They also perform a one-time migration of the original `LOCK_REDIS_ENABLED=false` default to `true`, record completion in local `.env.migrations`, and preserve any later operator override. Other service environment files remain first-run generated and are not generally auto-migrated.
 
 #### ONT Lock controller env
 

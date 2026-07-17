@@ -14,6 +14,7 @@ ENV="${1:-staging}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+. "$SCRIPT_DIR/env-migrations.sh"
 
 COMPOSE_SERVICES=(controller frontend adapter mqtt mqtt-adapter ws ws-adapter stomp stomp-adapter)
 MAKEFILE_SERVICES=(
@@ -208,6 +209,13 @@ fi
 # Existing deployments keep their secrets, but receive newly introduced LOCK_*
 # defaults without overwriting operator-provided values.
 merge_missing_env_defaults "$SCRIPT_DIR/.env.controller.example" "$SCRIPT_DIR/.env.controller" "LOCK_"
+migrate_env_default_once \
+  "$SCRIPT_DIR/.env.controller" \
+  "$SCRIPT_DIR/.env.migrations" \
+  "20260717-lock-redis-default-true" \
+  "LOCK_REDIS_ENABLED" \
+  "false" \
+  "true"
 
 mkdir -p firmwares
 chown 1000:1000 firmwares 2>/dev/null || chmod 1777 firmwares

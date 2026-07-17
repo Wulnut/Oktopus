@@ -125,17 +125,39 @@ func (a *Api) retryLockCommand(tenantSlug string, command db.LockCommandAttempt)
 	}
 	defer unlock()
 
-	if !a.gateLockCapability(ctx, tdb, device, tenantSlug, lockTriggerChase) {
+	snapshot, proceed := a.gateLockCapability(ctx, tdb, device, tenantSlug, lockTriggerChase)
+	if !proceed {
 		return
 	}
 
-	decision, reportedIP, err := a.resolveCurrentLockDecision(ctx, tdb, device, tenantSlug, "")
+	decision, reportedIP, err := a.resolveCurrentLockDecision(ctx, tdb, device, tenantSlug, snapshot.ReportedIP)
 	if err != nil {
 		log.Printf("lock_retry_scheduler: tenant %s resolve current decision %s: %v", tenantSlug, command.DeviceSN, err)
 		return
 	}
 	if !decision.ShouldCommand {
 		_ = tdb.UpdateLockCommandStatus(ctx, command.ID, db.LockCommandFailed, "retry superseded: current policy requires no command")
+		return
+	}
+	if lockDecisionAlreadyConverged(snapshot.LockStatus, decision) {
+		_ = tdb.UpdateLockCommandStatus(ctx, command.ID, db.LockCommandSuccess, "")
+		a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
+			SN:     command.DeviceSN,
+			Action: "retry_already_converged",
+			Status: decision.Status,
+			Details: bson.M{
+				"reported_ip":   reportedIP,
+				"actual_status": snapshot.LockStatus,
+			},
+		})
+		state, found, stateErr := lockStateStore.Get(ctx, tenantSlug, command.DeviceSN)
+		if stateErr != nil || !found {
+			state = lockDeviceState{}
+		}
+		state = successfulLockDeviceState(state, reportedIP, decision.Status, decision.CommandValue, time.Now())
+		if err := lockStateStore.Put(ctx, tenantSlug, command.DeviceSN, state); err != nil {
+			log.Printf("lock_retry_scheduler: tenant %s put converged state %s: %v", tenantSlug, command.DeviceSN, err)
+		}
 		return
 	}
 	if a.suppressLockIfBreakerTripped(ctx, tdb, tenantSlug, command.DeviceSN, decision.Status) {

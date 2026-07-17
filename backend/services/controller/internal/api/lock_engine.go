@@ -79,6 +79,10 @@ type LockDecision struct {
 	CommandValue  string              `json:"command_value,omitempty"`
 }
 
+func lockDecisionAlreadyConverged(actual db.DeviceLockStatus, decision LockDecision) bool {
+	return decision.ShouldCommand && actual != "" && actual == decision.Status
+}
+
 type lockEventSink interface {
 	PublishLockAudit(ctx context.Context, tenantSlug string, log db.LockAuditLog) error
 }
@@ -326,30 +330,6 @@ func (a *Api) handleLockDeviceOnline(tdb *db.TenantDB, device entity.Device, ten
 	a.evaluateAndMaybeCommand(ctx, tdb, device, tenantSlug, lockTriggerOnline, "")
 }
 
-// shouldSkipLockCommand is true when ShouldCommand but the trigger is a
-// status-diff path (poll/notify) and Redis already recorded the same status.
-// online/chase always force-converge (never skip).
-func shouldSkipLockCommand(trigger string, found bool, prevStatus, decisionStatus db.DeviceLockStatus, shouldCommand bool) bool {
-	if !shouldCommand {
-		return false
-	}
-	forceConverge := trigger == lockTriggerOnline || trigger == lockTriggerChase
-	if forceConverge {
-		return false
-	}
-	return found && prevStatus == decisionStatus
-}
-
-// shouldSkipFreshLockCommand keeps the legacy same-status optimization unless
-// a recorded failure shows that the target may not actually be converged. That
-// failure must be allowed to probe again after its cooldown expires.
-func (a *Api) shouldSkipFreshLockCommand(trigger string, found bool, prev lockDeviceState, decisionStatus db.DeviceLockStatus, shouldCommand bool) bool {
-	if a.lockBackoff.Enabled && backoffFor(prev.CommandBackoffs, decisionStatus) != nil {
-		return false
-	}
-	return shouldSkipLockCommand(trigger, found, prev.LastStatus, decisionStatus, shouldCommand)
-}
-
 func nextLockEvaluationState(prev lockDeviceState, found bool, reportedIP string, status db.DeviceLockStatus, now time.Time) lockDeviceState {
 	next := lockDeviceState{
 		LastIP:     reportedIP,
@@ -387,9 +367,9 @@ func (a *Api) evaluateFreshCooldown(ctx context.Context, tenantSlug, sn string, 
 	return found && isBackoffCoolingDown(state.CommandBackoffs, target, time.Now())
 }
 
-// evaluateAndMaybeCommand is the shared ONT Lock evaluate pipeline.
-// online/chase force-send when ShouldCommand; poll/notify skip when Redis
-// last_status matches the new decision. reportedIP empty → fetch via USP/CWMP.
+// evaluateAndMaybeCommand is the shared ONT Lock evaluate pipeline. Every
+// trigger reads the actual Lock value and sends only when policy differs.
+// reportedIP empty uses the WAN IP retained by the capability probe.
 //
 // Capability gate: opt_out before TryLock; after TryLock, probe only when
 // shouldProbeOntLockCapability allows (online always re-probes; poll/chase/notify
@@ -409,8 +389,12 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	}
 	defer unlock()
 
-	if !a.gateLockCapability(ctx, tdb, device, tenantSlug, trigger) {
+	snapshot, proceed := a.gateLockCapability(ctx, tdb, device, tenantSlug, trigger)
+	if !proceed {
 		return
+	}
+	if reportedIP == "" {
+		reportedIP = snapshot.ReportedIP
 	}
 
 	// Subscribe only on online (re-probe path). Poll/notify/chase must not re-Add.
@@ -497,21 +481,24 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 		return
 	}
 
-	if a.evaluateFreshCooldown(ctx, tenantSlug, device.SN, decision.Status) {
-		return
-	}
-
-	if a.shouldSkipFreshLockCommand(trigger, found, prev, decision.Status, decision.ShouldCommand) {
+	if lockDecisionAlreadyConverged(snapshot.LockStatus, decision) {
 		details["command_skipped"] = true
+		details["skip_reason"] = "actual_state_match"
+		details["actual_status"] = snapshot.LockStatus
 		a.recordLockAudit(ctx, tdb, tenantSlug, db.LockAuditLog{
 			SN:      device.SN,
 			Action:  "evaluate",
 			Status:  decision.Status,
 			Details: details,
 		})
+		nextState.CommandBackoffs = nil
 		if err := lockStateStore.Put(ctx, tenantSlug, device.SN, nextState); err != nil {
 			log.Printf("lock_engine: put device state %s: %v", device.SN, err)
 		}
+		return
+	}
+
+	if a.evaluateFreshCooldown(ctx, tenantSlug, device.SN, decision.Status) {
 		return
 	}
 
