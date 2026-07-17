@@ -125,7 +125,7 @@ func (a *Api) retryLockCommand(tenantSlug string, command db.LockCommandAttempt)
 	}
 	defer unlock()
 
-	if !a.gateLockCapability(ctx, tdb, device, tenantSlug, lockTriggerChase) {
+	if _, proceed := a.gateLockCapability(ctx, tdb, device, tenantSlug, lockTriggerChase); !proceed {
 		return
 	}
 

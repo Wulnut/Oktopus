@@ -26,6 +26,32 @@ const (
 	lockProbeTransient
 )
 
+type lockCapabilitySnapshot struct {
+	Result     lockProbeResult
+	Detail     string
+	LockStatus db.DeviceLockStatus
+	ReportedIP string
+	CWMPRoot   string
+}
+
+func normalizeActualLockValue(raw string) (db.DeviceLockStatus, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "0", "false", "unlocked":
+		return db.LockStatusUnlocked, true
+	case "1", "true", "locked":
+		return db.LockStatusLocked, true
+	default:
+		return "", false
+	}
+}
+
+func malformedActualLockSnapshot(raw string) lockCapabilitySnapshot {
+	return lockCapabilitySnapshot{
+		Result: lockProbeTransient,
+		Detail: fmt.Sprintf("unrecognized OntLock Lock value %q", truncateBackoffError(raw)),
+	}
+}
+
 func classifyLockProbeError(err error) lockProbeResult {
 	if err == nil {
 		return lockProbeOK
@@ -42,11 +68,11 @@ func classifyLockProbeError(err error) lockProbeResult {
 
 // probeOntLockCapability verifies the device exposes OntLock Lock (+ WanIP) paths.
 // Permanent schema errors → unsupported; timeout/transport → transient.
-func (a *Api) probeOntLockCapability(ctx context.Context, device entity.Device, tenantSlug string) (lockProbeResult, string) {
+func (a *Api) probeOntLockCapability(ctx context.Context, device entity.Device, tenantSlug string) lockCapabilitySnapshot {
 	_ = ctx
 	mtp := lockDeviceMTP(device)
 	if mtp == "" {
-		return lockProbeTransient, "no active MTP"
+		return lockCapabilitySnapshot{Result: lockProbeTransient, Detail: "no active MTP"}
 	}
 
 	if mtp == "cwmp" {
@@ -55,26 +81,44 @@ func (a *Api) probeOntLockCapability(ctx context.Context, device entity.Device, 
 	return a.probeOntLockCapabilityUSP(device.SN, mtp, tenantSlug)
 }
 
-func (a *Api) probeOntLockCapabilityUSP(sn, mtp, tenantSlug string) (lockProbeResult, string) {
+type uspLockProbeGetter func(sn, path, mtp, tenantSlug string) (string, error)
+
+func (a *Api) probeOntLockCapabilityUSP(sn, mtp, tenantSlug string) lockCapabilitySnapshot {
+	return probeOntLockCapabilityUSPWithGetter(sn, mtp, tenantSlug, func(sn, path, mtp, tenantSlug string) (string, error) {
+		return uspGetValue(sn, path, mtp, a.nc, tenantSlug)
+	})
+}
+
+func probeOntLockCapabilityUSPWithGetter(sn, mtp, tenantSlug string, get uspLockProbeGetter) lockCapabilitySnapshot {
 	// Lock path is definitive OntLock support; WanIP confirms the object is usable.
-	if _, err := uspGetValue(sn, lockParameterPath, mtp, a.nc, tenantSlug); err != nil {
-		return classifyLockProbeError(err), err.Error()
+	lockValue, err := get(sn, lockParameterPath, mtp, tenantSlug)
+	if err != nil {
+		return lockCapabilitySnapshot{Result: classifyLockProbeError(err), Detail: err.Error()}
 	}
-	if _, err := uspGetValue(sn, lockWanIPPath, mtp, a.nc, tenantSlug); err != nil {
-		return classifyLockProbeError(err), err.Error()
+	lockStatus, ok := normalizeActualLockValue(lockValue)
+	if !ok {
+		return malformedActualLockSnapshot(lockValue)
 	}
-	return lockProbeOK, ""
+	reportedIP, err := get(sn, lockWanIPPath, mtp, tenantSlug)
+	if err != nil {
+		return lockCapabilitySnapshot{Result: classifyLockProbeError(err), Detail: err.Error()}
+	}
+	return lockCapabilitySnapshot{
+		Result:     lockProbeOK,
+		LockStatus: lockStatus,
+		ReportedIP: normalizeReportedIP(reportedIP),
+	}
 }
 
 type cwmpLockProbeGetter func(sn string, names []string, tenantSlug string) (cwmp.GetParameterValuesResponse, error)
 
-func (a *Api) probeOntLockCapabilityCWMP(sn, dataModel, tenantSlug string) (lockProbeResult, string) {
+func (a *Api) probeOntLockCapabilityCWMP(sn, dataModel, tenantSlug string) lockCapabilitySnapshot {
 	return probeOntLockCapabilityCWMPWithGetter(sn, dataModel, tenantSlug, func(sn string, names []string, tenantSlug string) (cwmp.GetParameterValuesResponse, error) {
 		return cwmpGetValues(sn, names, a.nc, tenantSlug)
 	})
 }
 
-func probeOntLockCapabilityCWMPWithGetter(sn, dataModel, tenantSlug string, get cwmpLockProbeGetter) (lockProbeResult, string) {
+func probeOntLockCapabilityCWMPWithGetter(sn, dataModel, tenantSlug string, get cwmpLockProbeGetter) lockCapabilitySnapshot {
 	// Try the datamodel-native root first, then the alternate root. A partial
 	// response under one root must not prevent a complete alternate-root match.
 	roots := []string{dataModel, lockOppositeDataModel(dataModel)}
@@ -91,28 +135,42 @@ func probeOntLockCapabilityCWMPWithGetter(sn, dataModel, tenantSlug string, get 
 			details = append(details, err.Error())
 			continue
 		}
+		var lockValue, reportedIP string
 		foundLock, foundWan := false, false
 		for _, param := range resp.ParameterList {
 			switch param.Name {
 			case lockPath:
 				foundLock = true
+				lockValue = param.Value
 			case wanPath:
 				foundWan = true
+				reportedIP = param.Value
 			}
 		}
 		if foundLock && foundWan {
-			return lockProbeOK, ""
+			lockStatus, ok := normalizeActualLockValue(lockValue)
+			if !ok {
+				hasTransientFailure = true
+				details = append(details, malformedActualLockSnapshot(lockValue).Detail)
+				continue
+			}
+			return lockCapabilitySnapshot{
+				Result:     lockProbeOK,
+				LockStatus: lockStatus,
+				ReportedIP: normalizeReportedIP(reportedIP),
+				CWMPRoot:   lockCWMPRootPrefix(dm),
+			}
 		}
 		details = append(details, fmt.Sprintf("OntLock parameters incomplete under %s", lockCWMPRootPrefix(dm)))
 	}
 	detail := strings.Join(details, "; ")
 	if hasTransientFailure {
-		return lockProbeTransient, detail
+		return lockCapabilitySnapshot{Result: lockProbeTransient, Detail: detail}
 	}
 	if detail == "" {
 		detail = "OntLock parameters not found in CWMP response under either root"
 	}
-	return lockProbeUnsupported, detail
+	return lockCapabilitySnapshot{Result: lockProbeUnsupported, Detail: detail}
 }
 
 // shouldProbeOntLockCapability decides whether to run an OntLock capability probe.
@@ -138,22 +196,22 @@ func shouldProbeOntLockCapability(trigger string, hasUnsupportedRow bool, optOut
 // probe → unsupported upsert+audit / transient skip / OK delete-row.
 // Mongo Get/Upsert/Delete failures soft-degrade (log and continue) except when
 // the probe itself classified unsupported.
-func (a *Api) gateLockCapability(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, trigger string) bool {
+func (a *Api) gateLockCapability(ctx context.Context, tdb *db.TenantDB, device entity.Device, tenantSlug, trigger string) (lockCapabilitySnapshot, bool) {
 	hasRow, optOut := a.unsupportedLockRowState(ctx, tdb, device.SN)
 	if !shouldProbeOntLockCapability(trigger, hasRow, optOut) {
-		return false
+		return lockCapabilitySnapshot{}, false
 	}
 
-	result, detail := a.probeOntLockCapability(ctx, device, tenantSlug)
-	switch result {
+	snapshot := a.probeOntLockCapability(ctx, device, tenantSlug)
+	switch snapshot.Result {
 	case lockProbeTransient:
-		log.Printf("lock_capability: probe transient %s: %s", device.SN, detail)
-		return false
+		log.Printf("lock_capability: probe transient %s: %s", device.SN, snapshot.Detail)
+		return snapshot, false
 	case lockProbeUnsupported:
 		if err := tdb.UpsertUnsupportedLockDevice(ctx, db.UnsupportedLockDevice{
 			SN:            device.SN,
 			Reason:        db.LockUnsupportedReasonPath,
-			Detail:        detail,
+			Detail:        snapshot.Detail,
 			LastCheckedAt: time.Now(),
 		}); err != nil {
 			log.Printf("lock_capability: upsert unsupported %s: %v", device.SN, err)
@@ -163,16 +221,16 @@ func (a *Api) gateLockCapability(ctx context.Context, tdb *db.TenantDB, device e
 			Action: "unsupported",
 			Details: bson.M{
 				"reason": db.LockUnsupportedReasonPath,
-				"detail": detail,
+				"detail": snapshot.Detail,
 			},
 		})
-		return false
+		return snapshot, false
 	default:
 		// Probe OK — clear any prior unsupported row (idempotent).
 		if delErr := tdb.DeleteUnsupportedLockDevice(ctx, device.SN); delErr != nil {
 			log.Printf("lock_capability: delete unsupported %s: %v", device.SN, delErr)
 		}
-		return true
+		return snapshot, true
 	}
 }
 

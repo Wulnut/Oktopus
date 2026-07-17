@@ -409,7 +409,7 @@ func (a *Api) evaluateAndMaybeCommand(ctx context.Context, tdb *db.TenantDB, dev
 	}
 	defer unlock()
 
-	if !a.gateLockCapability(ctx, tdb, device, tenantSlug, trigger) {
+	if _, proceed := a.gateLockCapability(ctx, tdb, device, tenantSlug, trigger); !proceed {
 		return
 	}
 
