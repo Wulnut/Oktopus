@@ -83,95 +83,25 @@ func TestEvaluateLockDecisionMasterSwitchDisabledUnlocks(t *testing.T) {
 	}
 }
 
-func TestShouldSkipLockCommandSameStatusPollSkips(t *testing.T) {
-	skip := shouldSkipLockCommand(
-		lockTriggerIPChangePoll,
-		true,
-		db.LockStatusLocked,
-		db.LockStatusLocked,
-		true,
-	)
-	if !skip {
-		t.Fatal("same status + poll should skip command")
+func TestLockDecisionAlreadyConverged(t *testing.T) {
+	cases := []struct {
+		name     string
+		actual   db.DeviceLockStatus
+		decision LockDecision
+		want     bool
+	}{
+		{"locked match", db.LockStatusLocked, LockDecision{Status: db.LockStatusLocked, ShouldCommand: true, CommandValue: "1"}, true},
+		{"unlocked match", db.LockStatusUnlocked, LockDecision{Status: db.LockStatusUnlocked, ShouldCommand: true, CommandValue: "0"}, true},
+		{"mismatch", db.LockStatusUnlocked, LockDecision{Status: db.LockStatusLocked, ShouldCommand: true, CommandValue: "1"}, false},
+		{"unknown actual", "", LockDecision{Status: db.LockStatusLocked, ShouldCommand: true, CommandValue: "1"}, false},
+		{"no command", db.LockStatusLocked, LockDecision{Status: db.LockStatusPending}, false},
 	}
-}
-
-func TestShouldSkipLockCommandSameStatusNotifySkips(t *testing.T) {
-	skip := shouldSkipLockCommand(
-		lockTriggerIPChangeNotify,
-		true,
-		db.LockStatusUnlocked,
-		db.LockStatusUnlocked,
-		true,
-	)
-	if !skip {
-		t.Fatal("same status + notify should skip command")
-	}
-}
-
-func TestShouldSkipLockCommandSameStatusOnlineSends(t *testing.T) {
-	skip := shouldSkipLockCommand(
-		lockTriggerOnline,
-		true,
-		db.LockStatusLocked,
-		db.LockStatusLocked,
-		true,
-	)
-	if skip {
-		t.Fatal("same status + online must force-converge (send)")
-	}
-}
-
-func TestShouldSkipLockCommandSameStatusChaseSends(t *testing.T) {
-	skip := shouldSkipLockCommand(
-		lockTriggerChase,
-		true,
-		db.LockStatusLocked,
-		db.LockStatusLocked,
-		true,
-	)
-	if skip {
-		t.Fatal("same status + chase must force-converge (send)")
-	}
-}
-
-func TestShouldSkipLockCommandStatusChangePollSends(t *testing.T) {
-	skip := shouldSkipLockCommand(
-		lockTriggerIPChangePoll,
-		true,
-		db.LockStatusLocked,
-		db.LockStatusUnlocked,
-		true,
-	)
-	if skip {
-		t.Fatal("status change + poll should send")
-	}
-}
-
-func TestShouldSkipLockCommandMissingRedisStateSends(t *testing.T) {
-	skip := shouldSkipLockCommand(
-		lockTriggerIPChangePoll,
-		false,
-		"",
-		db.LockStatusLocked,
-		true,
-	)
-	if skip {
-		t.Fatal("missing Redis state should send when ShouldCommand")
-	}
-}
-
-func TestShouldSkipLockCommandNoShouldCommandNeverSkips(t *testing.T) {
-	// Skip helper only applies when a command would otherwise be sent.
-	skip := shouldSkipLockCommand(
-		lockTriggerIPChangePoll,
-		true,
-		db.LockStatusPending,
-		db.LockStatusPending,
-		false,
-	)
-	if skip {
-		t.Fatal("!ShouldCommand path is handled separately; helper must return false")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := lockDecisionAlreadyConverged(tc.actual, tc.decision); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

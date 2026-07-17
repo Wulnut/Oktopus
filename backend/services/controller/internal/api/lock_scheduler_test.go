@@ -45,6 +45,20 @@ func TestShouldMarkLockCommandForRetry_NeverRetriesZeroAttempts(t *testing.T) {
 	}
 }
 
+func TestRetryLockDecisionAlreadyConverged(t *testing.T) {
+	refreshed := LockDecision{
+		Status:        db.LockStatusUnlocked,
+		ShouldCommand: true,
+		CommandValue:  "0",
+	}
+	if !lockDecisionAlreadyConverged(db.LockStatusUnlocked, refreshed) {
+		t.Fatal("retry must stop when the refreshed target matches actual device state")
+	}
+	if lockDecisionAlreadyConverged(db.LockStatusLocked, refreshed) {
+		t.Fatal("retry must continue when the refreshed target differs from actual device state")
+	}
+}
+
 func TestIsPermanentLockCommandError_SchemaMissing(t *testing.T) {
 	err := fmt.Errorf("usp error %d: CheckPathProperties: Path (Device.X_TELKOMSEL_OntLock) does not exist in the schema", uspErrCodePathNotInSchema)
 	if !isPermanentLockCommandError(err) {
