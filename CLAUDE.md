@@ -139,17 +139,7 @@ Request -> AuthMiddleware (JWT validation, extract email/tenantID/tenantSlug/lev
         -> Handler (uses a.tenantDB(r) for scoped DB access)
 ```
 
-**JWT claims:**
-```go
-type JWTClaim struct {
-    Username   string `json:"username"`
-    Email      string `json:"email"`
-    TenantID   string `json:"tenant_id"`   // ObjectID hex, empty for SuperAdmin
-    TenantSlug string `json:"tenant_slug"` // for DB resolution, empty for SuperAdmin
-    Level      int    `json:"level"`       // 0=SuperAdmin, 1=TenantAdmin, 2=Operator
-    jwt.RegisteredClaims
-}
-```
+**JWT claims:** the `JWTClaim` struct (in the auth middleware) carries `Username`, `Email`, `TenantID` (ObjectID hex; empty for SuperAdmin), `TenantSlug` (empty for SuperAdmin), and `Level` (0=SuperAdmin, 1=TenantAdmin, 2=Operator).
 
 ### Microservices (Go backend)
 
@@ -167,13 +157,7 @@ All backend services live in `backend/services/` and communicate exclusively thr
 - Entry point: `cmd/controller/main.go`
 - **Campaign scheduler** (`StartCampaignScheduler`): ticks every `CAMPAIGN_SCHEDULER_INTERVAL_SEC` (default 60), runs `RunCampaignBatch` once per UTC time-window occurrence for enabled campaigns with `time_window_start/end` set. Env: `CAMPAIGN_SCHEDULER_ENABLED` (default true). Upgrade logs use `trigger_type=campaign_scheduled`.
 
-**TenantDB pattern** — all handlers that access tenant data use:
-```go
-func (a *Api) someHandler(w http.ResponseWriter, r *http.Request) {
-    tdb := a.tenantDB(r) // resolves tenant slug from middleware context
-    tdb.SomeMethod(r.Context(), ...)
-}
-```
+**TenantDB pattern** — handlers resolve the tenant-scoped DB via `a.tenantDB(r)` (tenant slug from middleware context) and call methods on the returned `*TenantDB`.
 
 **MTP services** (`backend/services/mtp/`) — transport protocol layer:
 - `mqtt/`, `ws/`, `stomp/` — protocol listeners (MQTT:1883, WebSocket:8080, STOMP:61613)
@@ -264,8 +248,9 @@ Compose `.env.controller.example` defaults these to `true`; code defaults to `fa
 | `LOCK_IP_POLL_ENABLED` / `LOCK_IP_POLL_INTERVAL_SEC` | WAN IP re-eval poller; interval min 30s, default 60s |
 | `LOCK_NOTIFY_ENABLED` / `LOCK_NOTIFY_HEALTH_SEC` | USP ValueChange notify path; health window default 120s |
 | `LOCK_GREENPLUM_*` | Optional audit sink; remains off by default |
+| `LOCK_DEVICE_FAILURE_BACKOFF_ENABLED` / `LOCK_DEVICE_FAILURE_THRESHOLD` / `LOCK_DEVICE_FAILURE_COOLDOWN_SEC` | Per-device + per-target retryable-failure backoff (threshold 3, 10-min cooldown, post-cooldown probe, clears on any success). Code default disabled; compose true |
 
-**Behavior:** Online/chase force-converge Set when `ShouldCommand`. Poll/notify skip Set when Redis `last_status` is unchanged; poll early-exits on same `last_ip`. Unsupported OntLock devices are listed in the UI; opt-out stops probing; re-probe on device online.
+**Behavior:** Online/chase force-converge Set when `ShouldCommand`. Poll/notify skip Set when Redis `last_status` is unchanged; poll early-exits on same `last_ip`. Unsupported OntLock devices are listed in the UI; opt-out stops probing; re-probe on device online. Per-device failure backoff stops the same target after 3 retryable delivery failures for 10 minutes; the opposite target and a post-cooldown probe remain allowed, and any successful command clears all device backoff. State lives in the existing `lockDeviceState` Redis JSON and soft-degrades when Redis is unavailable.
 
 ### MongoDB Databases
 
@@ -335,21 +320,4 @@ Deploy jobs use `timeout: 2h` and `resource_group` to prevent concurrent deploys
 - **Always use Docker** for building and testing — never use host tools (`npx`, `npm`, `node`, `go`) directly. Use `sg docker -c "..."` if the docker group requires it.
 - **Build all**: `sg docker -c "cd deploy/compose && ./build.sh"`
 - **Build specific service**: `sg docker -c "cd deploy/compose && ./build.sh controller"`
-- **Run tests**: `cd deploy/compose && docker compose -f docker-compose.test.yaml --profile unit run --rm <service>` (see README for full list)
-- **Run white-box unit/integration tests** (existing): `cd deploy/compose && docker compose -f docker-compose.test.yaml --profile {unit|integration} run --rm test-{controller-unit|bridge|db|handlers|...}`
-- **Run black-box API snapshot suite** (new, see `docs/plans/2026-07-11-test-plan-v3.md`): bring up `mongo_test`/`nats_test` once, then run the independent Go module under `backend/services/controller/tests/api_snapshot/`:
-  ```bash
-  cd deploy/compose
-  docker compose -f docker-compose.test.yaml --profile integration up -d mongo_test nats_test
-  docker run --rm --network oktopus-test_test_network \
-    -v "$PWD/../..":/workspace \
-    -w /workspace/backend/services/controller/tests/api_snapshot \
-    -e GOPROXY=https://goproxy.cn,direct -e GOFLAGS=-mod=mod \
-    -e MONGO_TEST_URI=mongodb://mongo_test:27017 \
-    -e NATS_TEST_URL=nats://nats_test:4222 \
-    -e SECRET_API_KEY=test-secret-key-for-snapshot \
-    golang:1.23 go test -v -count=1 -timeout=300s ./...
-  ```
-  Or via the compose service: `docker compose -f docker-compose.test.yaml --profile snapshot --profile integration run --rm test-controller-snapshot`.
-- **Run load tests** (gated, off by default): add `-e RUN_LOAD=1` and target `./load/...` with `-run TestLoad`. The default `go test ./...` skips them.
-
+- **Run tests / snapshot / load tests**: exact `docker compose` invocations (profiles, service names, snapshot env, load-test gating) live in the `run-tests` skill — invoke it when you need to run a suite.

@@ -36,6 +36,8 @@ skills-lock.json
 .playwright-mcp
 .codegraph
 .DS_Store
+# Claude Code MCP config: electerm-mcp points at localhost (machine-local, not for the team)
+.mcp.json
 __pycache__/
 
 # Test data capture: raw mongodump/HTTP captures from production never enter git.

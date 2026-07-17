@@ -3,6 +3,8 @@ package api
 import (
 	"testing"
 	"time"
+
+	"github.com/leandrofars/oktopus/internal/db"
 )
 
 func TestShouldSkipIPPollForNotifyHealth(t *testing.T) {
@@ -74,5 +76,22 @@ func TestShouldSkipIPPollForUnsupported(t *testing.T) {
 				t.Fatalf("got %v want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHasPendingLockBackoff_BypassesPollShortcutsOnlyWhenEnabled(t *testing.T) {
+	state := lockDeviceState{
+		CommandBackoffs: map[db.DeviceLockStatus]*lockCommandBackoff{
+			db.LockStatusLocked: {ConsecutiveFailures: 3, CooldownUntil: time.Now().Add(time.Minute)},
+		},
+	}
+	if !hasPendingLockBackoff(true, state) {
+		t.Fatal("enabled backoff state must bypass notify-health and same-IP poll shortcuts")
+	}
+	if hasPendingLockBackoff(false, state) {
+		t.Fatal("disabled backoff must preserve legacy poll shortcuts")
+	}
+	if hasPendingLockBackoff(true, lockDeviceState{}) {
+		t.Fatal("empty backoff state must preserve poll shortcuts")
 	}
 }

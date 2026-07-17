@@ -33,6 +33,7 @@ type Api struct {
 	lockCircuitBreaker        *lockCircuitBreaker
 	lockEngineSem             chan struct{}
 	lockNotifyEnabled         bool
+	lockBackoff               lockBackoffConfig
 }
 
 const REQUEST_TIMEOUT = time.Second * 30
@@ -51,6 +52,11 @@ func NewApi(c *config.Config, js jetstream.JetStream, nc *nats.Conn, bridge brid
 		lockRetryInterval:         c.LockRetryScheduler.Interval,
 		lockCommandTimeout:        c.LockRetryScheduler.CommandTimeout,
 		lockMaxAttempts:           c.LockRetryScheduler.MaxAttempts,
+		lockBackoff: normalizeLockBackoffConfig(lockBackoffConfig{
+			Enabled:   c.LockDeviceFailureBackoff.Enabled,
+			Threshold: c.LockDeviceFailureBackoff.Threshold,
+			Cooldown:  c.LockDeviceFailureBackoff.Cooldown,
+		}),
 	}
 }
 
