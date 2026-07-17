@@ -3,6 +3,7 @@ package infra_test
 import (
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -349,6 +350,89 @@ func TestCISourceDeploy_MigratesMissingControllerLockDefaults(t *testing.T) {
 	want := `merge_missing_env_defaults "$SCRIPT_DIR/.env.controller.example" "$SCRIPT_DIR/.env.controller" "LOCK_"`
 	if !strings.Contains(content, want) {
 		t.Fatalf("ci-source-deploy.sh must merge missing LOCK_* defaults into an existing .env.controller; missing %q", want)
+	}
+	for _, migrationStep := range []string{
+		`. "$SCRIPT_DIR/env-migrations.sh"`,
+		`migrate_env_default_once \`,
+		`"20260717-lock-redis-default-true" \`,
+		`"LOCK_REDIS_ENABLED" \`,
+		`"false" \`,
+		`"true"`,
+	} {
+		if !strings.Contains(content, migrationStep) {
+			t.Errorf("ci-source-deploy.sh is missing Redis default migration step %q", migrationStep)
+		}
+	}
+}
+
+const lockRedisMigrationID = "20260717-lock-redis-default-true"
+
+func runLockRedisEnvMigration(t *testing.T, target, marker string) {
+	t.Helper()
+	script := filepath.Join(composeDir, "env-migrations.sh")
+	cmd := exec.Command("bash", "-c",
+		`source "$1"; migrate_env_default_once "$2" "$3" "$4" "$5" "$6" "$7"`,
+		"bash", script, target, marker, lockRedisMigrationID, "LOCK_REDIS_ENABLED", "false", "true")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("run env migration: %v\n%s", err, output)
+	}
+}
+
+func TestEnvMigration_LegacyRedisDefaultEnabledOnce(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, ".env.controller")
+	marker := filepath.Join(dir, ".env.migrations")
+	if err := os.WriteFile(target, []byte("LOCK_REDIS_ENABLED=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runLockRedisEnvMigration(t, target, marker)
+
+	if got := readFile(t, target); got != "LOCK_REDIS_ENABLED=true\n" {
+		t.Fatalf("migrated env = %q, want exact true value", got)
+	}
+	if got := readFile(t, marker); got != lockRedisMigrationID+"\n" {
+		t.Fatalf("migration marker = %q, want migration id", got)
+	}
+}
+
+func TestEnvMigration_AlreadyEnabledRemainsEnabled(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, ".env.controller")
+	marker := filepath.Join(dir, ".env.migrations")
+	if err := os.WriteFile(target, []byte("LOCK_REDIS_ENABLED=true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runLockRedisEnvMigration(t, target, marker)
+
+	if got := readFile(t, target); got != "LOCK_REDIS_ENABLED=true\n" {
+		t.Fatalf("enabled env changed to %q", got)
+	}
+	if got := readFile(t, marker); got != lockRedisMigrationID+"\n" {
+		t.Fatalf("migration marker = %q, want migration id", got)
+	}
+}
+
+func TestEnvMigration_OperatorChangeAfterMarkerIsPreserved(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, ".env.controller")
+	marker := filepath.Join(dir, ".env.migrations")
+	if err := os.WriteFile(target, []byte("LOCK_REDIS_ENABLED=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runLockRedisEnvMigration(t, target, marker)
+	if err := os.WriteFile(target, []byte("LOCK_REDIS_ENABLED=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runLockRedisEnvMigration(t, target, marker)
+
+	if got := readFile(t, target); got != "LOCK_REDIS_ENABLED=false\n" {
+		t.Fatalf("operator override changed to %q", got)
+	}
+	if got := readFile(t, marker); got != lockRedisMigrationID+"\n" {
+		t.Fatalf("migration marker duplicated or changed: %q", got)
 	}
 }
 
