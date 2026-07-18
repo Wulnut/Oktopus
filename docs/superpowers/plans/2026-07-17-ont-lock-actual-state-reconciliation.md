@@ -366,7 +366,7 @@ git log --oneline origin/telkomsel/ont-lock-dev..HEAD
 Expected: no whitespace errors, clean worktree, and only the fast-forwarded
 production commits plus design/implementation commits.
 
-- [ ] **Step 5: Push dev and monitor staging CI**
+- [x] **Step 5: Push dev and monitor staging CI**
 
 ```bash
 git push origin telkomsel/ont-lock-dev
@@ -376,7 +376,7 @@ glab ci list --branch telkomsel/ont-lock-dev
 Expected: push succeeds and the new staging pipeline reaches success before any
 production merge.
 
-- [ ] **Step 6: Merge to production only after staging success**
+- [x] **Step 6: Merge to production only after staging success**
 
 Compare branches, merge `telkomsel/ont-lock-dev` into `telkomsel/ont-lock`
 without force-pushing, push, and wait for the production pipeline to succeed.
