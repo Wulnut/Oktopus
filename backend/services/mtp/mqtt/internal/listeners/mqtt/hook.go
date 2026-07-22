@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/hooks/auth"
@@ -55,10 +56,24 @@ func (h *MyHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
 		return
 	}
 
+	cause := cl.StopCause()
+	log.Printf(
+		"mqtt disconnect: client_id=%s remote=%s tenant=%s device=%s cause=%v expire=%t read_error=%v",
+		cl.ID, cl.Net.Remote, tenant, device, cause, expire, err,
+	)
+	if !shouldPublishOffline(cl) {
+		log.Printf("mqtt disconnect: skipping offline for taken-over client_id=%s tenant=%s device=%s", cl.ID, tenant, device)
+		return
+	}
+
 	statusTopic := "oktopus/usp/v1/" + tenant + "/status/" + device
 	if pubErr := server.Publish(statusTopic, []byte("0"), false, 1); pubErr != nil {
 		log.Println("server publish error:", pubErr)
 	}
+}
+
+func shouldPublishOffline(cl *mqtt.Client) bool {
+	return cl.StopCause() != packets.ErrSessionTakenOver
 }
 
 // OnSubscribed detects device subscription, stores tenant context, and publishes online status.
@@ -78,13 +93,10 @@ func (h *MyHook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []
 	// Store tenant in client user properties for OnDisconnect
 	storeTenantInClient(cl, tenant, device)
 
-	// Set will message for ungraceful disconnect
 	statusTopic := "oktopus/usp/v1/" + tenant + "/status/" + device
-	cl.Properties.Will = mqtt.Will{
-		Qos:       1,
-		TopicName: statusTopic,
-		Payload:   []byte("0"),
-		Retain:    false,
+	if cl.Properties.Will.TopicName == statusTopic {
+		atomic.StoreUint32(&cl.Properties.Will.Flag, 0)
+		log.Printf("mqtt subscribe: disabled client status will for client_id=%s tenant=%s device=%s", cl.ID, tenant, device)
 	}
 
 	log.Printf("new device: tenant=%s device=%s", tenant, device)

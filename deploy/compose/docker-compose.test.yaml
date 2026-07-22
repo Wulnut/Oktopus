@@ -75,6 +75,18 @@ services:
       - test_network
     profiles: [unit]
 
+  test-mqtt:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - ../../backend/services/mtp/mqtt:/app
+    environment:
+      - GOPROXY=${GOPROXY:-https://goproxy.cn,direct}
+    command: go test -v -count=1 ./internal/listeners/mqtt/
+    networks:
+      - test_network
+    profiles: [unit]
+
   test-acs:
     image: golang:1.23
     working_dir: /app
