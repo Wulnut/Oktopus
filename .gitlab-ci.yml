@@ -65,7 +65,7 @@ stages:
   extends: .test_artifacts
 
 # ---------------------------------------------------------------------------
-# Unit tests — 6 jobs in parallel (stage: test-unit)
+# Unit tests — 7 jobs in parallel (stage: test-unit)
 # ---------------------------------------------------------------------------
 test:unit:controller:
   extends: .go_job
@@ -90,6 +90,14 @@ test:unit:adapter:
     JUNIT_REPORT: test-reports/test-adapter-junit.xml
   script:
     - go_test_report test-reports/test-adapter.log "$JUNIT_REPORT" bash -c 'cd backend/services/mtp/adapter && go test -v -count=1 ./internal/events/usp_handler/'
+
+test:unit:mqtt:
+  extends: .go_job
+  stage: test-unit
+  variables:
+    JUNIT_REPORT: test-reports/test-mqtt-junit.xml
+  script:
+    - go_test_report test-reports/test-mqtt.log "$JUNIT_REPORT" bash -c 'cd backend/services/mtp/mqtt && go test -v -count=1 ./internal/listeners/mqtt/'
 
 test:unit:infra:
   extends: .go_job
@@ -126,6 +134,7 @@ test:unit:frontend:
     - test:unit:controller
     - test:unit:acs
     - test:unit:adapter
+    - test:unit:mqtt
     - test:unit:infra
     - test:unit:fixtures
     - test:unit:frontend

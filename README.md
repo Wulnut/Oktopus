@@ -119,6 +119,7 @@ cd deploy/compose
 docker compose -f docker-compose.test.yaml --profile unit run --rm test-controller-unit
 docker compose -f docker-compose.test.yaml --profile unit run --rm test-acs
 docker compose -f docker-compose.test.yaml --profile unit run --rm test-adapter
+docker compose -f docker-compose.test.yaml --profile unit run --rm test-mqtt
 docker compose -f docker-compose.test.yaml --profile unit run --rm test-infra
 docker compose -f docker-compose.test.yaml --profile unit run --rm test-frontend
 
